@@ -287,9 +287,9 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>狀態</th><th>序號</th><th>姓名</th><th>手機</th><th>身分證後4碼</th><th>類型</th><th>星期</th><th>時段</th><th>時數</th><th>登記時間</th><th>操作</th></tr></thead><tbody>`;
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>抽籤狀態</th><th>狀態</th><th>序號</th><th>姓名</th><th>手機</th><th>身分證後4碼</th><th>類型</th><th>星期</th><th>時段</th><th>時數</th><th>登記時間</th><th>操作</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
-    html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td><td>${suspiciousTag(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
+    html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td><td><span class="tag ${r.lottery_locked?'green':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${suspiciousTag(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
@@ -469,28 +469,168 @@ async function saveAllCapacity(){
 function renderLotteryPage(){
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
-  document.getElementById('content').innerHTML=`<div class="panel"><h3>🎲 抽籤作業</h3><div class="alert">建議先選定「運動類型＋星期＋時段」後再抽籤，避免跨場次混抽。系統會依「手機＋身分證後4碼＋星期＋運動類型」視為同一組。</div><div class="toolbar" style="grid-template-columns:repeat(5,1fr) auto"><select id="lotVenue"><option value="">全部類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select><select id="lotDay"><option value="">全部星期</option>${days.map(d=>`<option>${d}</option>`).join('')}</select><select id="lotTime"><option value="">全部時段</option>${times.map(t=>`<option>${escapeHtml(t)}</option>`).join('')}</select><input id="lotCount" type="number" min="1" value="1" placeholder="中籤人數"><button id="previewLot" class="btn btn-gray">預覽資料</button><button id="doLot" class="btn btn-orange">開始抽籤</button></div><div id="lotteryPreview"></div><div id="lotteryResult"></div></div>`;
+
+  document.getElementById('content').innerHTML=`
+    <div class="panel">
+      <h3>🎲 抽籤作業</h3>
+      <div class="alert">
+        正式抽籤會把結果寫回資料庫並鎖定，同一場次鎖定後不可重抽。若真的抽錯，只有超級管理員可解除鎖定。
+      </div>
+      <div class="toolbar" style="grid-template-columns:repeat(5,1fr) auto auto;">
+        <select id="lotVenue"><option value="">請選擇類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
+        <select id="lotDay"><option value="">請選擇星期</option>${days.map(d=>`<option>${d}</option>`).join('')}</select>
+        <select id="lotTime"><option value="">請選擇時段</option>${times.map(t=>`<option>${escapeHtml(t)}</option>`).join('')}</select>
+        <input id="lotWinnerCount" type="number" min="1" value="1" placeholder="中籤人數">
+        <input id="lotWaitlistCount" type="number" min="0" value="0" placeholder="候補人數">
+        <button id="previewLot" class="btn btn-gray">預覽抽籤</button>
+        <button id="lockLot" class="btn btn-orange">正式抽籤並鎖定</button>
+      </div>
+      <div id="lotteryPreview"></div>
+      <div id="lotteryResult"></div>
+    </div>
+  `;
+
   const refresh=()=>{
-    const records=allRecords.filter(r=>(!lotVenue.value||r.venue_type===lotVenue.value)&&(!lotDay.value||r.day_of_week===lotDay.value)&&(!lotTime.value||r.time_slot===lotTime.value));
-    document.getElementById('lotteryPreview').innerHTML=`<div class="msg info">符合抽籤條件資料：${records.length} 筆，${new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size} 人</div>`;
+    const venue=document.getElementById('lotVenue').value;
+    const day=document.getElementById('lotDay').value;
+    const time=document.getElementById('lotTime').value;
+    const records=allRecords.filter(r=>
+      (!venue||r.venue_type===venue)&&
+      (!day||r.day_of_week===day)&&
+      (!time||r.time_slot===time)
+    );
+
+    const locked=records.some(r=>r.lottery_locked);
+    const statusSummary=getLotteryStatusSummary(records);
+
+    document.getElementById('lotteryPreview').innerHTML=`
+      <div class="msg ${locked?'error':'info'}">
+        符合抽籤條件資料：${records.length} 筆，${new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size} 人
+        <br>目前狀態：${locked ? '⚠️ 此場次已有正式鎖定結果' : '尚未鎖定'}
+        ${statusSummary ? `<br>${statusSummary}` : ''}
+      </div>
+    `;
+
+    document.getElementById('lockLot').disabled = locked || !venue || !day || !time || records.length===0;
+    if(locked && currentAdmin && currentAdmin.role==='super_admin'){
+      document.getElementById('lotteryPreview').innerHTML += `<button id="unlockLot" class="btn btn-danger" style="margin-top:8px;">解除此場次鎖定</button>`;
+      setTimeout(()=>{
+        const btn=document.getElementById('unlockLot');
+        if(btn) btn.onclick=async()=>{
+          if(!confirm('確定解除此場次鎖定並清除抽籤結果嗎？')) return;
+          const ids=records.map(r=>r.id);
+          const {error}=await db.from(RECORD_TABLE).update({lottery_status:null, lottery_batch:null, lottery_locked:false}).in('id',ids);
+          if(error){alert('解除鎖定失敗');console.error(error);return;}
+          alert('已解除鎖定');
+          await loadAllData();
+          renderLotteryPage();
+        };
+      },0);
+    }
     return records;
   };
-  ['lotVenue','lotDay','lotTime'].forEach(id=>document.getElementById(id).onchange=refresh);
-  document.getElementById('previewLot').onclick=refresh;
-  document.getElementById('doLot').onclick=()=>{
-    const rec=refresh(); const n=parseInt(document.getElementById('lotCount').value,10)||0;
-    if(n<=0||rec.length===0){alert('請確認抽籤人數與篩選資料');return;}
-    const winners=performLottery(rec,n);
-    document.getElementById('lotteryResult').innerHTML=`<div class="panel" style="background:#fffaf0"><h3>🎉 抽籤結果（${winners.length} 筆）</h3>${winners.map((w,i)=>`<div class="account-row"><div><strong>${i+1}. ${escapeHtml(w.name)}</strong><div class="small">${escapeHtml(w.phone)}｜後4碼 ${escapeHtml(w.id_last4||'')}｜${escapeHtml(w.venue_type)}｜${escapeHtml(w.day_of_week)}｜${escapeHtml(w.time_slot)}｜#${escapeHtml(w.serial_number)}</div></div>${suspiciousTag(w)}</div>`).join('')}</div>`;
+
+  ['lotVenue','lotDay','lotTime','lotWinnerCount','lotWaitlistCount'].forEach(id=>{
+    document.getElementById(id).onchange=refresh;
+    document.getElementById(id).oninput=refresh;
+  });
+
+  document.getElementById('previewLot').onclick=()=>{
+    const rec=refresh();
+    const n=parseInt(document.getElementById('lotWinnerCount').value,10)||0;
+    const w=parseInt(document.getElementById('lotWaitlistCount').value,10)||0;
+    if(n<=0||rec.length===0){alert('請選擇場次並輸入中籤人數');return;}
+    const result=performLotteryWithWaitlist(rec,n,w);
+    renderLotteryResult(result,'預覽抽籤結果（未鎖定）',false);
   };
+
+  document.getElementById('lockLot').onclick=async()=>{
+    const venue=document.getElementById('lotVenue').value;
+    const day=document.getElementById('lotDay').value;
+    const time=document.getElementById('lotTime').value;
+    const rec=refresh();
+    const n=parseInt(document.getElementById('lotWinnerCount').value,10)||0;
+    const w=parseInt(document.getElementById('lotWaitlistCount').value,10)||0;
+
+    if(!venue||!day||!time){alert('正式抽籤前，請先選定「運動類型＋星期＋時段」');return;}
+    if(n<=0||rec.length===0){alert('請確認抽籤人數與篩選資料');return;}
+    if(rec.some(r=>r.lottery_locked)){alert('此場次已鎖定，不可重抽');return;}
+    if(!confirm(`確定要正式抽籤並鎖定此場次嗎？\\n${venue}｜${day}｜${time}\\n中籤 ${n} 人，候補 ${w} 人`)) return;
+
+    const result=performLotteryWithWaitlist(rec,n,w);
+    const batch=`${venue}|${day}|${time}|${new Date().toISOString()}`;
+
+    const updates=[];
+    result.winners.forEach(r=>updates.push({id:r.id, lottery_status:'中籤', lottery_batch:batch, lottery_locked:true}));
+    result.waitlist.forEach((r,idx)=>updates.push({id:r.id, lottery_status:`候補${idx+1}`, lottery_batch:batch, lottery_locked:true}));
+    result.losers.forEach(r=>updates.push({id:r.id, lottery_status:'未中籤', lottery_batch:batch, lottery_locked:true}));
+
+    const {error}=await db.from(RECORD_TABLE).upsert(updates);
+    if(error){alert('寫入抽籤結果失敗');console.error(error);return;}
+
+    alert('正式抽籤結果已鎖定');
+    await loadAllData();
+    renderLotteryPage();
+    renderLotteryResult(result,'正式抽籤結果（已鎖定）',true);
+  };
+
   refresh();
 }
-function performLottery(records,winnerCount){
-  const groups={};
-  records.forEach(r=>{ const key=`${normalizePhone(r.phone)}|${r.id_last4||''}|${r.day_of_week}|${r.venue_type}`; if(!groups[key]) groups[key]=[]; groups[key].push(r); });
-  const arr=Object.values(groups); const shuffled=[...arr].sort(()=>Math.random()-.5);
-  return shuffled.slice(0,Math.min(winnerCount,arr.length)).flat();
+
+function getLotteryStatusSummary(records){
+  if(!records || records.length===0) return '';
+  const counts={};
+  records.forEach(r=>{
+    const s=r.lottery_status||'未抽籤';
+    counts[s]=(counts[s]||0)+1;
+  });
+  return Object.entries(counts).map(([k,v])=>`${k}：${v}筆`).join('｜');
 }
+
+function performLotteryWithWaitlist(records,winnerCount,waitlistCount){
+  const groups={};
+  records.forEach(r=>{
+    const key=`${normalizePhone(r.phone)}|${r.id_last4||''}|${r.day_of_week}|${r.venue_type}`;
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(r);
+  });
+
+  const arr=Object.values(groups);
+  const shuffled=[...arr].sort(()=>Math.random()-.5);
+
+  const winnerGroups=shuffled.slice(0,Math.min(winnerCount,shuffled.length));
+  const waitGroups=shuffled.slice(winnerGroups.length,winnerGroups.length+Math.max(0,waitlistCount));
+  const loserGroups=shuffled.slice(winnerGroups.length+waitGroups.length);
+
+  return {
+    winners:winnerGroups.flat(),
+    waitlist:waitGroups.flat(),
+    losers:loserGroups.flat()
+  };
+}
+
+function renderLotteryResult(result,title,locked){
+  const box=document.getElementById('lotteryResult');
+  if(!box) return;
+  const renderList=(items,label,color)=>{
+    if(!items.length) return `<div class="small">無${label}</div>`;
+    return `<h4 style="margin:16px 0 8px;color:${color};">${label}（${items.length}筆）</h4>`+
+      items.map((w,i)=>`<div class="account-row">
+        <div>
+          <strong>${i+1}. ${escapeHtml(w.name)}</strong>
+          <div class="small">${escapeHtml(w.phone)}｜後4碼 ${escapeHtml(w.id_last4||'')}｜${escapeHtml(w.venue_type)}｜${escapeHtml(w.day_of_week)}｜${escapeHtml(w.time_slot)}｜#${escapeHtml(w.serial_number)}</div>
+        </div>
+        ${suspiciousTag ? suspiciousTag(w) : ''}
+      </div>`).join('');
+  };
+  box.innerHTML=`<div class="panel" style="background:${locked?'#f0fdf4':'#fffaf0'}">
+    <h3>${title}</h3>
+    ${renderList(result.winners,'中籤','#166534')}
+    ${renderList(result.waitlist,'候補','#9a3412')}
+    ${renderList(result.losers,'未中籤','#475569')}
+  </div>`;
+}
+
 
 function renderAccountsPage(){
   if(currentAdmin.role!=='super_admin') return;
@@ -519,10 +659,10 @@ function resetPassword(id){
 }
 function exportToCsv(records){
   if(!records.length){alert('沒有資料可以匯出');return;}
-  let csv='序號,狀態,姓名,手機,身分證後4碼,地點,運動類型,星期,時段,登記時間\n';
+  let csv='序號,抽籤狀態,鎖定,異常狀態,姓名,手機,身分證後4碼,地點,運動類型,星期,時段,登記時間\n';
   records.forEach(r=>{
     const state=isSuspiciousPhone(r)?'同手機多身分':'正常';
-    csv += `"${r.serial_number||''}","${state}","${r.name||''}","${r.phone||''}","${r.id_last4||''}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
+    csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${r.id_last4||''}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
   });
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`登記清單_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
