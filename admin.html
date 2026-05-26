@@ -334,8 +334,11 @@ function renderCapacityPage(){
         <div id="capTabs" style="display:flex;gap:8px;flex-wrap:wrap;">
           ${venueOrder.map(v=>`<button class="btn ${window.currentCapacityVenue===v?'btn-primary':'btn-gray'} cap-tab" data-venue="${v}">${v}</button>`).join('')}
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button id="fillDefaultCapBtn" class="btn btn-gray">套用預設</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input id="defaultCapValue" type="number" min="0" value="1"
+                 style="width:90px;border:1px solid #d1d5db;border-radius:8px;padding:9px;"
+                 placeholder="名額">
+          <button id="fillDefaultCapBtn" class="btn btn-gray">套用數字</button>
           <button id="clearAllCapBtn" class="btn btn-danger">本頁清為0</button>
           <button id="saveAllCapBtn" class="btn btn-primary">儲存目前類型</button>
         </div>
@@ -420,9 +423,9 @@ function renderBulkCapacityTable(){
 }
 
 function fillDefaultCapacity(){
-  const venue=window.currentCapacityVenue || '羽球';
+  const val = Number(document.getElementById('defaultCapValue').value || 0);
   document.querySelectorAll('.cap-input').forEach(input=>{
-    input.value=capacityMap[venue] ?? 0;
+    input.value = val;
   });
 }
 
