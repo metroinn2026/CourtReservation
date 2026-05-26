@@ -957,6 +957,12 @@
         if (currentSelection.venue && currentSelection.day) {
           renderTimeButtons();
         }
+
+        // 若管理後台目前是開啟狀態，刪除或新增資料後同步重新繪製後台總表
+        const adminModal = document.getElementById('admin-modal');
+        if (adminModal && adminModal.classList.contains('active')) {
+          renderAdminTable();
+        }
       }
     };
 
@@ -1261,7 +1267,7 @@
           capacityInfo.textContent = '已登記此時段';
         } else {
           capacityInfo.style.color = 'var(--primary-blue)';
-          capacityInfo.textContent = `已登${registered}／可抽${winnerCount}`;
+          capacityInfo.textContent = `已報${registered}/可用${winnerCount}`;
         }
         
         if (!btn.disabled) {
@@ -2201,6 +2207,7 @@
             for (const rec of sameSerialRecords) {
               await window.dataSdk.delete(rec);
             }
+            renderAdminTable();
           });
         });
       });
