@@ -917,8 +917,8 @@
      <p>公布後10天內完成繳費（即115年12月20日前）</p>
      <h3>登記注意事項</h3>
      <ul>
-      <li>每個帳號每場地每日期僅能登記一個時段</li>
-      <li>桌球場可連續報名多個時段</li>
+      <li>羽球及籃球每人各限登記一次，不分星期與時段</li>
+      <li>桌球場可登記多個時段，不限制登記次數</li>
       <li>登記時需填寫完整的姓名、手機號碼與身分證後4碼</li>
       <li>登記完成後可在「我的登記紀錄」查看詳細資訊</li>
       <li>如需修改登記內容，請先刪除原登記後重新登記</li>
@@ -1248,10 +1248,11 @@
                                  closedDays.includes(currentSelection.day) && 
                                  closedTimes.includes(time);
         
-        // Check if user already has registration at this time slot on this day
-        const userHasTimeSlotRegistration = allRecords.some(r =>
+        // 桌球不限制重複登記；羽球／籃球才檢查同運動、同星期、同時段
+        const userHasTimeSlotRegistration = isTableTennis ? false : allRecords.some(r =>
           normalizePhoneNumber(r.phone) === currentSelection.phone &&
           (r.id_last4 || '') === currentSelection.id_last4 &&
+          r.venue_type === currentSelection.venue &&
           r.day_of_week === currentSelection.day &&
           r.time_slot.includes(time)
         );
@@ -1395,17 +1396,18 @@
         return;
       }
 
-      const duplicatedPerson = allRecords.some(r =>
+      const isTableTennis = currentSelection.venue.includes('桌球');
+      const limitedSports = ['羽球', '籃球'];
+      const duplicatedPerson = limitedSports.includes(currentSelection.venue) && allRecords.some(r =>
         normalizePhoneNumber(r.phone) === currentSelection.phone &&
-        (r.id_last4 || '') === currentSelection.id_last4
+        (r.id_last4 || '') === currentSelection.id_last4 &&
+        r.venue_type === currentSelection.venue
       );
 
       if (duplicatedPerson) {
-        alert('此手機號碼與身分證後4碼已登記過。如需修改，請先刪除原登記紀錄後重新登記。');
+        alert('此手機號碼與身分證後4碼已登記過此運動類型。羽球與籃球各限登記一次；如需修改，請先刪除原登記紀錄後重新登記。');
         return;
       }
-
-      const isTableTennis = currentSelection.venue.includes('桌球');
       const selectedTimes = isTableTennis 
         ? currentSelection.time.split(', ').filter(t => t.trim())
         : [currentSelection.time];
