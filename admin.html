@@ -325,21 +325,30 @@ function batchDeleteSelectedRecords(){
 }
 
 function renderCapacityPage(){
+  if(!window.currentCapacityVenue) window.currentCapacityVenue='羽球';
   document.getElementById('content').innerHTML=`
     <div class="panel">
       <h3>🎯 抽籤名額設定</h3>
-      <div class="alert">可一次設定全部運動類型、星期與時段名額。輸入完成後，按下「全部儲存」即可一次寫入資料庫。</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
-        <div class="small">說明：空白或 0 代表不開放／不提供名額；前台會顯示「已報 / 可用」。</div>
+      <div class="alert">為避免畫面太複雜，改為一次編輯一種運動類型。請先選擇上方類型，輸入各星期與時段名額後，按「儲存目前類型」。</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+        <div id="capTabs" style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${venueOrder.map(v=>`<button class="btn ${window.currentCapacityVenue===v?'btn-primary':'btn-gray'} cap-tab" data-venue="${v}">${v}</button>`).join('')}
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button id="fillDefaultCapBtn" class="btn btn-gray">套用預設名額</button>
-          <button id="clearAllCapBtn" class="btn btn-danger">全部清為0</button>
-          <button id="saveAllCapBtn" class="btn btn-primary">全部儲存</button>
+          <button id="fillDefaultCapBtn" class="btn btn-gray">套用預設</button>
+          <button id="clearAllCapBtn" class="btn btn-danger">本頁清為0</button>
+          <button id="saveAllCapBtn" class="btn btn-primary">儲存目前類型</button>
         </div>
       </div>
       <div id="bulkCapTable"></div>
     </div>
   `;
+  document.querySelectorAll('.cap-tab').forEach(btn=>{
+    btn.onclick=()=>{
+      window.currentCapacityVenue=btn.dataset.venue;
+      renderCapacityPage();
+    };
+  });
   renderBulkCapacityTable();
   document.getElementById('fillDefaultCapBtn').onclick=()=>fillDefaultCapacity();
   document.getElementById('clearAllCapBtn').onclick=()=>clearAllCapacity();
@@ -348,63 +357,77 @@ function renderCapacityPage(){
 
 function renderBulkCapacityTable(){
   const container=document.getElementById('bulkCapTable');
-  let html='';
-  venueOrder.forEach(venue=>{
-    const times=getTimeOptionsForVenue(venue);
-    html += `
-      <div style="margin-bottom:22px;">
-        <h4 style="margin:0 0 10px;color:var(--blue);font-size:16px;">${venue}</h4>
-        <div class="table-wrap">
-          <table style="min-width:900px;">
-            <thead>
-              <tr>
-                <th style="width:90px;">星期</th>
-                ${times.map(st=>`<th style="text-align:center;">${formatTimeSlotDisplay(st,venue.includes('桌球'))}</th>`).join('')}
-              </tr>
-            </thead>
-            <tbody>
-              ${days.map(day=>`
-                <tr>
-                  <td><strong>${day}</strong></td>
-                  ${times.map(st=>{
-                    const slot=formatTimeSlotDisplay(st,venue.includes('桌球'));
-                    const key=settingKey(venue,day,slot);
-                    const val=capacitySettings[key] ?? capacityMap[venue] ?? 0;
-                    const registered=countSlot(venue,day,st);
-                    return `
-                      <td style="text-align:center;vertical-align:top;">
-                        <input class="cap-input"
-                               data-venue="${venue}"
-                               data-day="${day}"
-                               data-start="${st}"
-                               data-slot="${slot}"
-                               type="number"
-                               min="0"
-                               value="${val}"
-                               style="width:72px;text-align:center;border:1px solid #d1d5db;border-radius:8px;padding:7px;">
-                        <div class="small" style="margin-top:4px;color:var(--blue);">已報${registered}</div>
-                      </td>`;
-                  }).join('')}
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
+  const venue=window.currentCapacityVenue || '羽球';
+  const times=getTimeOptionsForVenue(venue);
+
+  const totalSettings = days.length * times.length;
+  let filledCount = 0;
+  let totalCapacity = 0;
+  days.forEach(day=>{
+    times.forEach(st=>{
+      const slot=formatTimeSlotDisplay(st,venue.includes('桌球'));
+      const key=settingKey(venue,day,slot);
+      const val=Number(capacitySettings[key] ?? capacityMap[venue] ?? 0);
+      if(val>0) filledCount++;
+      totalCapacity += val;
+    });
   });
+
+  let html=`
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+      <div class="stat" style="padding:14px;"><div class="label">目前類型</div><div class="num" style="font-size:22px;">${venue}</div></div>
+      <div class="stat" style="padding:14px;"><div class="label">已設定格數</div><div class="num" style="font-size:22px;color:var(--green);">${filledCount}/${totalSettings}</div></div>
+      <div class="stat" style="padding:14px;"><div class="label">總可用名額</div><div class="num" style="font-size:22px;color:var(--orange);">${totalCapacity}</div></div>
+    </div>
+    <div class="table-wrap">
+      <table style="min-width:760px;">
+        <thead>
+          <tr>
+            <th style="width:90px;">星期</th>
+            ${times.map(st=>`<th style="text-align:center;">${formatTimeSlotDisplay(st,venue.includes('桌球'))}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${days.map(day=>`
+            <tr>
+              <td><strong>${day}</strong></td>
+              ${times.map(st=>{
+                const slot=formatTimeSlotDisplay(st,venue.includes('桌球'));
+                const key=settingKey(venue,day,slot);
+                const val=capacitySettings[key] ?? capacityMap[venue] ?? 0;
+                const registered=countSlot(venue,day,st);
+                return `
+                  <td style="text-align:center;vertical-align:top;background:${registered>0?'#f8fafc':'white'};">
+                    <input class="cap-input"
+                           data-venue="${venue}"
+                           data-day="${day}"
+                           data-start="${st}"
+                           data-slot="${slot}"
+                           type="number"
+                           min="0"
+                           value="${val}"
+                           style="width:64px;text-align:center;border:1px solid #d1d5db;border-radius:8px;padding:7px;">
+                    <div class="small" style="margin-top:4px;color:${registered>0?'var(--blue)':'#94a3b8'};">已報${registered}</div>
+                  </td>`;
+              }).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
   container.innerHTML=html;
 }
 
 function fillDefaultCapacity(){
+  const venue=window.currentCapacityVenue || '羽球';
   document.querySelectorAll('.cap-input').forEach(input=>{
-    const venue=input.dataset.venue;
     input.value=capacityMap[venue] ?? 0;
   });
 }
 
 function clearAllCapacity(){
-  if(!confirm('確定要把畫面上全部名額清為 0 嗎？尚未按「全部儲存」前不會寫入資料庫。')) return;
+  if(!confirm('確定要把目前類型的名額清為 0 嗎？尚未按「儲存目前類型」前不會寫入資料庫。')) return;
   document.querySelectorAll('.cap-input').forEach(input=>input.value=0);
 }
 
@@ -427,7 +450,7 @@ async function saveAllCapacity(){
   const {error}=await db.from(CAPACITY_TABLE).upsert(rows,{onConflict:'venue_type,day_of_week,time_slot'});
 
   btn.disabled=false;
-  btn.textContent='全部儲存';
+  btn.textContent='儲存目前類型';
 
   if(error){
     alert('名額儲存失敗，請稍後再試');
@@ -435,7 +458,7 @@ async function saveAllCapacity(){
     return;
   }
 
-  alert(`已儲存 ${rows.length} 筆名額設定`);
+  alert(`已儲存 ${window.currentCapacityVenue || ''} 共 ${rows.length} 筆名額設定`);
   await loadAllData();
   renderCapacityPage();
 }
