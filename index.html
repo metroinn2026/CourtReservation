@@ -133,6 +133,7 @@
             const cleanRecord = {
               name: record.name,
               phone: record.phone,
+              id_last4: record.id_last4 || '',
               location_name: record.location_name,
               venue_type: record.venue_type,
               day_of_week: record.day_of_week,
@@ -201,6 +202,7 @@
               ? records.map((record) => ({
                   name: record.name,
                   phone: record.phone,
+                  id_last4: record.id_last4 || '',
                   location_name: record.location_name,
                   venue_type: record.venue_type,
                   day_of_week: record.day_of_week,
@@ -809,7 +811,7 @@
    <div class="phone-frame">
     <div class="header">
      <h1 id="app-title">長租場地抽籤登記</h1>
-     <div style="display: none; gap: 8px;" id="header-buttons"><button class="admin-toggle-btn" id="rules-btn">📋 登記辦法</button>
+     <div style="display: none; gap: 8px;" id="header-buttons"><button class="admin-toggle-btn" id="rules-btn">📋 登記辦法</button> <button class="admin-toggle-btn" id="admin-btn">管理</button>
      </div>
     </div>
     <div class="phone-content">
@@ -822,6 +824,9 @@
        </div>
        <div class="form-group">
         <label for="member-phone">手機號碼 *</label> <input type="tel" id="member-phone" placeholder="09xx-xxx-xxx">
+       </div>
+       <div class="form-group">
+        <label for="member-id-last4">身分證後4碼 *</label> <input type="text" id="member-id-last4" maxlength="4" inputmode="numeric" placeholder="請輸入身分證後4碼">
        </div><button class="btn btn-primary" id="verify-btn">查詢我的登記</button>
        <div id="verification-message"></div>
       </div>
@@ -860,6 +865,8 @@
        </div>
        <div class="summary-item"><span>手機</span><span class="summary-value" id="summary-phone">-</span>
        </div>
+       <div class="summary-item"><span>身分證後4碼</span><span class="summary-value" id="summary-id-last4">-</span>
+       </div>
        <div class="summary-item"><span>地點</span><span class="summary-value" id="summary-location">-</span>
        </div>
        <div class="summary-item"><span>運動類型</span><span class="summary-value" id="summary-venue">-</span>
@@ -885,6 +892,16 @@
      <button class="confirm-btn confirm-btn-cancel" id="confirm-cancel">取消</button> <button class="confirm-btn confirm-btn-delete" id="confirm-delete">確認刪除</button>
     </div>
    </div>
+  </div><!-- Admin Modal -->
+  <div class="admin-modal" id="admin-modal">
+   <div class="modal-content">
+    <div class="modal-header">
+     <h2 id="admin-title" style="margin: 0; color: var(--primary-blue);">管理後台</h2><button class="modal-close" id="close-admin">✕</button>
+    </div>
+    <div class="modal-body">
+     <div id="admin-content"></div>
+    </div>
+   </div>
   </div><!-- Rules Modal -->
   <div class="rules-modal" id="rules-modal">
    <div class="rules-content">
@@ -902,7 +919,7 @@
      <ul>
       <li>每個帳號每場地每日期僅能登記一個時段</li>
       <li>桌球場可連續報名多個時段</li>
-      <li>登記時需填寫完整的姓名與手機號碼</li>
+      <li>登記時需填寫完整的姓名、手機號碼與身分證後4碼</li>
       <li>登記完成後可在「我的登記紀錄」查看詳細資訊</li>
       <li>如需修改登記內容，請先刪除原登記後重新登記</li>
      </ul>
@@ -923,6 +940,7 @@
     let currentSelection = {
       name: '',
       phone: '',
+      id_last4: '',
       location: '',
       venue: '',
       day: '',
@@ -930,7 +948,6 @@
     };
 
     let pendingDeleteRecord = null;
-    let adminTableState = { page: 1, pageSize: 20, search: '' };
 
     // Capacity info by venue type
     const capacityMap = {
@@ -997,6 +1014,34 @@
     }
 
     // ===== Functions =====
+    function normalizePhoneNumber(value) {
+      let phone = String(value || '').replace(/\D/g, '');
+      if (phone.startsWith('8869') && phone.length === 12) {
+        phone = '0' + phone.slice(3);
+      }
+      return phone;
+    }
+
+    function getPersonKey(record) {
+      return `${normalizePhoneNumber(record.phone)}|${record.id_last4 || ''}`;
+    }
+
+    function detectSuspiciousPhones(records = allRecords) {
+      const grouped = {};
+      (records || []).forEach(r => {
+        const phone = normalizePhoneNumber(r.phone);
+        const last4 = r.id_last4 || '';
+        if (!phone || !last4) return;
+        if (!grouped[phone]) grouped[phone] = new Set();
+        grouped[phone].add(last4);
+      });
+      const suspicious = {};
+      Object.entries(grouped).forEach(([phone, ids]) => {
+        if (ids.size >= 2) suspicious[phone] = true;
+      });
+      return suspicious;
+    }
+
     function showConfirmDelete(record, callback) {
       pendingDeleteRecord = record;
       document.getElementById('confirm-modal').classList.add('active');
@@ -1176,8 +1221,8 @@
       const closedTimes = ['16:00', '18:00'];
       
       const userHasRegistration = isTableTennis ? false : allRecords.some(r => 
-        r.name === currentSelection.name && 
-        r.phone === currentSelection.phone && 
+        normalizePhoneNumber(r.phone) === currentSelection.phone && 
+        (r.id_last4 || '') === currentSelection.id_last4 && 
         r.venue_type === currentSelection.venue
       );
       
@@ -1205,8 +1250,8 @@
         
         // Check if user already has registration at this time slot on this day
         const userHasTimeSlotRegistration = allRecords.some(r =>
-          r.name === currentSelection.name &&
-          r.phone === currentSelection.phone &&
+          normalizePhoneNumber(r.phone) === currentSelection.phone &&
+          (r.id_last4 || '') === currentSelection.id_last4 &&
           r.day_of_week === currentSelection.day &&
           r.time_slot.includes(time)
         );
@@ -1346,7 +1391,17 @@
     }
 
     async function submitRegistration() {
-      if (!currentSelection.name || !currentSelection.phone || !currentSelection.location || !currentSelection.venue || !currentSelection.day || !currentSelection.time) {
+      if (!currentSelection.name || !currentSelection.phone || !currentSelection.id_last4 || !currentSelection.location || !currentSelection.venue || !currentSelection.day || !currentSelection.time) {
+        return;
+      }
+
+      const duplicatedPerson = allRecords.some(r =>
+        normalizePhoneNumber(r.phone) === currentSelection.phone &&
+        (r.id_last4 || '') === currentSelection.id_last4
+      );
+
+      if (duplicatedPerson) {
+        alert('此手機號碼與身分證後4碼已登記過。如需修改，請先刪除原登記紀錄後重新登記。');
         return;
       }
 
@@ -1364,6 +1419,7 @@
           const result = await window.dataSdk.create({
             name: currentSelection.name,
             phone: currentSelection.phone,
+            id_last4: currentSelection.id_last4,
             location_name: currentSelection.location,
             venue_type: currentSelection.venue,
             day_of_week: currentSelection.day,
@@ -1382,6 +1438,7 @@
         const result = await window.dataSdk.create({
           name: currentSelection.name,
           phone: currentSelection.phone,
+          id_last4: currentSelection.id_last4,
           location_name: currentSelection.location,
           venue_type: currentSelection.venue,
           day_of_week: currentSelection.day,
@@ -1411,6 +1468,8 @@
     function updateSummary() {
       document.getElementById('summary-name').textContent = currentSelection.name || '-';
       document.getElementById('summary-phone').textContent = currentSelection.phone || '-';
+      const summaryIdLast4 = document.getElementById('summary-id-last4');
+      if (summaryIdLast4) summaryIdLast4.textContent = currentSelection.id_last4 || '-';
       document.getElementById('summary-location').textContent = currentSelection.location || '-';
       document.getElementById('summary-venue').textContent = currentSelection.venue || '-';
       document.getElementById('summary-day').textContent = currentSelection.day || '-';
@@ -1436,8 +1495,8 @@
       const container = document.getElementById('records-list');
       if (!container) return;
       
-      const currentUser = `${currentSelection.name}|${currentSelection.phone}`;
-      const userRecords = allRecords.filter(r => `${r.name}|${r.phone}` === currentUser);
+      const currentUserKey = `${currentSelection.phone}|${currentSelection.id_last4}`;
+      const userRecords = allRecords.filter(r => `${normalizePhoneNumber(r.phone)}|${r.id_last4 || ''}` === currentUserKey);
       
       if (userRecords.length === 0) {
         container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">目前查無登記紀錄，請接續選擇場地與時段進行登記。</div>';
@@ -1638,7 +1697,7 @@
       
       const groupedByPersonDayVenue = {};
       records.forEach(r => {
-        const key = `${r.name}|${r.phone}|${r.day_of_week}|${r.venue_type}`;
+        const key = `${normalizePhoneNumber(r.phone)}|${r.id_last4 || ''}|${r.day_of_week}|${r.venue_type}`;
         if (!groupedByPersonDayVenue[key]) {
           groupedByPersonDayVenue[key] = [];
         }
@@ -1660,7 +1719,8 @@
     function exportToExcel(records) {
       if (records.length === 0) return;
       
-      let csv = '序號,姓名,手機,地點,運動類型,日期,時段,登記時間\n';
+      const suspiciousPhones = detectSuspiciousPhones(records);
+      let csv = '序號,姓名,手機,身分證後4碼,異常標記,地點,運動類型,日期,時段,登記時間\n';
       
       records.forEach(r => {
         const regDate = new Date(r.registered_at).toLocaleString('zh-TW', { 
@@ -1672,7 +1732,8 @@
           hour12: false
         });
         
-        csv += `"${r.serial_number}","${r.name}","${r.phone}","${r.location_name}","${r.venue_type}","${r.day_of_week}","${r.time_slot}","${regDate}"\n`;
+        const isSuspicious = suspiciousPhones[normalizePhoneNumber(r.phone)] ? '同手機不同身分證後4碼' : '';
+        csv += `"${r.serial_number}","${r.name}","${r.phone}","${r.id_last4 || ''}","${isSuspicious}","${r.location_name}","${r.venue_type}","${r.day_of_week}","${r.time_slot}","${regDate}"\n`;
       });
       
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -1859,7 +1920,7 @@
 
     function calculateDetailedStats(records = allRecords) {
       const totalRegistrations = records.length;
-      const uniqueUsers = new Set(records.map(r => r.phone)).size;
+      const uniqueUsers = new Set(records.map(r => `${normalizePhoneNumber(r.phone)}|${r.id_last4 || ''}`)).size;
       
       const timeMap = {
         '06:00': 6, '08:00': 8, '10:00': 10, '12:00': 12, '14:00': 14, '16:00': 16, '18:00': 18, '20:00': 20,
@@ -1890,7 +1951,7 @@
           };
         }
         byVenue[r.venue_type].count++;
-        byVenue[r.venue_type].people.add(r.phone);
+        byVenue[r.venue_type].people.add(`${normalizePhoneNumber(r.phone)}|${r.id_last4 || ''}`);
         
         if (r.time_slot.includes('-')) {
           const [startTime, endTime] = r.time_slot.split('-');
@@ -2030,7 +2091,6 @@
       const chartDateFilter = document.getElementById('chart-date-filter');
       
       function updateTable() {
-        adminTableState.page = 1;
         const filtered = applyFilters(
           filterVenue.value,
           filterDay.value,
@@ -2132,55 +2192,30 @@
 
     function renderDataTable(records) {
       const container = document.getElementById('data-table-container');
-      if (!container) return;
-
-      const sourceRecords = Array.isArray(records) ? records : [];
-      const query = (adminTableState.search || '').trim().toLowerCase();
-      const searchedRecords = query
-        ? sourceRecords.filter(r => [r.serial_number, r.name, r.phone, r.location_name, r.venue_type, r.day_of_week, r.time_slot]
-            .some(v => String(v || '').toLowerCase().includes(query)))
-        : sourceRecords;
-
-      const total = searchedRecords.length;
-      const pageSize = Number(adminTableState.pageSize || 20);
-      const totalPages = Math.max(1, Math.ceil(total / pageSize));
-      adminTableState.page = Math.min(Math.max(1, Number(adminTableState.page || 1)), totalPages);
-      const startIndex = (adminTableState.page - 1) * pageSize;
-      const pageRecords = searchedRecords.slice(startIndex, startIndex + pageSize);
-
+      
+      if (records.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">無符合條件的記錄</div>';
+        return;
+      }
+      
       const timeMap = {
         '06:00': 6, '08:00': 8, '10:00': 10, '12:00': 12, '14:00': 14, '16:00': 16, '18:00': 18, '20:00': 20,
         '09:00': 9, '11:00': 11, '13:00': 13, '15:00': 15, '17:00': 17, '19:00': 19, '21:00': 21
       };
-
-      let html = `
-        <div style="margin-bottom: 12px; padding: 12px; background: #e5f2f7; border-radius: 8px; display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;">
-          <input id="admin-search-input" type="text" value="${adminTableState.search || ''}" placeholder="搜尋姓名／手機／序號／場地" style="width: 100%; padding: 9px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
-          <select id="admin-page-size" style="padding: 9px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
-            ${[20, 50, 100].map(size => `<option value="${size}" ${pageSize === size ? 'selected' : ''}>每頁${size}筆</option>`).join('')}
-          </select>
-          <div style="font-size: 12px; color: var(--primary-blue); font-weight: 700; white-space: nowrap;">共 ${total} 筆</div>
-        </div>
-      `;
-
-      if (sourceRecords.length === 0) {
-        html += '<div style="text-align: center; color: #999; padding: 20px;">無符合條件的記錄</div>';
-        container.innerHTML = html;
-        bindAdminTableControls(records);
-        return;
-      }
-
-      if (searchedRecords.length === 0) {
-        html += '<div style="text-align: center; color: #999; padding: 20px;">查無符合搜尋條件的記錄</div>';
-        container.innerHTML = html;
-        bindAdminTableControls(records);
-        return;
-      }
-
-      html += `<div style="margin-bottom: 12px; padding: 10px; background: #f8fafc; border-radius: 6px; font-size: 12px; color: #333; font-weight: 600;">顯示第 ${startIndex + 1}–${Math.min(startIndex + pageSize, total)} 筆，共 ${total} 筆</div>`;
-      html += '<div style="overflow-x: auto;"><table style="width: 100%; min-width: 920px; border-collapse: collapse; font-size: 13px;"><thead><tr style="background: #f9f9f9;"><th style="padding: 10px; text-align: center; border-bottom: 2px solid #e5e7eb;">項次</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">序號</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">姓名</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">手機</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">類型</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">日期</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">時段</th><th style="padding: 10px; text-align: center; border-bottom: 2px solid #e5e7eb;">登記總時數</th><th style="padding: 10px; text-align: center; border-bottom: 2px solid #e5e7eb;">操作</th></tr></thead><tbody>';
-
-      pageRecords.forEach((r, idx) => {
+      
+      const recordsByPerson = {};
+      records.forEach(r => {
+        const key = `${r.name}|${r.phone}`;
+        if (!recordsByPerson[key]) {
+          recordsByPerson[key] = [];
+        }
+        recordsByPerson[key].push(r);
+      });
+      
+      let html = `<div style="margin-bottom: 12px; padding: 10px; background: #e5f2f7; border-radius: 6px; font-size: 12px; color: var(--primary-blue); font-weight: 600;">共 ${records.length} 筆登記資料</div>`;
+      html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px;"><thead><tr style="background: #f9f9f9;"><th style="padding: 10px; text-align: center; border-bottom: 2px solid #e5e7eb;">項次</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">序號</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">姓名</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">手機</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">身分證後4碼</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">異常</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">類型</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">日期</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">時段</th><th style="padding: 10px; text-align: center; border-bottom: 2px solid #e5e7eb;">登記總時數</th><th style="padding: 10px; text-align: center; border-bottom: 2px solid #e5e7eb;">操作</th></tr></thead><tbody>';
+      
+      records.forEach((r, idx) => {
         let recordHours = 0;
         if (r.time_slot.includes('-')) {
           const [startTime, endTime] = r.time_slot.split('-');
@@ -2192,39 +2227,37 @@
           const isTableTennis = r.venue_type.includes('桌球');
           recordHours = isTableTennis ? 1 : 2;
         }
-
+        
+        let displayTime = r.time_slot;
+        
         html += `<tr style="border-bottom: 1px solid #e5e7eb; background: ${idx % 2 ? '#fff' : '#fafafa'};">
-          <td style="padding: 10px; text-align: center; font-weight: 700; color: var(--primary-blue);">${startIndex + idx + 1}</td>
+          <td style="padding: 10px; text-align: center; font-weight: 700; color: var(--primary-blue);">${idx + 1}</td>
           <td style="padding: 10px; font-weight: 700; color: #333;">${r.serial_number}</td>
           <td style="padding: 10px;">${r.name}</td>
           <td style="padding: 10px;">${r.phone}</td>
+          <td style="padding: 10px;">${r.id_last4 || '-'}</td>
+          <td style="padding: 10px; color: #b45309; font-weight: 700;">${suspiciousPhones[normalizePhoneNumber(r.phone)] ? '⚠️同手機多身分' : ''}</td>
           <td style="padding: 10px; font-weight: 600; color: var(--primary-blue);">${r.venue_type}</td>
           <td style="padding: 10px;">${r.day_of_week}</td>
-          <td style="padding: 10px; color: var(--primary-blue); font-weight: 600;">${r.time_slot}</td>
+          <td style="padding: 10px; color: var(--primary-blue); font-weight: 600;">${displayTime}</td>
           <td style="padding: 10px; text-align: center; color: #40AF36; font-weight: 600;">${recordHours}小時</td>
           <td style="padding: 10px; text-align: center;"><button data-id="${r.__backendId}" class="admin-delete" style="background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">刪除</button></td>
         </tr>`;
       });
-
-      html += '</tbody></table></div>';
-      html += `
-        <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap;">
-          <button id="admin-prev-page" ${adminTableState.page <= 1 ? 'disabled' : ''} style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer;">上一頁</button>
-          <span style="font-size: 13px; font-weight: 700; color: #333;">第 ${adminTableState.page} / ${totalPages} 頁</span>
-          <button id="admin-next-page" ${adminTableState.page >= totalPages ? 'disabled' : ''} style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer;">下一頁</button>
-        </div>
-      `;
+      
+      html += '</tbody></table>';
       container.innerHTML = html;
-      bindAdminTableControls(records);
-
+      
       document.querySelectorAll('.admin-delete').forEach(btn => {
         btn.addEventListener('click', async () => {
           const record = allRecords.find(r => r.__backendId === btn.dataset.id);
           if (!record) return;
-
+          
           showConfirmDelete(record, async (recordToDelete) => {
             btn.disabled = true;
+            
             const sameSerialRecords = allRecords.filter(r => r.serial_number === recordToDelete.serial_number);
+            
             for (const rec of sameSerialRecords) {
               await window.dataSdk.delete(rec);
             }
@@ -2232,42 +2265,6 @@
           });
         });
       });
-    }
-
-    function bindAdminTableControls(records) {
-      const searchInput = document.getElementById('admin-search-input');
-      const pageSizeSelect = document.getElementById('admin-page-size');
-      const prevBtn = document.getElementById('admin-prev-page');
-      const nextBtn = document.getElementById('admin-next-page');
-
-      if (searchInput) {
-        searchInput.addEventListener('input', () => {
-          adminTableState.search = searchInput.value;
-          adminTableState.page = 1;
-          renderDataTable(records);
-        });
-      }
-      if (pageSizeSelect) {
-        pageSizeSelect.addEventListener('change', () => {
-          adminTableState.pageSize = Number(pageSizeSelect.value || 20);
-          adminTableState.page = 1;
-          renderDataTable(records);
-        });
-      }
-      if (prevBtn) {
-        prevBtn.addEventListener('click', () => {
-          if (adminTableState.page > 1) {
-            adminTableState.page -= 1;
-            renderDataTable(records);
-          }
-        });
-      }
-      if (nextBtn) {
-        nextBtn.addEventListener('click', () => {
-          adminTableState.page += 1;
-          renderDataTable(records);
-        });
-      }
     }
 
     function generateChart(records = null) {
@@ -2389,12 +2386,30 @@
           e.preventDefault();
           const nameEl = document.getElementById('member-name');
           const phoneEl = document.getElementById('member-phone');
+          const idLast4El = document.getElementById('member-id-last4');
           const name = nameEl.value.trim();
-          const phone = phoneEl.value.trim();
+          const phone = normalizePhoneNumber(phoneEl.value);
+          const idLast4 = idLast4El ? idLast4El.value.trim() : '';
+          const msg = document.getElementById('verification-message');
 
-          if (!name || !phone) {
-            const msg = document.getElementById('verification-message');
-            msg.textContent = '請填寫姓名和手機號碼';
+          if (!name || !phone || !idLast4) {
+            msg.textContent = '請填寫姓名、手機號碼和身分證後4碼';
+            msg.style.backgroundColor = '#FEE2E2';
+            msg.style.color = '#7F1D1D';
+            msg.style.display = 'block';
+            return;
+          }
+
+          if (!/^09\d{8}$/.test(phone)) {
+            msg.textContent = '請輸入正確的手機號碼格式，例如 0912345678';
+            msg.style.backgroundColor = '#FEE2E2';
+            msg.style.color = '#7F1D1D';
+            msg.style.display = 'block';
+            return;
+          }
+
+          if (!/^\d{4}$/.test(idLast4)) {
+            msg.textContent = '請輸入正確的身分證後4碼';
             msg.style.backgroundColor = '#FEE2E2';
             msg.style.color = '#7F1D1D';
             msg.style.display = 'block';
@@ -2403,6 +2418,7 @@
 
           currentSelection.name = name;
           currentSelection.phone = phone;
+          currentSelection.id_last4 = idLast4;
 
           const verifyForm = document.getElementById('verify-form');
           const memberDisplay = document.getElementById('member-display');
@@ -2419,7 +2435,8 @@
           const displayName = document.getElementById('display-name');
           const displayPhone = document.getElementById('display-phone');
           if (displayName) displayName.textContent = name;
-          if (displayPhone) displayPhone.textContent = phone;
+          if (phoneEl) phoneEl.value = phone;
+          if (displayPhone) displayPhone.textContent = `${phone}｜後4碼 ${idLast4}`;
 
           // Show all sections
           if (locationSection) locationSection.style.display = 'block';
@@ -2474,12 +2491,14 @@
           const recordsSection = document.getElementById('records-section');
           const nameEl = document.getElementById('member-name');
           const phoneEl = document.getElementById('member-phone');
+          const idLast4El = document.getElementById('member-id-last4');
           const verificationMessage = document.getElementById('verification-message');
 
           if (verifyForm) verifyForm.style.display = 'block';
           if (memberDisplay) memberDisplay.style.display = 'none';
           if (nameEl) nameEl.value = '';
           if (phoneEl) phoneEl.value = '';
+          if (idLast4El) idLast4El.value = '';
           if (verificationMessage) verificationMessage.style.display = 'none';
           if (locationSection) locationSection.style.display = 'none';
           if (venueSection) venueSection.style.display = 'none';
@@ -2492,13 +2511,31 @@
           const headerButtons = document.getElementById('header-buttons');
           if (headerButtons) headerButtons.style.display = 'none';
           
-          currentSelection = { name: '', phone: '', location: '', venue: '', day: '', time: '' };
+          currentSelection = { name: '', phone: '', id_last4: '', location: '', venue: '', day: '', time: '' };
           disableVenueButtons();
           disableDateButtons();
           disableTimeButtons();
         });
       }
 
+      if (adminBtn) {
+        adminBtn.addEventListener('click', () => {
+          const adminPassword = 'MRT_Beitou@2026!';
+          const inputPassword = prompt('請輸入管理密碼');
+
+          if (inputPassword === null) {
+            return;
+          }
+
+          if (inputPassword !== adminPassword) {
+            alert('密碼錯誤，請重新輸入。');
+            return;
+          }
+
+          if (adminModal) adminModal.classList.add('active');
+          renderAdminTable();
+        });
+      }
 
       if (rulesBtn) {
         rulesBtn.addEventListener('click', () => {
