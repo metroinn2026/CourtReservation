@@ -2123,6 +2123,18 @@
 
       if (adminBtn) {
         adminBtn.addEventListener('click', () => {
+          const adminPassword = 'metro2026';
+          const inputPassword = prompt('請輸入管理密碼');
+
+          if (inputPassword === null) {
+            return;
+          }
+
+          if (inputPassword !== adminPassword) {
+            alert('密碼錯誤，請重新輸入。');
+            return;
+          }
+
           if (adminModal) adminModal.classList.add('active');
           renderAdminTable();
         });
