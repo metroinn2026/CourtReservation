@@ -1042,6 +1042,10 @@
       return suspicious;
     }
 
+    function normalizePhone(value) {
+      return String(value || '').replace(/\D/g, '').replace(/^886/, '0');
+    }
+
     function showConfirmDelete(record, callback) {
       pendingDeleteRecord = record;
       document.getElementById('confirm-modal').classList.add('active');
