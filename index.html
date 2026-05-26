@@ -133,6 +133,7 @@
             const cleanRecord = {
               name: record.name,
               phone: record.phone,
+              id_last4: record.id_last4,
               id_last4: record.id_last4 || '',
               location_name: record.location_name,
               venue_type: record.venue_type,
@@ -202,6 +203,7 @@
               ? records.map((record) => ({
                   name: record.name,
                   phone: record.phone,
+                  id_last4: record.id_last4,
                   id_last4: record.id_last4 || '',
                   location_name: record.location_name,
                   venue_type: record.venue_type,
@@ -1042,11 +1044,17 @@
       return suspicious;
     }
 
+    
     function normalizePhone(value) {
       return String(value || '').replace(/\D/g, '').replace(/^886/, '0');
     }
 
-    function showConfirmDelete(record, callback) {
+    function samePersonRecord(record) {
+      return normalizePhone(record.phone) === normalizePhone(currentSelection.phone) &&
+             String(record.id_last4 || '') === String(currentSelection.id_last4 || '');
+    }
+
+        function showConfirmDelete(record, callback) {
       pendingDeleteRecord = record;
       document.getElementById('confirm-modal').classList.add('active');
       
@@ -1224,12 +1232,11 @@
       const closedDays = ['周一', '周二', '周三', '周四'];
       const closedTimes = ['16:00', '18:00'];
       
-      const userHasRegistration = isTableTennis ? false : allRecords.some(r => 
-        normalizePhoneNumber(r.phone) === currentSelection.phone && 
-        (r.id_last4 || '') === currentSelection.id_last4 && 
-        r.venue_type === currentSelection.venue
-      );
-      
+      const userHasRegistration =
+        (currentSelection.venue === '羽球' || currentSelection.venue === '籃球')
+          ? allRecords.some(r => samePersonRecord(r) && r.venue_type === currentSelection.venue)
+          : false;
+
       const hintText = isTableTennis 
         ? '本場地以1小時為單位進行登記，不限時數'
         : userHasRegistration
@@ -1317,13 +1324,11 @@
               btn.classList.toggle('selected');
               updateTimeSelection();
             } else {
-              if (!userHasRegistration) {
-                document.querySelectorAll('#time-buttons .button-option').forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
-                currentSelection.time = time;
-                updateSummary();
-                document.getElementById('summary-section').style.display = 'block';
-              }
+              document.querySelectorAll('#time-buttons .button-option').forEach(b => b.classList.remove('selected'));
+              btn.classList.add('selected');
+              currentSelection.time = time;
+              updateSummary();
+              document.getElementById('summary-section').style.display = 'block';
             }
           });
         }
@@ -2393,6 +2398,7 @@
           const nameEl = document.getElementById('member-name');
           const phoneEl = document.getElementById('member-phone');
           const idLast4El = document.getElementById('member-id-last4');
+          const idLast4El = document.getElementById('member-id-last4');
           const name = nameEl.value.trim();
           const phone = normalizePhoneNumber(phoneEl.value);
           const idLast4 = idLast4El ? idLast4El.value.trim() : '';
@@ -2504,6 +2510,7 @@
           if (memberDisplay) memberDisplay.style.display = 'none';
           if (nameEl) nameEl.value = '';
           if (phoneEl) phoneEl.value = '';
+          if (idLast4El) idLast4El.value = '';
           if (idLast4El) idLast4El.value = '';
           if (verificationMessage) verificationMessage.style.display = 'none';
           if (locationSection) locationSection.style.display = 'none';
