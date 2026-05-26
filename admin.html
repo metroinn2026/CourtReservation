@@ -325,27 +325,119 @@ function batchDeleteSelectedRecords(){
 }
 
 function renderCapacityPage(){
-  document.getElementById('content').innerHTML=`<div class="panel"><h3>🎯 抽籤名額設定</h3><div class="inline-form"><div><label class="small">運動類型</label><select id="capVenue">${venueOrder.map(v=>`<option>${v}</option>`).join('')}</select></div><div><label class="small">星期</label><select id="capDay">${days.map(d=>`<option>${d}</option>`).join('')}</select></div><div><label class="small">時段</label><select id="capTime"></select></div><div><label class="small">抽籤名額</label><input id="capCount" type="number" min="0" value="1"></div><div></div><button id="saveCapBtn" class="btn btn-primary">儲存</button></div><div id="capInfo" class="msg info"></div></div><div class="panel"><h3>目前已設定名額</h3><div id="capList"></div></div>`;
-  setupCapacityControls();
+  document.getElementById('content').innerHTML=`
+    <div class="panel">
+      <h3>🎯 抽籤名額設定</h3>
+      <div class="alert">可一次設定全部運動類型、星期與時段名額。輸入完成後，按下「全部儲存」即可一次寫入資料庫。</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+        <div class="small">說明：空白或 0 代表不開放／不提供名額；前台會顯示「已報 / 可用」。</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button id="fillDefaultCapBtn" class="btn btn-gray">套用預設名額</button>
+          <button id="clearAllCapBtn" class="btn btn-danger">全部清為0</button>
+          <button id="saveAllCapBtn" class="btn btn-primary">全部儲存</button>
+        </div>
+      </div>
+      <div id="bulkCapTable"></div>
+    </div>
+  `;
+  renderBulkCapacityTable();
+  document.getElementById('fillDefaultCapBtn').onclick=()=>fillDefaultCapacity();
+  document.getElementById('clearAllCapBtn').onclick=()=>clearAllCapacity();
+  document.getElementById('saveAllCapBtn').onclick=()=>saveAllCapacity();
 }
-function setupCapacityControls(){
-  const v=document.getElementById('capVenue'), d=document.getElementById('capDay'), t=document.getElementById('capTime'), c=document.getElementById('capCount');
-  function refreshTimes(){ t.innerHTML=getTimeOptionsForVenue(v.value).map(x=>`<option value="${x}">${formatTimeSlotDisplay(x,v.value.includes('桌球'))}</option>`).join(''); refreshInfo(); }
-  function refreshInfo(){ const slot=formatTimeSlotDisplay(t.value,v.value.includes('桌球')); const key=settingKey(v.value,d.value,slot); const val=capacitySettings[key] ?? capacityMap[v.value] ?? 0; c.value=val; document.getElementById('capInfo').innerHTML=`${v.value}｜${d.value}｜${slot}：已報 ${countSlot(v.value,d.value,t.value)} / 可用 ${val}`; }
-  [v,d,t].forEach(el=>el.onchange=el===v?refreshTimes:refreshInfo);
-  document.getElementById('saveCapBtn').onclick=async()=>{
-    const slot=formatTimeSlotDisplay(t.value,v.value.includes('桌球'));
-    const payload={venue_type:v.value,day_of_week:d.value,time_slot:slot,winner_count:Number(c.value||0),updated_at:new Date().toISOString()};
-    const {error}=await db.from(CAPACITY_TABLE).upsert(payload,{onConflict:'venue_type,day_of_week,time_slot'});
-    if(error){alert('儲存失敗');console.error(error);return;}
-    await loadAllData(); renderCapacityPage();
-  };
-  refreshTimes(); renderCapacityList();
+
+function renderBulkCapacityTable(){
+  const container=document.getElementById('bulkCapTable');
+  let html='';
+  venueOrder.forEach(venue=>{
+    const times=getTimeOptionsForVenue(venue);
+    html += `
+      <div style="margin-bottom:22px;">
+        <h4 style="margin:0 0 10px;color:var(--blue);font-size:16px;">${venue}</h4>
+        <div class="table-wrap">
+          <table style="min-width:900px;">
+            <thead>
+              <tr>
+                <th style="width:90px;">星期</th>
+                ${times.map(st=>`<th style="text-align:center;">${formatTimeSlotDisplay(st,venue.includes('桌球'))}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${days.map(day=>`
+                <tr>
+                  <td><strong>${day}</strong></td>
+                  ${times.map(st=>{
+                    const slot=formatTimeSlotDisplay(st,venue.includes('桌球'));
+                    const key=settingKey(venue,day,slot);
+                    const val=capacitySettings[key] ?? capacityMap[venue] ?? 0;
+                    const registered=countSlot(venue,day,st);
+                    return `
+                      <td style="text-align:center;vertical-align:top;">
+                        <input class="cap-input"
+                               data-venue="${venue}"
+                               data-day="${day}"
+                               data-start="${st}"
+                               data-slot="${slot}"
+                               type="number"
+                               min="0"
+                               value="${val}"
+                               style="width:72px;text-align:center;border:1px solid #d1d5db;border-radius:8px;padding:7px;">
+                        <div class="small" style="margin-top:4px;color:var(--blue);">已報${registered}</div>
+                      </td>`;
+                  }).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  });
+  container.innerHTML=html;
 }
-function renderCapacityList(){
-  let rows=[];
-  venueOrder.forEach(v=>days.forEach(d=>getTimeOptionsForVenue(v).forEach(st=>{ const slot=formatTimeSlotDisplay(st,v.includes('桌球')); const key=settingKey(v,d,slot); if(capacitySettings[key]!==undefined) rows.push({v,d,slot,count:capacitySettings[key],reg:countSlot(v,d,st)}); })));
-  document.getElementById('capList').innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>類型</th><th>星期</th><th>時段</th><th>已報</th><th>可用</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.v}</td><td>${r.d}</td><td>${r.slot}</td><td>${r.reg}</td><td><strong>${r.count}</strong></td></tr>`).join('')}</tbody></table></div>`:'<div class="small">尚未設定，前台會先顯示預設名額。</div>';
+
+function fillDefaultCapacity(){
+  document.querySelectorAll('.cap-input').forEach(input=>{
+    const venue=input.dataset.venue;
+    input.value=capacityMap[venue] ?? 0;
+  });
+}
+
+function clearAllCapacity(){
+  if(!confirm('確定要把畫面上全部名額清為 0 嗎？尚未按「全部儲存」前不會寫入資料庫。')) return;
+  document.querySelectorAll('.cap-input').forEach(input=>input.value=0);
+}
+
+async function saveAllCapacity(){
+  const inputs=[...document.querySelectorAll('.cap-input')];
+  if(inputs.length===0){ alert('沒有可儲存的名額資料'); return; }
+
+  const rows=inputs.map(input=>({
+    venue_type: input.dataset.venue,
+    day_of_week: input.dataset.day,
+    time_slot: input.dataset.slot,
+    winner_count: Number(input.value || 0),
+    updated_at: new Date().toISOString()
+  }));
+
+  const btn=document.getElementById('saveAllCapBtn');
+  btn.disabled=true;
+  btn.textContent='儲存中...';
+
+  const {error}=await db.from(CAPACITY_TABLE).upsert(rows,{onConflict:'venue_type,day_of_week,time_slot'});
+
+  btn.disabled=false;
+  btn.textContent='全部儲存';
+
+  if(error){
+    alert('名額儲存失敗，請稍後再試');
+    console.error(error);
+    return;
+  }
+
+  alert(`已儲存 ${rows.length} 筆名額設定`);
+  await loadAllData();
+  renderCapacityPage();
 }
 
 function renderLotteryPage(){
