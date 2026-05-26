@@ -3,7 +3,7 @@
  <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>長租場地抽籤登記</title>
+  <title>長租場地抽籤登記｜管理後台</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     // 雲端版：登記資料寫入 Supabase，設定資料仍保留本機預設值
@@ -809,7 +809,7 @@
    <div class="phone-frame">
     <div class="header">
      <h1 id="app-title">長租場地抽籤登記</h1>
-     <div style="display: none; gap: 8px;" id="header-buttons"><button class="admin-toggle-btn" id="rules-btn">📋 登記辦法</button>
+     <div style="display: none; gap: 8px;" id="header-buttons"><button class="admin-toggle-btn" id="rules-btn">📋 登記辦法</button> <button class="admin-toggle-btn" id="admin-btn">管理</button>
      </div>
     </div>
     <div class="phone-content">
@@ -883,6 +883,16 @@
     <p id="confirm-message">確定要刪除這筆記錄嗎？刪除後將無法恢復。</p>
     <div class="confirm-buttons">
      <button class="confirm-btn confirm-btn-cancel" id="confirm-cancel">取消</button> <button class="confirm-btn confirm-btn-delete" id="confirm-delete">確認刪除</button>
+    </div>
+   </div>
+  </div><!-- Admin Modal -->
+  <div class="admin-modal" id="admin-modal">
+   <div class="modal-content">
+    <div class="modal-header">
+     <h2 id="admin-title" style="margin: 0; color: var(--primary-blue);">管理後台</h2><button class="modal-close" id="close-admin">✕</button>
+    </div>
+    <div class="modal-body">
+     <div id="admin-content"></div>
     </div>
    </div>
   </div><!-- Rules Modal -->
@@ -2499,6 +2509,24 @@
         });
       }
 
+      if (adminBtn) {
+        adminBtn.addEventListener('click', () => {
+          const adminPassword = 'MRT_Beitou@2026!';
+          const inputPassword = prompt('請輸入管理密碼');
+
+          if (inputPassword === null) {
+            return;
+          }
+
+          if (inputPassword !== adminPassword) {
+            alert('密碼錯誤，請重新輸入。');
+            return;
+          }
+
+          if (adminModal) adminModal.classList.add('active');
+          renderAdminTable();
+        });
+      }
 
       if (rulesBtn) {
         rulesBtn.addEventListener('click', () => {
@@ -2541,6 +2569,40 @@
         });
       }
     }
+  </script>
+ 
+  <script>
+    // 獨立後台頁：進入 admin.html 後直接要求密碼，通過後開啟管理後台
+    (function openStandaloneAdmin() {
+      function waitForAdminReady() {
+        if (typeof renderAdminTable !== 'function') {
+          setTimeout(waitForAdminReady, 150);
+          return;
+        }
+        const mainEl = document.querySelector('main');
+        if (mainEl) mainEl.style.display = 'none';
+        const password = prompt('請輸入管理密碼');
+        if (password !== 'MRT_Beitou@2026!') {
+          document.body.innerHTML = '<div style="font-family: Arial, sans-serif; max-width: 520px; margin: 80px auto; padding: 24px; text-align: center;"><h2 style="color:#7f1d1d;">無法進入管理後台</h2><p style="color:#666;">管理密碼錯誤或已取消輸入。</p><a href="/" style="color:#007AB0; font-weight:700;">回到前台</a></div>';
+          return;
+        }
+        const adminModal = document.getElementById('admin-modal');
+        const closeAdmin = document.getElementById('close-admin');
+        if (adminModal) {
+          adminModal.classList.add('active');
+          adminModal.style.background = '#f5f5f5';
+        }
+        if (closeAdmin) {
+          closeAdmin.onclick = () => { window.location.href = '/'; };
+        }
+        renderAdminTable();
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', waitForAdminReady);
+      } else {
+        waitForAdminReady();
+      }
+    })();
   </script>
  </body>
 </html>
