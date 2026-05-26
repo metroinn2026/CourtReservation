@@ -710,21 +710,21 @@
     <div class="phone-content">
      <!-- Verification Section -->
      <div class="section" id="verification-section">
-      <h2>👤 會員驗證</h2>
+      <h2>🔎 查詢／登記我的資料</h2>
       <div id="verify-form">
        <div class="form-group">
         <label for="member-name">姓名 *</label> <input type="text" id="member-name" placeholder="請輸入姓名">
        </div>
        <div class="form-group">
         <label for="member-phone">手機號碼 *</label> <input type="tel" id="member-phone" placeholder="09xx-xxx-xxx">
-       </div><button class="btn btn-primary" id="verify-btn">驗證台北捷運Go會員</button>
+       </div><button class="btn btn-primary" id="verify-btn">查詢我的登記</button>
        <div id="verification-message"></div>
       </div>
       <div class="member-display" id="member-display">
        <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">
-          ✓ 已驗證會員
+          ✓ 已查詢登記資料
          </div>
          <div style="font-size: 16px; font-weight: 700; color: var(--primary-blue);"><span id="display-name">-</span> • <span id="display-phone">-</span>
          </div>
@@ -1295,7 +1295,7 @@
       const userRecords = allRecords.filter(r => `${r.name}|${r.phone}` === currentUser);
       
       if (userRecords.length === 0) {
-        container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">暫無記錄</div>';
+        container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">目前查無登記紀錄，請接續選擇場地與時段進行登記。</div>';
         return;
       }
       
@@ -1600,7 +1600,7 @@
     function renderAdminTable() {
       const container = document.getElementById('admin-content');
       if (allRecords.length === 0) {
-        container.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">暫無記錄</div>';
+        container.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">目前查無登記紀錄，請接續選擇場地與時段進行登記。</div>';
         return;
       }
       
