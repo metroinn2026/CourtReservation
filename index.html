@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>長租場地抽籤登記</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    // 本機版：以 localStorage 取代平台 SDK，雙擊 HTML 即可開啟使用
+    // 雲端版：登記資料寫入 Supabase，設定資料仍保留本機預設值
     let config = {
       app_title: '長租場地抽籤登記',
       location_1: '北投會館',
@@ -54,40 +55,173 @@
 
       if (!window.dataSdk) {
         let handlerRef = null;
-        const notify = () => {
-          const records = loadJson(DATA_KEY, []);
-          if (handlerRef && typeof handlerRef.onDataChanged === 'function') {
-            handlerRef.onDataChanged(records);
+
+        const SUPABASE_URL = 'https://wsvsdwuksuzcjisnpyin.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
+        const SUPABASE_TABLE = 'lottery_records';
+
+        function getSupabaseClient() {
+          if (!window.supabase) {
+            console.error('Supabase library not loaded');
+            alert('雲端資料庫元件載入失敗，請重新整理頁面。');
+            return null;
           }
-        };
+          if (!window.__venueLotterySupabaseClient) {
+            window.__venueLotterySupabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+          }
+          return window.__venueLotterySupabaseClient;
+        }
+
+        function normalizeRecords(records) {
+          return (records || []).map((record) => ({
+            ...record,
+            __backendId: record.id
+          }));
+        }
+
+        async function fetchRecords() {
+          const client = getSupabaseClient();
+          if (!client) return { isOk: false, records: [] };
+
+          const { data, error } = await client
+            .from(SUPABASE_TABLE)
+            .select('*')
+            .order('registered_at', { ascending: false });
+
+          if (error) {
+            console.error('讀取 Supabase 失敗', error);
+            return { isOk: false, records: [] };
+          }
+
+          return { isOk: true, records: normalizeRecords(data) };
+        }
+
+        async function refreshRecords() {
+          const result = await fetchRecords();
+          if (result.isOk && handlerRef && typeof handlerRef.onDataChanged === 'function') {
+            handlerRef.onDataChanged(result.records);
+          }
+          return result;
+        }
 
         window.dataSdk = {
           async init(handler) {
             handlerRef = handler;
-            notify();
-            window.addEventListener('storage', (event) => {
-              if (event.key === DATA_KEY) notify();
-            });
-            return { isOk: true };
+            const result = await refreshRecords();
+
+            const client = getSupabaseClient();
+            if (client && !window.__venueLotteryRealtimeChannel) {
+              window.__venueLotteryRealtimeChannel = client
+                .channel('lottery_records_changes')
+                .on('postgres_changes', {
+                  event: '*',
+                  schema: 'public',
+                  table: SUPABASE_TABLE
+                }, () => {
+                  refreshRecords();
+                })
+                .subscribe();
+            }
+
+            return { isOk: result.isOk };
           },
+
           async create(record) {
-            const records = loadJson(DATA_KEY, []);
-            records.push(record);
-            if (!saveJson(DATA_KEY, records)) return { isOk: false };
-            notify();
-            return { isOk: true, value: record };
+            const client = getSupabaseClient();
+            if (!client) return { isOk: false };
+
+            const cleanRecord = {
+              name: record.name,
+              phone: record.phone,
+              location_name: record.location_name,
+              venue_type: record.venue_type,
+              day_of_week: record.day_of_week,
+              time_slot: record.time_slot,
+              serial_number: record.serial_number,
+              registered_at: record.registered_at || new Date().toISOString()
+            };
+
+            const { data, error } = await client
+              .from(SUPABASE_TABLE)
+              .insert([cleanRecord])
+              .select('*')
+              .single();
+
+            if (error) {
+              console.error('寫入 Supabase 失敗', error);
+              alert('登記失敗，請稍後再試。');
+              return { isOk: false };
+            }
+
+            await refreshRecords();
+            return { isOk: true, value: { ...data, __backendId: data.id } };
           },
+
           async delete(record) {
-            const records = loadJson(DATA_KEY, []);
-            const index = records.findIndex((item) => JSON.stringify(item) === JSON.stringify(record));
-            if (index >= 0) records.splice(index, 1);
-            if (!saveJson(DATA_KEY, records)) return { isOk: false };
-            notify();
+            const client = getSupabaseClient();
+            if (!client) return { isOk: false };
+
+            const recordId = record.id || record.__backendId;
+            if (!recordId) {
+              console.error('刪除失敗：找不到資料 id', record);
+              alert('刪除失敗：找不到資料編號。');
+              return { isOk: false };
+            }
+
+            const { error } = await client
+              .from(SUPABASE_TABLE)
+              .delete()
+              .eq('id', recordId);
+
+            if (error) {
+              console.error('刪除 Supabase 資料失敗', error);
+              alert('刪除失敗，請稍後再試。');
+              return { isOk: false };
+            }
+
+            await refreshRecords();
             return { isOk: true };
           },
+
           async replaceAll(records) {
-            if (!saveJson(DATA_KEY, Array.isArray(records) ? records : [])) return { isOk: false };
-            notify();
+            const client = getSupabaseClient();
+            if (!client) return { isOk: false };
+
+            const { error: deleteError } = await client
+              .from(SUPABASE_TABLE)
+              .delete()
+              .neq('id', '00000000-0000-0000-0000-000000000000');
+
+            if (deleteError) {
+              console.error('清空 Supabase 資料失敗', deleteError);
+              return { isOk: false };
+            }
+
+            const cleanRecords = Array.isArray(records)
+              ? records.map((record) => ({
+                  name: record.name,
+                  phone: record.phone,
+                  location_name: record.location_name,
+                  venue_type: record.venue_type,
+                  day_of_week: record.day_of_week,
+                  time_slot: record.time_slot,
+                  serial_number: record.serial_number,
+                  registered_at: record.registered_at || new Date().toISOString()
+                }))
+              : [];
+
+            if (cleanRecords.length > 0) {
+              const { error: insertError } = await client
+                .from(SUPABASE_TABLE)
+                .insert(cleanRecords);
+
+              if (insertError) {
+                console.error('批次寫入 Supabase 失敗', insertError);
+                return { isOk: false };
+              }
+            }
+
+            await refreshRecords();
             return { isOk: true };
           }
         };
