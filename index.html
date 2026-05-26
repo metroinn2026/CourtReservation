@@ -227,6 +227,111 @@
         };
       }
 
+      if (!window.capacitySdk) {
+        let capacityHandlerRef = null;
+        const CAPACITY_SUPABASE_URL = 'https://wsvsdwuksuzcjisnpyin.supabase.co';
+        const CAPACITY_SUPABASE_KEY = 'sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
+        const CAPACITY_TABLE = 'lottery_capacity_settings';
+
+        function getCapacitySupabaseClient() {
+          if (!window.supabase) {
+            console.error('Supabase library not loaded');
+            alert('雲端資料庫元件載入失敗，請重新整理頁面。');
+            return null;
+          }
+          if (!window.__venueLotterySupabaseClient) {
+            window.__venueLotterySupabaseClient = window.supabase.createClient(CAPACITY_SUPABASE_URL, CAPACITY_SUPABASE_KEY);
+          }
+          return window.__venueLotterySupabaseClient;
+        }
+
+        function normalizeCapacityRows(rows) {
+          const settings = {};
+          (rows || []).forEach((row) => {
+            const key = `${row.venue_type}|${row.day_of_week}|${row.time_slot}`;
+            settings[key] = Number(row.winner_count || 0);
+          });
+          return settings;
+        }
+
+        async function fetchCapacitySettings() {
+          const client = getCapacitySupabaseClient();
+          if (!client) return { isOk: false, settings: {} };
+
+          const { data, error } = await client
+            .from(CAPACITY_TABLE)
+            .select('*')
+            .order('venue_type', { ascending: true });
+
+          if (error) {
+            console.error('讀取抽籤名額設定失敗', error);
+            return { isOk: false, settings: {} };
+          }
+
+          return { isOk: true, settings: normalizeCapacityRows(data) };
+        }
+
+        async function refreshCapacitySettings() {
+          const result = await fetchCapacitySettings();
+          if (result.isOk && capacityHandlerRef && typeof capacityHandlerRef.onSettingsChanged === 'function') {
+            capacityHandlerRef.onSettingsChanged(result.settings);
+          }
+          return result;
+        }
+
+        window.capacitySdk = {
+          async init(handler) {
+            capacityHandlerRef = handler;
+            const result = await refreshCapacitySettings();
+
+            const client = getCapacitySupabaseClient();
+            if (client && !window.__venueLotteryCapacityChannel) {
+              window.__venueLotteryCapacityChannel = client
+                .channel('lottery_capacity_settings_changes')
+                .on('postgres_changes', {
+                  event: '*',
+                  schema: 'public',
+                  table: CAPACITY_TABLE
+                }, () => {
+                  refreshCapacitySettings();
+                })
+                .subscribe();
+            }
+
+            return { isOk: result.isOk };
+          },
+
+          async upsert(setting) {
+            const client = getCapacitySupabaseClient();
+            if (!client) return { isOk: false };
+
+            const cleanSetting = {
+              venue_type: setting.venue_type,
+              day_of_week: setting.day_of_week,
+              time_slot: setting.time_slot,
+              winner_count: Number(setting.winner_count || 0),
+              updated_at: new Date().toISOString()
+            };
+
+            const { error } = await client
+              .from(CAPACITY_TABLE)
+              .upsert(cleanSetting, {
+                onConflict: 'venue_type,day_of_week,time_slot'
+              });
+
+            if (error) {
+              console.error('儲存抽籤名額設定失敗', error);
+              alert('儲存抽籤名額失敗，請稍後再試。');
+              return { isOk: false };
+            }
+
+            await refreshCapacitySettings();
+            return { isOk: true };
+          }
+        };
+      }
+
+
       if (!window.lucide) {
         window.lucide = {
           createIcons() {
@@ -824,6 +929,7 @@
   </div>
   <script>
     let allRecords = [];
+    let lotterySettings = {};
     let currentSelection = {
       name: '',
       phone: '',
@@ -848,6 +954,22 @@
       onDataChanged(data) {
         allRecords = data || [];
         renderRecords();
+        if (currentSelection.venue && currentSelection.day) {
+          renderTimeButtons();
+        }
+      }
+    };
+
+    const capacityHandler = {
+      onSettingsChanged(settings) {
+        lotterySettings = settings || {};
+        if (currentSelection.venue && currentSelection.day) {
+          renderTimeButtons();
+        }
+        const adminModal = document.getElementById('admin-modal');
+        if (adminModal && adminModal.classList.contains('active')) {
+          renderAdminTable();
+        }
       }
     };
 
@@ -856,6 +978,13 @@
       const initResult = await window.dataSdk.init(dataHandler);
       if (!initResult.isOk) {
         console.error('Data SDK init failed');
+      }
+
+      if (window.capacitySdk) {
+        const capacityInitResult = await window.capacitySdk.init(capacityHandler);
+        if (!capacityInitResult.isOk) {
+          console.warn('Capacity SDK init failed. 請確認 Supabase 已建立 lottery_capacity_settings 資料表與權限。');
+        }
       }
 
       // Setup all event listeners AFTER SDK is ready
@@ -994,6 +1123,38 @@
       });
     }
 
+    function getTimeOptionsForVenue(venue) {
+      return venue && venue.includes('桌球')
+        ? ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00']
+        : ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00'];
+    }
+
+    function getLotterySettingKey(venue, day, timeSlot) {
+      return `${venue}|${day}|${timeSlot}`;
+    }
+
+    function getTimeSlotForSetting(venue, startTime) {
+      return formatTimeSlotDisplay(startTime, venue && venue.includes('桌球'));
+    }
+
+    function getLotteryWinnerCount(venue, day, startTime) {
+      const timeSlot = getTimeSlotForSetting(venue, startTime);
+      const settingKey = getLotterySettingKey(venue, day, timeSlot);
+      const configured = lotterySettings[settingKey];
+      if (configured !== undefined && configured !== null && configured !== '') {
+        return Number(configured);
+      }
+      return capacityMap[venue] || 0;
+    }
+
+    function countRegistrationsForSlot(venue, day, startTime) {
+      return allRecords.filter(r =>
+        r.venue_type === venue &&
+        r.day_of_week === day &&
+        r.time_slot.includes(startTime)
+      ).length;
+    }
+
     function formatTimeSlotDisplay(startTime, isTableTennis) {
       const timeMap = {
         '06:00': 6, '08:00': 8, '10:00': 10, '12:00': 12, '14:00': 14, '16:00': 16, '18:00': 18, '20:00': 20,
@@ -1010,9 +1171,7 @@
 
     function renderTimeButtons() {
       const container = document.getElementById('time-buttons');
-      const times = currentSelection.venue.includes('桌球')
-        ? ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00']
-        : ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00'];
+      const times = getTimeOptionsForVenue(currentSelection.venue);
       
       const isTableTennis = currentSelection.venue.includes('桌球');
       const isBadmintonOrBasketball = currentSelection.venue === '羽球' || currentSelection.venue === '籃球';
@@ -1040,19 +1199,8 @@
       container.style.gap = '12px';
       
       times.forEach(time => {
-        const registered = allRecords.filter(r => 
-          r.venue_type === currentSelection.venue && 
-          r.day_of_week === currentSelection.day && 
-          r.time_slot.includes(time)
-        ).length;
-        
-        const venueCapacity = {
-          '羽球': 3,
-          '籃球': 1,
-          'B1桌球': 5,
-          'B2桌球': 4
-        };
-        const available = venueCapacity[currentSelection.venue] || 3;
+        const registered = countRegistrationsForSlot(currentSelection.venue, currentSelection.day, time);
+        const winnerCount = getLotteryWinnerCount(currentSelection.venue, currentSelection.day, time);
         
         const isTimeSlotClosed = isBadmintonOrBasketball && 
                                  closedDays.includes(currentSelection.day) && 
@@ -1113,7 +1261,7 @@
           capacityInfo.textContent = '已登記此時段';
         } else {
           capacityInfo.style.color = 'var(--primary-blue)';
-          capacityInfo.textContent = `已報${registered}/可用${available}`;
+          capacityInfo.textContent = `已登記${registered}人／抽籤名額${winnerCount}名`;
         }
         
         if (!btn.disabled) {
@@ -1543,6 +1691,175 @@
       document.body.removeChild(link);
     }
 
+    function renderLotteryCapacitySettingsPanel() {
+      const venues = ['羽球', '籃球', 'B1桌球', 'B2桌球'];
+      const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+      let html = `
+        <div style="margin-bottom: 24px; padding: 16px; background: #f8fafc; border: 1px solid #dbeafe; border-radius: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+            <div>
+              <h3 style="font-size: 16px; font-weight: 700; color: var(--primary-blue); margin: 0 0 6px 0;">🎯 抽籤名額設定</h3>
+              <div style="font-size: 12px; color: #666; line-height: 1.5;">管理者可設定每個運動類型、星期與時段的抽籤名額；前台會同步顯示「已登記人數／抽籤名額」。</div>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1.1fr 1fr 1.2fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 14px;">
+            <div>
+              <label style="display:block; font-size:12px; color:#666; margin-bottom:4px; font-weight:600;">運動類型</label>
+              <select id="capacity-venue" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
+                ${venues.map(v => `<option value="${v}">${v}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:#666; margin-bottom:4px; font-weight:600;">星期</label>
+              <select id="capacity-day" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
+                ${days.map(d => `<option value="${d}">${d}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:#666; margin-bottom:4px; font-weight:600;">時段</label>
+              <select id="capacity-time" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;"></select>
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:#666; margin-bottom:4px; font-weight:600;">抽籤名額</label>
+              <input type="number" id="capacity-count" min="0" value="1" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
+            </div>
+            <button id="save-capacity" style="background: var(--primary-blue); color: white; border: none; padding: 9px 14px; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 13px;">儲存</button>
+          </div>
+          <div id="capacity-current-info" style="font-size: 13px; color: #333; background: white; border-radius: 8px; border: 1px solid #e5e7eb; padding: 10px; margin-bottom: 14px;"></div>
+          <div id="capacity-list" style="max-height: 260px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: white;"></div>
+        </div>
+      `;
+      return html;
+    }
+
+    function setupLotteryCapacitySettingsPanel() {
+      const venueEl = document.getElementById('capacity-venue');
+      const dayEl = document.getElementById('capacity-day');
+      const timeEl = document.getElementById('capacity-time');
+      const countEl = document.getElementById('capacity-count');
+      const saveBtn = document.getElementById('save-capacity');
+      const infoEl = document.getElementById('capacity-current-info');
+      const listEl = document.getElementById('capacity-list');
+      if (!venueEl || !dayEl || !timeEl || !countEl || !saveBtn) return;
+
+      function refreshTimeOptions() {
+        const venue = venueEl.value;
+        const times = getTimeOptionsForVenue(venue);
+        timeEl.innerHTML = times.map(time => {
+          const displaySlot = getTimeSlotForSetting(venue, time);
+          return `<option value="${time}">${displaySlot}</option>`;
+        }).join('');
+        refreshCurrentInfo();
+      }
+
+      function refreshCurrentInfo() {
+        const venue = venueEl.value;
+        const day = dayEl.value;
+        const startTime = timeEl.value || getTimeOptionsForVenue(venue)[0];
+        const timeSlot = getTimeSlotForSetting(venue, startTime);
+        const key = getLotterySettingKey(venue, day, timeSlot);
+        const currentCount = lotterySettings[key] ?? capacityMap[venue] ?? 0;
+        const registered = countRegistrationsForSlot(venue, day, startTime);
+        countEl.value = currentCount;
+        if (infoEl) {
+          infoEl.innerHTML = `<strong>${venue}｜${day}｜${timeSlot}</strong><br>目前已登記 <strong style="color: var(--primary-blue);">${registered}</strong> 人，前台顯示抽籤名額 <strong style="color: #FF9800;">${currentCount}</strong> 名`;
+        }
+      }
+
+      function renderCapacityList() {
+        const venues = ['羽球', '籃球', 'B1桌球', 'B2桌球'];
+        const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+        let rows = [];
+        venues.forEach(venue => {
+          days.forEach(day => {
+            getTimeOptionsForVenue(venue).forEach(startTime => {
+              const timeSlot = getTimeSlotForSetting(venue, startTime);
+              const key = getLotterySettingKey(venue, day, timeSlot);
+              if (lotterySettings[key] !== undefined) {
+                rows.push({
+                  venue,
+                  day,
+                  startTime,
+                  timeSlot,
+                  winnerCount: lotterySettings[key],
+                  registered: countRegistrationsForSlot(venue, day, startTime)
+                });
+              }
+            });
+          });
+        });
+
+        if (!listEl) return;
+        if (rows.length === 0) {
+          listEl.innerHTML = '<div style="padding: 14px; color: #999; text-align: center; font-size: 13px;">尚未設定抽籤名額，系統會先使用預設名額。</div>';
+          return;
+        }
+        listEl.innerHTML = `
+          <table style="width:100%; border-collapse: collapse; font-size: 12px;">
+            <thead><tr style="background:#f3f4f6; color:#333;">
+              <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">類型</th>
+              <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">星期</th>
+              <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">時段</th>
+              <th style="padding:8px; text-align:center; border-bottom:1px solid #e5e7eb;">已登記</th>
+              <th style="padding:8px; text-align:center; border-bottom:1px solid #e5e7eb;">抽籤名額</th>
+            </tr></thead>
+            <tbody>
+              ${rows.map((row, idx) => `
+                <tr style="background:${idx % 2 ? '#fff' : '#fafafa'};">
+                  <td style="padding:8px; border-bottom:1px solid #f1f5f9; font-weight:600; color:var(--primary-blue);">${row.venue}</td>
+                  <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${row.day}</td>
+                  <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${row.timeSlot}</td>
+                  <td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:center;">${row.registered}人</td>
+                  <td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:center; color:#FF9800; font-weight:700;">${row.winnerCount}名</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+
+      venueEl.addEventListener('change', () => {
+        refreshTimeOptions();
+        renderCapacityList();
+      });
+      dayEl.addEventListener('change', refreshCurrentInfo);
+      timeEl.addEventListener('change', refreshCurrentInfo);
+
+      saveBtn.addEventListener('click', async () => {
+        const venue = venueEl.value;
+        const day = dayEl.value;
+        const startTime = timeEl.value;
+        const timeSlot = getTimeSlotForSetting(venue, startTime);
+        const winnerCount = Number(countEl.value || 0);
+        if (winnerCount < 0) {
+          alert('抽籤名額不可小於 0');
+          return;
+        }
+        if (!window.capacitySdk) {
+          alert('抽籤名額設定元件尚未啟用');
+          return;
+        }
+        saveBtn.disabled = true;
+        saveBtn.textContent = '儲存中...';
+        const result = await window.capacitySdk.upsert({
+          venue_type: venue,
+          day_of_week: day,
+          time_slot: timeSlot,
+          winner_count: winnerCount
+        });
+        saveBtn.disabled = false;
+        saveBtn.textContent = '儲存';
+        if (result.isOk) {
+          alert('抽籤名額已儲存');
+          refreshCurrentInfo();
+          renderCapacityList();
+        }
+      });
+
+      refreshTimeOptions();
+      renderCapacityList();
+    }
+
     function calculateDetailedStats(records = allRecords) {
       const totalRegistrations = records.length;
       const uniqueUsers = new Set(records.map(r => r.phone)).size;
@@ -1599,11 +1916,6 @@
 
     function renderAdminTable() {
       const container = document.getElementById('admin-content');
-      if (allRecords.length === 0) {
-        container.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">目前查無登記紀錄，請接續選擇場地與時段進行登記。</div>';
-        return;
-      }
-      
       const stats = calculateDetailedStats();
       let html = `
         <div style="margin-bottom: 24px;">
@@ -1648,6 +1960,7 @@
       });
       
       html += '</div></div>';
+      html += renderLotteryCapacitySettingsPanel();
       
       html += `
         <div style="margin-bottom: 24px;">
@@ -1712,6 +2025,7 @@
       html += `<div id="lottery-result" style="margin-top: 20px; display: none;"></div>`;
       
       container.innerHTML = html;
+      setupLotteryCapacitySettingsPanel();
       
       const filterVenue = document.getElementById('filter-venue');
       const filterDay = document.getElementById('filter-day');
