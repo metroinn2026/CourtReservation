@@ -564,7 +564,7 @@ function renderLotteryPage(){
     <div class="panel">
       <h3>🎲 抽籤作業</h3>
       <div class="alert">
-        正式抽籤會把結果寫回資料庫並鎖定。請務必選定「運動類型＋星期＋時段」後再正式抽籤。
+        請先選定「運動類型＋星期＋時段」，確認本場次總表與名單無誤後，再正式抽籤並鎖定結果。
       </div>
       <div class="toolbar" style="grid-template-columns:repeat(5,1fr) auto auto;">
         <select id="lotVenue"><option value="">請選擇類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
@@ -575,8 +575,11 @@ function renderLotteryPage(){
         <button id="previewLot" class="btn btn-gray">預覽抽籤</button>
         <button id="lockLot" class="btn btn-orange">正式抽籤並鎖定</button>
       </div>
+
       <div id="lotteryPreview"></div>
+      <div id="lotteryStageSummary"></div>
       <div id="unlockArea" style="display:none;margin-top:12px;"></div>
+      <div id="lotteryList"></div>
       <div id="lotteryResult"></div>
     </div>
   `;
@@ -593,6 +596,81 @@ function renderLotteryPage(){
     return {venue,day,time,records};
   }
 
+  function renderStageSummary(records, locked){
+    const selectedPeople=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+    const statusCounts={};
+    records.forEach(r=>{
+      const s=r.lottery_status || '未抽籤';
+      statusCounts[s]=(statusCounts[s]||0)+1;
+    });
+    const winner=statusCounts['中籤']||0;
+    const waitlist=Object.entries(statusCounts).filter(([k])=>String(k).startsWith('候補')).reduce((s,[,v])=>s+v,0);
+    const loser=statusCounts['未中籤']||0;
+    const notYet=statusCounts['未抽籤']||0;
+
+    document.getElementById('lotteryStageSummary').innerHTML=`
+      <div class="cards" style="grid-template-columns:repeat(6,1fr);margin:16px 0;">
+        <div class="stat"><div class="label">登記筆數</div><div class="num">${records.length}</div></div>
+        <div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${selectedPeople}</div></div>
+        <div class="stat"><div class="label">中籤</div><div class="num" style="color:#166534">${winner}</div></div>
+        <div class="stat"><div class="label">候補</div><div class="num" style="color:#9a3412">${waitlist}</div></div>
+        <div class="stat"><div class="label">未中籤</div><div class="num" style="color:#64748b">${loser}</div></div>
+        <div class="stat"><div class="label">鎖定狀態</div><div class="num" style="font-size:22px;color:${locked?'#dc2626':'#007AB0'}">${locked?'已鎖定':'未鎖定'}</div></div>
+      </div>
+      ${notYet>0 ? `<div class="msg info">本場次尚有 ${notYet} 筆未抽籤資料。</div>` : ''}
+    `;
+  }
+
+  function renderStageList(records){
+    if(records.length===0){
+      document.getElementById('lotteryList').innerHTML=`<div class="panel"><h3>📋 本場次名單</h3><div class="small">請先選擇場次，或目前篩選條件查無資料。</div></div>`;
+      return;
+    }
+    const sorted=[...records].sort((a,b)=>{
+      const sa=statusSortValue(a.lottery_status);
+      const sb=statusSortValue(b.lottery_status);
+      if(sa!==sb) return sa-sb;
+      return String(a.registered_at||'').localeCompare(String(b.registered_at||''));
+    });
+
+    document.getElementById('lotteryList').innerHTML=`
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;">
+          <h3 style="margin:0;">📋 本場次名單</h3>
+          <button id="exportStageBtn" class="btn btn-green">匯出本場次名單</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>項次</th><th>抽籤狀態</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>身分證後4碼</th><th>類型</th><th>星期</th><th>時段</th><th>登記時間</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sorted.map((r,i)=>`
+                <tr>
+                  <td>${i+1}</td>
+                  <td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td>
+                  <td>${suspiciousTag(r)}</td>
+                  <td><strong>${escapeHtml(r.serial_number)}</strong></td>
+                  <td>${escapeHtml(r.name)}</td>
+                  <td>${escapeHtml(r.phone)}</td>
+                  <td>${escapeHtml(r.id_last4||'')}</td>
+                  <td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td>
+                  <td>${escapeHtml(r.day_of_week)}</td>
+                  <td>${escapeHtml(r.time_slot)}</td>
+                  <td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    const btn=document.getElementById('exportStageBtn');
+    if(btn) btn.onclick=()=>exportToCsv(sorted);
+  }
+
   const refresh=()=>{
     const {venue,day,time,records}=getSelectedRecords();
     const selectedComplete=!!venue && !!day && !!time;
@@ -607,6 +685,9 @@ function renderLotteryPage(){
         ${statusSummary ? `<br><strong>結果統計：</strong>${statusSummary}` : ''}
       </div>
     `;
+
+    renderStageSummary(records, locked);
+    renderStageList(records);
 
     const unlockArea=document.getElementById('unlockArea');
     if(locked){
@@ -694,7 +775,6 @@ function renderLotteryPage(){
     result.waitlist.forEach((r,idx)=>updateRows.push({id:r.id, lottery_status:`候補${idx+1}`}));
     result.losers.forEach(r=>updateRows.push({id:r.id, lottery_status:'未中籤'}));
 
-    // 用分組批次 update，避免 upsert 被資料表限制擋掉
     const groups={};
     updateRows.forEach(row=>{
       if(!groups[row.lottery_status]) groups[row.lottery_status]=[];
