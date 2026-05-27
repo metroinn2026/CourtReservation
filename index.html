@@ -1562,6 +1562,7 @@
       updateSummary();
       
       document.getElementById('records-section').style.display = 'block';
+      renderRecords();
     }
 
     function updateSummary() {
@@ -2618,6 +2619,7 @@
           disableTimeButtons();
           
           updateSummary();
+          renderRecords();
         });
       }
 
@@ -2655,6 +2657,8 @@
           if (headerButtons) headerButtons.style.display = 'none';
           
           currentSelection = { name: '', phone: '', id_last4: '', location: '', venue: '', day: '', time: '' };
+          const recordsList = document.getElementById('records-list');
+          if (recordsList) recordsList.innerHTML = '';
           disableVenueButtons();
           disableDateButtons();
           disableTimeButtons();
