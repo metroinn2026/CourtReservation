@@ -1318,67 +1318,204 @@ function renderLotteryResult(result,title,locked){
 
 
 
+
 function renderSettingsPage(){
+
   document.getElementById('content').innerHTML=`
     <div class="panel">
       <h3>📝 文字設定中心</h3>
-      <div class="alert">
-        這裡可以直接修改前台登記辦法與抽籤結果通知文字。儲存後會寫入 Supabase，前台重新整理後會同步顯示。
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">
+        <button id="tabRules" class="btn btn-primary">登記辦法</button>
+        <button id="tabNotice" class="btn btn-gray">前台提醒</button>
+        <button id="tabWinner" class="btn btn-gray">中籤通知</button>
+        <button id="tabWaitlist" class="btn btn-gray">備取通知</button>
+        <button id="tabLoser" class="btn btn-gray">未中籤通知</button>
       </div>
 
-      <div class="two-col">
-        <div>
-          <div class="field">
-            <label>前台登記辦法</label>
-            <textarea id="rulesContentEditor" style="width:100%;min-height:320px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.rules_content || '')}</textarea>
-            <div class="small" style="margin-top:6px;">會顯示在前台「登記辦法」彈窗內。可直接換行。</div>
-          </div>
+      <div id="settingsTabContent"></div>
 
-          <div class="field">
-            <label>前台登記提醒短文</label>
-            <textarea id="registerNoticeEditor" style="width:100%;min-height:90px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.register_notice || '')}</textarea>
-            <div class="small" style="margin-top:6px;">可放在前台查詢／登記區塊上方的提醒文字。</div>
-          </div>
-        </div>
-
-        <div>
-          <div class="field">
-            <label>中籤通知模板</label>
-            <textarea id="winnerTemplateEditor" style="width:100%;min-height:105px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.winner_template || '')}</textarea>
-          </div>
-
-          <div class="field">
-            <label>備取通知模板</label>
-            <textarea id="waitlistTemplateEditor" style="width:100%;min-height:105px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.waitlist_template || '')}</textarea>
-          </div>
-
-          <div class="field">
-            <label>未中籤通知模板</label>
-            <textarea id="loserTemplateEditor" style="width:100%;min-height:105px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.loser_template || '')}</textarea>
-          </div>
-
-          <div class="msg info">
-            可用代碼：{name}、{phone}、{id_last4}、{venue}、{day}、{time}、{status}、{serial_number}
-          </div>
-        </div>
-      </div>
-
-      <button id="saveTextSettingsBtn" class="btn btn-primary">儲存文字設定</button>
+      <button id="saveTextSettingsBtn" class="btn btn-primary" style="margin-top:18px;">
+        儲存文字設定
+      </button>
     </div>
   `;
 
-  document.getElementById('saveTextSettingsBtn').onclick=async()=>{
-    const payload=[
-      ['rules_content', document.getElementById('rulesContentEditor').value],
-      ['register_notice', document.getElementById('registerNoticeEditor').value],
-      ['winner_template', document.getElementById('winnerTemplateEditor').value],
-      ['waitlist_template', document.getElementById('waitlistTemplateEditor').value],
-      ['loser_template', document.getElementById('loserTemplateEditor').value]
-    ];
+  const tabContent=document.getElementById('settingsTabContent');
 
-    for(const [key,value] of payload){
-      const ok=await saveSetting(key,value);
-      if(!ok) return;
+  function switchTab(type){
+
+    document.querySelectorAll('#tabRules,#tabNotice,#tabWinner,#tabWaitlist,#tabLoser')
+      .forEach(btn=>{
+        btn.className='btn btn-gray';
+      });
+
+    const activeMap={
+      rules:'tabRules',
+      notice:'tabNotice',
+      winner:'tabWinner',
+      waitlist:'tabWaitlist',
+      loser:'tabLoser'
+    };
+
+    document.getElementById(activeMap[type]).className='btn btn-primary';
+
+    if(type==='rules'){
+      tabContent.innerHTML=`
+        <div class="alert">
+          這裡可修改前台顯示的登記辦法內容。
+        </div>
+
+        <label style="font-weight:700;">前台登記辦法</label>
+
+        <textarea
+          id="rulesContentEditor"
+          style="
+            width:100%;
+            min-height:420px;
+            border:1px solid #d1d5db;
+            border-radius:12px;
+            padding:14px;
+            font-size:14px;
+            line-height:1.9;
+            margin-top:8px;
+          "
+        >${escapeHtml(systemSettings.rules_content || '')}</textarea>
+      `;
+    }
+
+    if(type==='notice'){
+      tabContent.innerHTML=`
+        <div class="alert">
+          顯示在前台查詢／登記區塊上方的提醒文字。
+        </div>
+
+        <label style="font-weight:700;">前台提醒文字</label>
+
+        <textarea
+          id="registerNoticeEditor"
+          style="
+            width:100%;
+            min-height:220px;
+            border:1px solid #d1d5db;
+            border-radius:12px;
+            padding:14px;
+            font-size:14px;
+            line-height:1.9;
+            margin-top:8px;
+          "
+        >${escapeHtml(systemSettings.register_notice || '')}</textarea>
+      `;
+    }
+
+    if(type==='winner'){
+      tabContent.innerHTML=`
+        <div class="alert">
+          中籤後複製通知時會使用這段文字。
+        </div>
+
+        <div class="msg info">
+          可用代碼：{name}、{phone}、{venue}、{day}、{time}、{status}、{serial_number}
+        </div>
+
+        <label style="font-weight:700;">中籤通知模板</label>
+
+        <textarea
+          id="winnerTemplateEditor"
+          style="
+            width:100%;
+            min-height:260px;
+            border:1px solid #d1d5db;
+            border-radius:12px;
+            padding:14px;
+            font-size:14px;
+            line-height:1.9;
+            margin-top:8px;
+          "
+        >${escapeHtml(systemSettings.winner_template || '')}</textarea>
+      `;
+    }
+
+    if(type==='waitlist'){
+      tabContent.innerHTML=`
+        <div class="alert">
+          備取通知文字設定。
+        </div>
+
+        <div class="msg info">
+          可用代碼：{name}、{phone}、{venue}、{day}、{time}、{status}、{serial_number}
+        </div>
+
+        <label style="font-weight:700;">備取通知模板</label>
+
+        <textarea
+          id="waitlistTemplateEditor"
+          style="
+            width:100%;
+            min-height:260px;
+            border:1px solid #d1d5db;
+            border-radius:12px;
+            padding:14px;
+            font-size:14px;
+            line-height:1.9;
+            margin-top:8px;
+          "
+        >${escapeHtml(systemSettings.waitlist_template || '')}</textarea>
+      `;
+    }
+
+    if(type==='loser'){
+      tabContent.innerHTML=`
+        <div class="alert">
+          未中籤通知文字設定。
+        </div>
+
+        <div class="msg info">
+          可用代碼：{name}、{phone}、{venue}、{day}、{time}、{status}、{serial_number}
+        </div>
+
+        <label style="font-weight:700;">未中籤通知模板</label>
+
+        <textarea
+          id="loserTemplateEditor"
+          style="
+            width:100%;
+            min-height:260px;
+            border:1px solid #d1d5db;
+            border-radius:12px;
+            padding:14px;
+            font-size:14px;
+            line-height:1.9;
+            margin-top:8px;
+          "
+        >${escapeHtml(systemSettings.loser_template || '')}</textarea>
+      `;
+    }
+  }
+
+  switchTab('rules');
+
+  document.getElementById('tabRules').onclick=()=>switchTab('rules');
+  document.getElementById('tabNotice').onclick=()=>switchTab('notice');
+  document.getElementById('tabWinner').onclick=()=>switchTab('winner');
+  document.getElementById('tabWaitlist').onclick=()=>switchTab('waitlist');
+  document.getElementById('tabLoser').onclick=()=>switchTab('loser');
+
+  document.getElementById('saveTextSettingsBtn').onclick=async()=>{
+
+    const editors={
+      rules_content: document.getElementById('rulesContentEditor')?.value,
+      register_notice: document.getElementById('registerNoticeEditor')?.value,
+      winner_template: document.getElementById('winnerTemplateEditor')?.value,
+      waitlist_template: document.getElementById('waitlistTemplateEditor')?.value,
+      loser_template: document.getElementById('loserTemplateEditor')?.value
+    };
+
+    for(const [key,value] of Object.entries(editors)){
+      if(typeof value !== 'undefined'){
+        const ok=await saveSetting(key,value);
+        if(!ok) return;
+      }
     }
 
     alert('文字設定已儲存');
@@ -1386,6 +1523,7 @@ function renderSettingsPage(){
     renderSettingsPage();
   };
 }
+
 
 
 function renderAccountsPage(){
