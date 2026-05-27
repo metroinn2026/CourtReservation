@@ -1592,7 +1592,10 @@
     }
 
 
-    function getLotteryStatusClass(status) {
+    function getLotteryStatusClass(status, record = null) {
+      if (record && record.lottery_status && !record.result_published) {
+        return 'lottery-status-wait';
+      }
       const s = String(status || '');
       if (s === '中籤') return 'lottery-status-win';
       if (s.startsWith('候補')) return 'lottery-status-wait';
@@ -1601,11 +1604,19 @@
     }
 
     function getLotteryStatusText(record) {
+      if (!record.result_published) {
+        return record.lottery_status ? '結果尚未公布' : '尚未抽籤';
+      }
       return record.lottery_status || '尚未抽籤';
     }
 
     function getLotteryResultNote(record) {
       const status = String(record.lottery_status || '');
+
+      if (status && !record.result_published) {
+        return '<div class="lottery-result-note" style="background:#fff7ed;color:#9a3412;border-left:4px solid #f97316;">抽籤結果尚未公布，請留意後續公告。</div>';
+      }
+
       if (status === '中籤') {
         return '<div class="lottery-result-note" style="background:#dcfce7;color:#166534;border-left:4px solid #16a34a;">🎉 恭喜中籤！請留意後續繳費或辦理通知。</div>';
       }
@@ -1659,7 +1670,9 @@
       });
       
       const resultCounts = userRecords.reduce((acc, r) => {
-        const s = r.lottery_status || '尚未抽籤';
+        const s = r.lottery_status
+          ? (r.result_published ? r.lottery_status : '結果尚未公布')
+          : '尚未抽籤';
         acc[s] = (acc[s] || 0) + 1;
         return acc;
       }, {});
@@ -1743,7 +1756,7 @@
         <div style="background: #f3f4f6; padding: 14px; border-radius: 6px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="flex: 1; font-size: 14px; color: #333;">
             <div style="margin-bottom: 8px;"><strong>地點:</strong> ${records[0].location_name}</div>
-            <div style="margin-bottom: 8px;"><strong>類型:</strong> ${records[0].venue_type} <span class="lottery-status-badge ${getLotteryStatusClass(records[0].lottery_status)}">${getLotteryStatusText(records[0])}</span></div>
+            <div style="margin-bottom: 8px;"><strong>類型:</strong> ${records[0].venue_type} <span class="lottery-status-badge ${getLotteryStatusClass(records[0].lottery_status, records[0])}">${getLotteryStatusText(records[0])}</span></div>
             <div style="margin-bottom: 10px;"><strong>登記時段:</strong> ${displayTimeText}</div>${getLotteryResultNote(records[0])}
             <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid #d1d5db;">
               <div style="color: var(--primary-green); font-weight: 700; font-size: 13px;">

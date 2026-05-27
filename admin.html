@@ -514,9 +514,21 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>狀態</th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>${sortHeader('類型','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>公布</th><th>狀態</th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>${sortHeader('類型','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
-    html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td><td><span class="tag ${r.lottery_locked?'green':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${suspiciousTag(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
+    html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
+    <td>
+      <select class="status-select" data-status-id="${r.id}" style="border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;font-weight:800;">
+        <option value="" ${!r.lottery_status?'selected':''}>未抽籤</option>
+        <option value="中籤" ${r.lottery_status==='中籤'?'selected':''}>中籤</option>
+        <option value="候補1" ${r.lottery_status==='候補1'?'selected':''}>候補1</option>
+        <option value="候補2" ${r.lottery_status==='候補2'?'selected':''}>候補2</option>
+        <option value="候補3" ${r.lottery_status==='候補3'?'selected':''}>候補3</option>
+        <option value="未中籤" ${r.lottery_status==='未中籤'?'selected':''}>未中籤</option>
+      </select>
+    </td>
+    <td>${publishStatusTag(r)}</td>
+    <td>${suspiciousTag(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
@@ -529,6 +541,15 @@ function renderRecordsTable(){
   if(selectPage){ selectPage.onchange=()=>{ pageIds.forEach(id=>{ if(selectPage.checked) selectedRecordIds.add(id); else selectedRecordIds.delete(id); }); renderRecordsTable(); }; }
   document.querySelectorAll('.record-check').forEach(chk=>{ chk.onchange=()=>{ if(chk.checked) selectedRecordIds.add(chk.dataset.id); else selectedRecordIds.delete(chk.dataset.id); renderRecordsTable(); }; });
   document.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>confirmDelete(btn.dataset.del));
+  document.querySelectorAll('.status-select').forEach(sel=>{
+    sel.onchange=async()=>{
+      const ok=await updateRecordLotteryStatus(sel.dataset.statusId, sel.value);
+      if(ok){
+        await loadAllData();
+        renderRecordsTable();
+      }
+    };
+  });
 }
 function confirmDelete(id){
   const r=allRecords.find(x=>x.id===id);
@@ -694,6 +715,58 @@ async function saveAllCapacity(){
   renderCapacityPage();
 }
 
+
+
+async function updateRecordLotteryStatus(recordId, status){
+  const payload={
+    lottery_status: status || null,
+    updated_at: new Date().toISOString()
+  };
+
+  if(!status){
+    payload.lottery_locked=false;
+    payload.lottery_batch=null;
+    payload.result_published=false;
+  }else{
+    payload.lottery_locked=true;
+  }
+
+  const {error}=await db.from(RECORD_TABLE).update(payload).eq('id',recordId);
+  if(error){
+    console.error(error);
+    alert('更新抽籤狀態失敗');
+    return false;
+  }
+  return true;
+}
+
+async function publishRecords(recordIds, published){
+  if(!recordIds || recordIds.length===0){
+    alert('沒有可更新的資料');
+    return false;
+  }
+
+  const {error,data}=await db
+    .from(RECORD_TABLE)
+    .update({result_published:published})
+    .in('id',recordIds)
+    .select('id');
+
+  if(error){
+    console.error(error);
+    alert('更新公布狀態失敗，請確認 result_published 欄位與 UPDATE 權限。');
+    return false;
+  }
+
+  alert(`${published?'已公布':'已取消公布'}，共更新 ${(data||[]).length} 筆`);
+  return true;
+}
+
+function publishStatusTag(record){
+  return record.result_published
+    ? '<span class="tag green">已公布</span>'
+    : '<span class="tag gray">未公布</span>';
+}
 
 function applyTextTemplate(template, data){
   return String(template || '').replace(/\{name\}/g, data.name || '')
@@ -942,22 +1015,36 @@ function renderLotteryPage(){
 
     document.getElementById('lotteryList').innerHTML=`
       <div class="panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
           <h3 style="margin:0;">📋 本場次名單</h3>
-          <button id="exportStageBtn" class="btn btn-green">匯出本場次名單</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="publishStageBtn" class="btn btn-green">公布本場次結果</button>
+            <button id="unpublishStageBtn" class="btn btn-danger">取消公布</button>
+            <button id="exportStageBtn" class="btn btn-green">匯出本場次名單</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>項次</th><th>抽籤狀態</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>身分證後4碼</th><th>類型</th><th>星期</th><th>時段</th><th>登記時間</th>
+                <th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>身分證後4碼</th><th>類型</th><th>星期</th><th>時段</th><th>登記時間</th>
               </tr>
             </thead>
             <tbody>
               ${sorted.map((r,i)=>`
                 <tr>
                   <td>${i+1}</td>
-                  <td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td>
+                  <td>
+                    <select class="stage-status-select" data-status-id="${r.id}" style="border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;font-weight:800;">
+                      <option value="" ${!r.lottery_status?'selected':''}>未抽籤</option>
+                      <option value="中籤" ${r.lottery_status==='中籤'?'selected':''}>中籤</option>
+                      <option value="候補1" ${r.lottery_status==='候補1'?'selected':''}>候補1</option>
+                      <option value="候補2" ${r.lottery_status==='候補2'?'selected':''}>候補2</option>
+                      <option value="候補3" ${r.lottery_status==='候補3'?'selected':''}>候補3</option>
+                      <option value="未中籤" ${r.lottery_status==='未中籤'?'selected':''}>未中籤</option>
+                    </select>
+                  </td>
+                  <td>${publishStatusTag(r)}</td>
                   <td>${typeof suspiciousTag === 'function' ? suspiciousTag(r) : ''}</td>
                   <td><strong>${escapeHtml(r.serial_number)}</strong></td>
                   <td>${escapeHtml(r.name)}</td>
@@ -976,6 +1063,41 @@ function renderLotteryPage(){
     `;
     const btn=document.getElementById('exportStageBtn');
     if(btn) btn.onclick=()=>exportToCsv(sorted);
+
+    const ids=sorted.map(r=>r.id).filter(Boolean);
+    const pubBtn=document.getElementById('publishStageBtn');
+    const unpubBtn=document.getElementById('unpublishStageBtn');
+
+    if(pubBtn) pubBtn.onclick=async()=>{
+      if(!confirm('確定要公布本場次抽籤結果給民眾查詢嗎？')) return;
+      const ok=await publishRecords(ids,true);
+      if(ok){
+        await loadAllData();
+        renderLotteryPage();
+        setTimeout(()=>restoreLotterySelection(sorted[0].venue_type,sorted[0].day_of_week,sorted[0].time_slot),0);
+      }
+    };
+
+    if(unpubBtn) unpubBtn.onclick=async()=>{
+      if(!confirm('確定要取消公布本場次抽籤結果嗎？')) return;
+      const ok=await publishRecords(ids,false);
+      if(ok){
+        await loadAllData();
+        renderLotteryPage();
+        setTimeout(()=>restoreLotterySelection(sorted[0].venue_type,sorted[0].day_of_week,sorted[0].time_slot),0);
+      }
+    };
+
+    document.querySelectorAll('.stage-status-select').forEach(sel=>{
+      sel.onchange=async()=>{
+        const ok=await updateRecordLotteryStatus(sel.dataset.statusId, sel.value);
+        if(ok){
+          await loadAllData();
+          renderLotteryPage();
+          setTimeout(()=>restoreLotterySelection(sorted[0].venue_type,sorted[0].day_of_week,sorted[0].time_slot),0);
+        }
+      };
+    });
   }
 
   const refresh=()=>{
@@ -1099,7 +1221,8 @@ function renderLotteryPage(){
         .update({
           lottery_status: status,
           lottery_batch: batch,
-          lottery_locked: true
+          lottery_locked: true,
+          result_published: false
         })
         .in('id', ids)
         .select('id');
@@ -1660,10 +1783,10 @@ function resetPassword(id){
 }
 function exportToCsv(records){
   if(!records.length){alert('沒有資料可以匯出');return;}
-  let csv='序號,抽籤狀態,鎖定,異常狀態,姓名,手機,身分證後4碼,地點,運動類型,星期,時段,登記時間\n';
+  let csv='序號,抽籤狀態,公布狀態,鎖定,異常狀態,姓名,手機,身分證後4碼,地點,運動類型,星期,時段,登記時間\n';
   records.forEach(r=>{
     const state=isSuspiciousPhone(r)?'同手機多身分':'正常';
-    csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${r.id_last4||''}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
+    csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.result_published?'已公布':'未公布'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${r.id_last4||''}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
   });
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`登記清單_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
