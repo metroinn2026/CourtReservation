@@ -32,10 +32,9 @@
     .field input,.field select,.toolbar input,.toolbar select,.inline-form input,.inline-form select{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:10px 12px;font-size:14px;background:white}
     .field input:focus,.field select:focus,.toolbar input:focus,.toolbar select:focus,.inline-form input:focus,.inline-form select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,122,176,.12)}
     .btn{border:none;border-radius:10px;padding:10px 13px;font-size:14px;font-weight:850;cursor:pointer;transition:.15s;white-space:nowrap}
-    .btn-primary{background:var(--blue);color:#fff}.btn-primary:hover{background:var(--blue2)}
-    .btn-green{background:var(--green);color:#fff}.btn-orange{background:var(--orange);color:#fff}
-    .btn-danger{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}.btn-danger:hover{background:#fecaca}
-    .btn-gray{background:#f3f4f6;color:#374151;border:1px solid #d1d5db}.btn:disabled{opacity:.55;cursor:not-allowed}
+    .btn-primary,.btn-green,.btn-orange,.btn-danger,.btn-gray{background:var(--blue);color:#fff;border:1px solid var(--blue)}
+    .btn-primary:hover,.btn-green:hover,.btn-orange:hover,.btn-danger:hover,.btn-gray:hover{background:var(--blue2);border-color:var(--blue2)}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
     .msg{padding:11px 12px;border-radius:10px;font-size:13px;margin:12px 0;line-height:1.6}.msg.error{background:#fee2e2;color:#7f1d1d}.msg.ok{background:#dcfce7;color:#166534}.msg.info{background:#e5f2f7;color:#075985}
     .app{min-height:100vh;display:grid;grid-template-columns:260px 1fr}
     .sidebar{background:#0f172a;color:#fff;padding:22px;display:flex;flex-direction:column;gap:18px}
@@ -558,7 +557,7 @@ function renderRecordsTable(){
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>
-      <select class="status-select" data-status-id="${r.id}" style="border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;font-weight:800;">
+      <select class="status-select" data-status-id="${r.id}" data-original="${escapeHtml(r.lottery_status||'')}" style="border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;font-weight:800;">
         <option value="" ${!r.lottery_status?'selected':''}>未抽籤</option>
         <option value="中籤" ${r.lottery_status==='中籤'?'selected':''}>中籤</option>
         <option value="候補1" ${r.lottery_status==='候補1'?'selected':''}>候補1</option>
@@ -582,12 +581,21 @@ function renderRecordsTable(){
   document.querySelectorAll('.record-check').forEach(chk=>{ chk.onchange=()=>{ if(chk.checked) selectedRecordIds.add(chk.dataset.id); else selectedRecordIds.delete(chk.dataset.id); renderRecordsTable(); }; });
   document.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>confirmDelete(btn.dataset.del));
   document.querySelectorAll('.status-select').forEach(sel=>{
-    sel.onchange=async()=>{
-      const ok=await updateRecordLotteryStatus(sel.dataset.statusId, sel.value);
-      if(ok){
-        await loadAllData();
-        renderRecordsTable();
-      }
+    sel.onchange=()=>{
+      const oldValue=sel.dataset.original || '';
+      const newValue=sel.value || '';
+      const r=allRecords.find(x=>String(x.id)===String(sel.dataset.statusId));
+      showModal('確認變更抽籤狀態',`確定要將 ${escapeHtml(r?.name||'此筆資料')} 的狀態由「${escapeHtml(oldValue||'未抽籤')}」改為「${escapeHtml(newValue||'未抽籤')}」嗎？`,async()=>{
+        const ok=await updateRecordLotteryStatus(sel.dataset.statusId, newValue);
+        if(ok){
+          await loadAllData();
+          renderRecordsTable();
+        }else{
+          sel.value=oldValue;
+        }
+      },false,()=>{
+        sel.value=oldValue;
+      });
     };
   });
 }
@@ -719,8 +727,9 @@ function fillDefaultCapacity(){
 }
 
 function clearAllCapacity(){
-  if(!confirm('確定要把目前類型的名額清為 0 嗎？尚未按「儲存目前類型」前不會寫入資料庫。')) return;
-  document.querySelectorAll('.cap-input').forEach(input=>input.value=0);
+  showModal('確認清除名額','確定要把目前類型的名額清為 0 嗎？尚未按「儲存目前類型」前不會寫入資料庫。',async()=>{
+    document.querySelectorAll('.cap-input').forEach(input=>input.value=0);
+  });
 }
 
 async function saveAllCapacity(){
@@ -1164,7 +1173,7 @@ function renderLotteryPage(){
                 <tr>
                   <td>${i+1}</td>
                   <td>
-                    <select class="stage-status-select" data-status-id="${r.id}" style="border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;font-weight:800;">
+                    <select class="stage-status-select" data-status-id="${r.id}" data-original="${escapeHtml(r.lottery_status||'')}" style="border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;font-weight:800;">
                       <option value="" ${!r.lottery_status?'selected':''}>未抽籤</option>
                       <option value="中籤" ${r.lottery_status==='中籤'?'selected':''}>中籤</option>
                       <option value="候補1" ${r.lottery_status==='候補1'?'selected':''}>候補1</option>
@@ -1198,7 +1207,8 @@ function renderLotteryPage(){
     const unpubBtn=document.getElementById('unpublishStageBtn');
 
     if(pubBtn) pubBtn.onclick=async()=>{
-      if(!confirm('確定要公布本場次抽籤結果給民眾查詢嗎？')) return;
+      const okConfirm=await confirmModal('確認公布本場次結果','確定要公布本場次抽籤結果給民眾查詢嗎？');
+      if(!okConfirm) return;
       const ok=await publishRecords(ids,true);
       if(ok){
         await loadAllData();
@@ -1208,7 +1218,8 @@ function renderLotteryPage(){
     };
 
     if(unpubBtn) unpubBtn.onclick=async()=>{
-      if(!confirm('確定要取消公布本場次抽籤結果嗎？')) return;
+      const okConfirm=await confirmModal('確認取消公布','確定要取消公布本場次抽籤結果嗎？');
+      if(!okConfirm) return;
       const ok=await publishRecords(ids,false);
       if(ok){
         await loadAllData();
@@ -1218,13 +1229,22 @@ function renderLotteryPage(){
     };
 
     document.querySelectorAll('.stage-status-select').forEach(sel=>{
-      sel.onchange=async()=>{
-        const ok=await updateRecordLotteryStatus(sel.dataset.statusId, sel.value);
-        if(ok){
-          await loadAllData();
-          renderLotteryPage();
-          setTimeout(()=>restoreLotterySelection(sorted[0].venue_type,sorted[0].day_of_week,sorted[0].time_slot),0);
-        }
+      sel.onchange=()=>{
+        const oldValue=sel.dataset.original || '';
+        const newValue=sel.value || '';
+        const r=allRecords.find(x=>String(x.id)===String(sel.dataset.statusId));
+        showModal('確認變更抽籤狀態',`確定要將 ${escapeHtml(r?.name||'此筆資料')} 的狀態由「${escapeHtml(oldValue||'未抽籤')}」改為「${escapeHtml(newValue||'未抽籤')}」嗎？`,async()=>{
+          const ok=await updateRecordLotteryStatus(sel.dataset.statusId, newValue);
+          if(ok){
+            await loadAllData();
+            renderLotteryPage();
+            setTimeout(()=>restoreLotterySelection(sorted[0].venue_type,sorted[0].day_of_week,sorted[0].time_slot),0);
+          }else{
+            sel.value=oldValue;
+          }
+        },false,()=>{
+          sel.value=oldValue;
+        });
       };
     });
   }
@@ -1262,7 +1282,8 @@ function renderLotteryPage(){
           <button id="unlockLot" class="btn btn-danger">解除此場次鎖定並清除抽籤結果</button>
         `;
         document.getElementById('unlockLot').onclick=async()=>{
-          if(!confirm('確定解除此場次鎖定並清除抽籤結果嗎？')) return;
+          const okConfirm=await confirmModal('確認解除鎖定','確定解除此場次鎖定並清除抽籤結果嗎？');
+          if(!okConfirm) return;
           const ids=records.map(r=>r.id).filter(Boolean);
           if(ids.length===0){ alert('此場次沒有可解除的資料'); return; }
 
@@ -1327,7 +1348,8 @@ function renderLotteryPage(){
     if(!venue||!day||!time){alert('正式抽籤前，請先選定「運動類型＋星期＋時段」');return;}
     if(n<=0||rec.length===0){alert('請確認抽籤人數與篩選資料');return;}
     if(rec.some(r=>r.lottery_locked === true || r.lottery_locked === 'true' || String(r.lottery_status||'').trim() !== '')){alert('此場次已有抽籤結果，不可重抽');return;}
-    if(!confirm(`確定要正式抽籤並鎖定此場次嗎？\n${venue}｜${day}｜${time}\n中籤 ${n} 人，候補 ${w} 人`)) return;
+    const okConfirm=await confirmModal('確認正式抽籤',`確定要正式抽籤並鎖定此場次嗎？<br>${escapeHtml(venue)}｜${escapeHtml(day)}｜${escapeHtml(time)}<br>中籤 ${n} 人，候補 ${w} 人`);
+    if(!okConfirm) return;
 
     const result=performLotteryWithWaitlist(rec,n,w);
     const batch=`${venue}|${day}|${time}|${new Date().toISOString()}`;
@@ -1581,7 +1603,8 @@ function renderLotteryPage(){
   async function runBatch(){
     const stages=batchStages().filter(s=>s.canDraw);
     if(stages.length===0){alert('沒有可批次抽籤的場次。請確認範圍、正取人數或是否已鎖定。');return;}
-    if(!confirm(`確定要批次抽籤並鎖定 ${stages.length} 個場次嗎？`)) return;
+    const okConfirm=await confirmModal('確認批次抽籤',`確定要批次抽籤並鎖定 ${stages.length} 個場次嗎？`);
+    if(!okConfirm) return;
 
     let totalExpected=0, totalUpdated=0;
     for(const s of stages){
@@ -1899,7 +1922,7 @@ async function loadAccountList(){
   const admins=await loadAdmins();
   if(!admins){document.getElementById('accountList').textContent='讀取失敗';return;}
   document.getElementById('accountList').innerHTML=admins.map(a=>`<div class="account-row"><div><strong>${escapeHtml(a.display_name)}｜${escapeHtml(a.username)}</strong><div class="small">${roleName(a.role)}｜${a.is_active?'啟用中':'已停用'}</div></div><div style="display:flex;gap:8px"><button class="btn btn-gray" data-reset="${a.id}">改密碼</button><button class="btn ${a.is_active?'btn-danger':'btn-green'}" data-toggle="${a.id}" data-active="${a.is_active}">${a.is_active?'停用':'啟用'}</button></div></div>`).join('');
-  document.querySelectorAll('[data-toggle]').forEach(btn=>btn.onclick=async()=>{ const active=btn.dataset.active==='true'; await db.from(ADMIN_TABLE).update({is_active:!active,updated_at:new Date().toISOString()}).eq('id',btn.dataset.toggle); loadAccountList(); });
+  document.querySelectorAll('[data-toggle]').forEach(btn=>btn.onclick=async()=>{ const active=btn.dataset.active==='true'; const okConfirm=await confirmModal(active?'確認停用帳號':'確認啟用帳號',`確定要${active?'停用':'啟用'}此管理員帳號嗎？`); if(!okConfirm) return; await db.from(ADMIN_TABLE).update({is_active:!active,updated_at:new Date().toISOString()}).eq('id',btn.dataset.toggle); loadAccountList(); });
   document.querySelectorAll('[data-reset]').forEach(btn=>btn.onclick=()=>resetPassword(btn.dataset.reset));
 }
 function resetPassword(id){
@@ -1910,6 +1933,13 @@ function resetPassword(id){
     alert('密碼已更新');
   }, true);
 }
+
+function confirmModal(title, body){
+  return new Promise(resolve=>{
+    showModal(title, body, ()=>resolve(true), false, ()=>resolve(false));
+  });
+}
+
 function exportToCsv(records){
   if(!records.length){alert('沒有資料可以匯出');return;}
   let csv='序號,抽籤狀態,公布狀態,鎖定,異常狀態,姓名,手機,身分證後4碼,地點,運動類型,星期,時段,登記時間\n';
@@ -1920,11 +1950,11 @@ function exportToCsv(records){
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`登記清單_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
-function showModal(title,body,onOk,withInput=false){
+function showModal(title,body,onOk,withInput=false,onCancel=null){
   const el=document.createElement('div'); el.className='modal';
   el.innerHTML=`<div class="modal-card"><h3>${title}</h3><div class="small">${body}</div>${withInput?'<input id="modalInput" type="password" style="width:100%;margin-top:12px;border:1px solid #d1d5db;border-radius:10px;padding:10px">':''}<div class="modal-actions"><button class="btn btn-gray" id="mCancel">取消</button><button class="btn btn-primary" id="mOk">確認</button></div></div>`;
   document.body.appendChild(el);
-  document.getElementById('mCancel').onclick=()=>el.remove();
+  document.getElementById('mCancel').onclick=()=>{ if(typeof onCancel==='function') onCancel(); el.remove(); };
   document.getElementById('mOk').onclick=async()=>{ const input=withInput?document.getElementById('modalInput').value:undefined; await onOk(input); el.remove(); };
 }
 
