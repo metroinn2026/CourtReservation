@@ -119,7 +119,7 @@ const CAPACITY_TABLE = 'lottery_capacity_settings';
 let currentAdmin = null;
 let allRecords = [];
 let capacitySettings = {};
-let recordState = { q:'', venue:'', day:'', time:'', page:1, perPage:20 };
+let recordState = { q:'', venue:'', day:'', time:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let selectedRecordIds = new Set();
 let currentPage = 'dashboard';
 
@@ -246,9 +246,71 @@ function renderDashboard(){
   document.getElementById('content').innerHTML=renderCards(s)+`<div class="panel"><h3>🏆 運動類型統計</h3><div class="cards">${venueHtml}</div></div><div class="panel"><h3>⚠️ 後台說明</h3><div class="alert">本後台為穩定版靜態管理介面。若需重設登入帳號，可於 Supabase SQL Editor 執行 <strong>DELETE FROM public.admin_users;</strong> 後重新整理後台，系統會出現建立第一位超級管理員。</div></div>`;
 }
 
+
+function daySortValue(day){
+  const order={'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6,'周日':7};
+  return order[day] || 99;
+}
+function timeSortValue(timeSlot){
+  const t=String(timeSlot||'').split('-')[0];
+  const h=parseInt(t.split(':')[0],10);
+  return isNaN(h) ? 99 : h;
+}
+function statusSortValue(status){
+  const s=String(status||'未抽籤');
+  if(s==='中籤') return 1;
+  if(s.startsWith('候補')) return 2 + (parseInt(s.replace('候補',''),10)||0);
+  if(s==='未中籤') return 50;
+  return 99;
+}
+function venueSortValue(venue){
+  const order={'羽球':1,'籃球':2,'B1桌球':3,'B2桌球':4};
+  return order[venue] || 99;
+}
+function getSortValue(record,key){
+  if(key==='lottery_status') return statusSortValue(record.lottery_status);
+  if(key==='venue_type') return venueSortValue(record.venue_type);
+  if(key==='day_of_week') return daySortValue(record.day_of_week);
+  if(key==='time_slot') return timeSortValue(record.time_slot);
+  if(key==='registered_at') return record.registered_at ? new Date(record.registered_at).getTime() : 0;
+  return String(record[key] || '').toLowerCase();
+}
+function sortRecords(records){
+  const key=recordState.sortKey || 'registered_at';
+  const dir=recordState.sortDir || 'desc';
+  return [...records].sort((a,b)=>{
+    const av=getSortValue(a,key);
+    const bv=getSortValue(b,key);
+    let cmp=0;
+    if(typeof av==='number' && typeof bv==='number') cmp=av-bv;
+    else cmp=String(av).localeCompare(String(bv),'zh-Hant');
+    return dir==='asc' ? cmp : -cmp;
+  });
+}
+function sortHeader(label,key){
+  const active=recordState.sortKey===key;
+  const arrow=active ? (recordState.sortDir==='asc'?'▲':'▼') : '↕';
+  return `<button class="sort-head" data-sort="${key}" style="background:none;border:none;color:#475569;font-weight:900;cursor:pointer;padding:0;font-size:12px;">${label} ${arrow}</button>`;
+}
+function bindSortHeaders(){
+  document.querySelectorAll('[data-sort]').forEach(btn=>{
+    btn.onclick=()=>{
+      const key=btn.dataset.sort;
+      if(recordState.sortKey===key){
+        recordState.sortDir = recordState.sortDir==='asc' ? 'desc' : 'asc';
+      }else{
+        recordState.sortKey=key;
+        recordState.sortDir = key==='registered_at' ? 'desc' : 'asc';
+      }
+      recordState.page=1;
+      renderRecordsTable();
+    };
+  });
+}
+
 function getFilteredRecords(){
   const q=recordState.q.trim().toLowerCase();
-  return allRecords.filter(r=>{
+  const filteredRecords = allRecords.filter(r=>{
     if(recordState.venue && r.venue_type!==recordState.venue) return false;
     if(recordState.day && r.day_of_week!==recordState.day) return false;
     if(recordState.time && r.time_slot!==recordState.time) return false;
@@ -258,6 +320,7 @@ function getFilteredRecords(){
     }
     return true;
   });
+  return sortRecords(filteredRecords);
 }
 function renderRecordsPage(){
   selectedRecordIds.clear();
@@ -287,12 +350,12 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>抽籤狀態</th><th>狀態</th><th>序號</th><th>姓名</th><th>手機</th><th>身分證後4碼</th><th>類型</th><th>星期</th><th>時段</th><th>時數</th><th>登記時間</th><th>操作</th></tr></thead><tbody>`;
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>狀態</th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>${sortHeader('類型','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td><td><span class="tag ${r.lottery_locked?'green':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${suspiciousTag(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
-  document.getElementById('recordsTable').innerHTML=html;
+  document.getElementById('recordsTable').innerHTML=html; bindSortHeaders();
   document.getElementById('prevPage').disabled=recordState.page<=1;
   document.getElementById('nextPage').disabled=recordState.page>=totalPages;
   document.getElementById('prevPage').onclick=()=>{recordState.page--;renderRecordsTable();};
