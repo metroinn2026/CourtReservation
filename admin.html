@@ -486,6 +486,7 @@ function renderLotteryPage(){
         <button id="lockLot" class="btn btn-orange">正式抽籤並鎖定</button>
       </div>
       <div id="lotteryPreview"></div>
+      <div id="unlockArea" style="display:none;margin-top:10px;"></div>
       <div id="lotteryResult"></div>
     </div>
   `;
@@ -512,20 +513,28 @@ function renderLotteryPage(){
     `;
 
     document.getElementById('lockLot').disabled = locked || !venue || !day || !time || records.length===0;
-    if(locked && currentAdmin && currentAdmin.role==='super_admin'){
-      document.getElementById('lotteryPreview').innerHTML += `<button id="unlockLot" class="btn btn-danger" style="margin-top:8px;">解除此場次鎖定</button>`;
-      setTimeout(()=>{
+    const unlockArea=document.getElementById('unlockArea');
+    if(unlockArea){
+      if(locked && currentAdmin && currentAdmin.role==='super_admin'){
+        unlockArea.style.display='block';
+        unlockArea.innerHTML=`<button id="unlockLot" class="btn btn-danger">解除此場次鎖定並清除抽籤結果</button>`;
         const btn=document.getElementById('unlockLot');
-        if(btn) btn.onclick=async()=>{
+        btn.onclick=async()=>{
           if(!confirm('確定解除此場次鎖定並清除抽籤結果嗎？')) return;
           const ids=records.map(r=>r.id);
-          const {error}=await db.from(RECORD_TABLE).update({lottery_status:null, lottery_batch:null, lottery_locked:false}).in('id',ids);
+          const {error}=await db
+            .from(RECORD_TABLE)
+            .update({lottery_status:null, lottery_batch:null, lottery_locked:false})
+            .in('id',ids);
           if(error){alert('解除鎖定失敗');console.error(error);return;}
           alert('已解除鎖定');
           await loadAllData();
           renderLotteryPage();
         };
-      },0);
+      }else{
+        unlockArea.style.display='none';
+        unlockArea.innerHTML='';
+      }
     }
     return records;
   };
