@@ -565,8 +565,22 @@ function renderLotteryPage(){
     result.waitlist.forEach((r,idx)=>updates.push({id:r.id, lottery_status:`候補${idx+1}`, lottery_batch:batch, lottery_locked:true}));
     result.losers.forEach(r=>updates.push({id:r.id, lottery_status:'未中籤', lottery_batch:batch, lottery_locked:true}));
 
-    const {error}=await db.from(RECORD_TABLE).upsert(updates);
-    if(error){alert('寫入抽籤結果失敗');console.error(error);return;}
+    for (const row of updates) {
+      const { error } = await db
+        .from(RECORD_TABLE)
+        .update({
+          lottery_status: row.lottery_status,
+          lottery_batch: row.lottery_batch,
+          lottery_locked: row.lottery_locked
+        })
+        .eq('id', row.id);
+
+      if (error) {
+        alert('寫入抽籤結果失敗');
+        console.error(error);
+        return;
+      }
+    }
 
     alert('正式抽籤結果已鎖定');
     await loadAllData();
