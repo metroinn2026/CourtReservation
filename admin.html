@@ -273,10 +273,117 @@ function renderPage(page){
 }
 function renderDashboard(){
   const s=stats();
-  const venueHtml=venueOrder.map(v=>{const d=s.byVenue[v]||{count:0,people:0,hours:0}; return `<div class="stat"><div class="label">${v}</div><div class="num">${d.count}</div><div class="small">${d.people} 人｜${d.hours} 小時</div></div>`}).join('');
-  document.getElementById('content').innerHTML=renderCards(s)+`<div class="panel"><h3>🏆 運動類型統計</h3><div class="cards">${venueHtml}</div></div><div class="panel"><h3>⚠️ 後台說明</h3><div class="alert">本後台為穩定版靜態管理介面。若需重設登入帳號，可於 Supabase SQL Editor 執行 <strong>DELETE FROM public.admin_users;</strong> 後重新整理後台，系統會出現建立第一位超級管理員。</div></div>`;
-}
 
+  const dailyMap={};
+  allRecords.forEach(r=>{
+    const d=r.registered_at ? new Date(r.registered_at) : null;
+    if(!d || isNaN(d)) return;
+    const key=d.toISOString().slice(0,10);
+    if(!dailyMap[key]) dailyMap[key]={count:0,people:new Set(),hours:0};
+    dailyMap[key].count++;
+    dailyMap[key].people.add(`${normalizePhone(r.phone)}|${r.id_last4||''}`);
+    dailyMap[key].hours += recordHours(r);
+  });
+
+  const dailyRows=Object.entries(dailyMap)
+    .map(([date,v])=>({date,count:v.count,people:v.people.size,hours:v.hours}))
+    .sort((a,b)=>a.date.localeCompare(b.date));
+
+  const maxDaily=Math.max(1,...dailyRows.map(r=>r.count));
+  const chartW=900, chartH=280, padL=54, padR=24, padT=24, padB=54;
+  const innerW=chartW-padL-padR, innerH=chartH-padT-padB;
+
+  let lineSvg='';
+  if(dailyRows.length===0){
+    lineSvg=`<div class="small" style="padding:24px;text-align:center;">目前尚無登記趨勢資料</div>`;
+  }else{
+    const points=dailyRows.map((r,i)=>{
+      const x=padL + (dailyRows.length===1 ? innerW/2 : i*(innerW/(dailyRows.length-1)));
+      const y=padT + innerH - (r.count/maxDaily)*innerH;
+      return {x,y,...r};
+    });
+
+    const poly=points.map(p=>`${p.x},${p.y}`).join(' ');
+    const grid=[0,.25,.5,.75,1].map(rate=>{
+      const y=padT + innerH - rate*innerH;
+      const label=Math.round(maxDaily*rate);
+      return `<line x1="${padL}" y1="${y}" x2="${chartW-padR}" y2="${y}" stroke="#e5e7eb"/><text x="${padL-10}" y="${y+4}" text-anchor="end" font-size="11" fill="#64748b">${label}</text>`;
+    }).join('');
+
+    lineSvg=`
+      <div class="table-wrap" style="border:none;">
+        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:auto;background:white;border:1px solid var(--border);border-radius:14px;">
+          ${grid}
+          <line x1="${padL}" y1="${padT+innerH}" x2="${chartW-padR}" y2="${padT+innerH}" stroke="#94a3b8"/>
+          <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+innerH}" stroke="#94a3b8"/>
+          <polyline points="${poly}" fill="none" stroke="var(--blue)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          ${points.map((p,i)=>`
+            <circle cx="${p.x}" cy="${p.y}" r="5" fill="var(--blue)"/>
+            <text x="${p.x}" y="${p.y-10}" text-anchor="middle" font-size="11" fill="var(--blue)" font-weight="800">${p.count}</text>
+            ${i%Math.ceil(points.length/8 || 1)===0 || points.length<=8 ? `<text x="${p.x}" y="${padT+innerH+24}" text-anchor="middle" font-size="11" fill="#64748b">${p.date.slice(5)}</text>` : ''}
+          `).join('')}
+        </svg>
+      </div>
+    `;
+  }
+
+  const venueHtml=venueOrder.map(v=>{
+    const d=s.byVenue[v]||{count:0,people:0,hours:0};
+    return `<div class="stat"><div class="label">${v}</div><div class="num">${d.count}</div><div class="small">${d.people} 人｜${d.hours} 小時</div></div>`;
+  }).join('');
+
+  const slotMap={};
+  allRecords.forEach(r=>{
+    const key=`${r.venue_type||'未分類'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'}`;
+    if(!slotMap[key]) slotMap[key]={key,count:0,people:new Set()};
+    slotMap[key].count++;
+    slotMap[key].people.add(`${normalizePhone(r.phone)}|${r.id_last4||''}`);
+  });
+
+  const hotSlots=Object.values(slotMap)
+    .map(x=>({...x,people:x.people.size}))
+    .sort((a,b)=>b.count-a.count)
+    .slice(0,10);
+
+  const hotSlotHtml=hotSlots.length?`
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>排行</th><th>場次</th><th>登記筆數</th><th>登記人數</th></tr></thead>
+        <tbody>
+          ${hotSlots.map((x,i)=>`
+            <tr>
+              <td><strong>${i+1}</strong></td>
+              <td>${escapeHtml(x.key)}</td>
+              <td>${x.count}</td>
+              <td>${x.people}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `:`<div class="small">目前尚無熱門時段資料</div>`;
+
+  document.getElementById('content').innerHTML=`
+    ${renderCards(s)}
+
+    <div class="panel">
+      <h3>📈 每日登記趨勢</h3>
+      <div class="small" style="margin-bottom:12px;">用來觀察宣傳後是否帶動登記量，以及截止日前是否出現集中登記。</div>
+      ${lineSvg}
+    </div>
+
+    <div class="panel">
+      <h3>🏆 運動類型統計</h3>
+      <div class="cards">${venueHtml}</div>
+    </div>
+
+    <div class="panel">
+      <h3>🔥 熱門場次排行</h3>
+      <div class="small" style="margin-bottom:12px;">可用來判斷哪些星期與時段最搶手，後續可作為調整名額或開放時段參考。</div>
+      ${hotSlotHtml}
+    </div>
+  `;
+}
 
 function daySortValue(day){
   const order={'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6,'周日':7};
@@ -1528,7 +1635,7 @@ function renderSettingsPage(){
 
 function renderAccountsPage(){
   if(currentAdmin.role!=='super_admin') return;
-  document.getElementById('content').innerHTML=`<div class="two-col"><div class="panel"><h3>➕ 新增後台帳號</h3><div class="field"><label>帳號</label><input id="newUser" placeholder="例如 staff01"></div><div class="field"><label>顯示名稱</label><input id="newName" placeholder="例如 王小明"></div><div class="field"><label>密碼</label><input id="newPass" type="password"></div><div class="field"><label>角色</label><select id="newRole"><option value="staff">一般管理員</option><option value="super_admin">超級管理員</option></select></div><button id="addAccountBtn" class="btn btn-primary" style="width:100%">建立帳號</button><div class="small" style="margin-top:12px">一般管理員：可看資料、匯出、設定名額、抽籤。超級管理員：可管理帳號。</div></div><div class="panel"><h3>🔐 帳號安全說明</h3><div class="alert">密碼以加鹽雜湊儲存。正式營運如需更高資安，建議升級 Supabase Auth。</div></div></div><div class="panel"><h3>管理員清單</h3><div id="accountList">讀取中...</div></div>`;
+  document.getElementById('content').innerHTML=`<div class="panel"><h3>⚠️ 帳號重設說明</h3><div class="alert">若需重設登入帳號，可於 Supabase SQL Editor 執行 <strong>DELETE FROM public.admin_users;</strong> 後重新整理後台，系統會出現建立第一位超級管理員。此操作會清空所有後台帳號，請謹慎使用。</div></div><div class="two-col"><div class="panel"><h3>➕ 新增後台帳號</h3><div class="field"><label>帳號</label><input id="newUser" placeholder="例如 staff01"></div><div class="field"><label>顯示名稱</label><input id="newName" placeholder="例如 王小明"></div><div class="field"><label>密碼</label><input id="newPass" type="password"></div><div class="field"><label>角色</label><select id="newRole"><option value="staff">一般管理員</option><option value="super_admin">超級管理員</option></select></div><button id="addAccountBtn" class="btn btn-primary" style="width:100%">建立帳號</button><div class="small" style="margin-top:12px">一般管理員：可看資料、匯出、設定名額、抽籤。超級管理員：可管理帳號。</div></div><div class="panel"><h3>🔐 帳號安全說明</h3><div class="alert">密碼以加鹽雜湊儲存。正式營運如需更高資安，建議升級 Supabase Auth。</div></div></div><div class="panel"><h3>管理員清單</h3><div id="accountList">讀取中...</div></div>`;
   document.getElementById('addAccountBtn').onclick=async()=>{
     const username=document.getElementById('newUser').value.trim(), display_name=document.getElementById('newName').value.trim(), password=document.getElementById('newPass').value, role=document.getElementById('newRole').value;
     if(!username||!display_name||!password){alert('請填完整');return;}
