@@ -582,6 +582,27 @@ function renderLotteryPage(){
       <div id="lotteryList"></div>
       <div id="lotteryResult"></div>
     </div>
+
+    <div class="panel">
+      <h3>⚡ 批次抽籤</h3>
+      <div class="alert">
+        系統會依照「運動類型＋星期＋時段」自動分場次，讀取名額設定後一次抽完。每場次前面為中籤，未中籤者會自動排為候補順位。
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+        <select id="batchVenue">
+          <option value="">全部類型</option>
+          ${venueOrder.map(v=>`<option value="${v}">${v}</option>`).join('')}
+        </select>
+        <select id="batchMode">
+          <option value="unlocked">只抽尚未鎖定場次</option>
+          <option value="all">全部重抽（需先解除鎖定）</option>
+        </select>
+        <button id="previewBatchLot" class="btn btn-gray">預覽批次場次</button>
+        <button id="runBatchLot" class="btn btn-orange">一鍵批次抽籤並鎖定</button>
+      </div>
+      <div id="batchLotteryInfo" class="msg info">請先按「預覽批次場次」確認。</div>
+      <div id="batchLotteryTable"></div>
+    </div>
   `;
 
   function getSelectedRecords(){
@@ -860,7 +881,152 @@ function renderLotteryPage(){
     },0);
   };
 
+  const previewBatchBtn=document.getElementById('previewBatchLot');
+  const runBatchBtn=document.getElementById('runBatchLot');
+  if(previewBatchBtn) previewBatchBtn.onclick=()=>renderBatchLotteryPreview();
+  if(runBatchBtn) runBatchBtn.onclick=()=>runBatchLotteryAndLock();
+
   refresh();
+  renderBatchLotteryPreview();
+}
+
+function buildBatchLotteryStages(){
+  const venueFilter=document.getElementById('batchVenue') ? document.getElementById('batchVenue').value : '';
+  const mode=document.getElementById('batchMode') ? document.getElementById('batchMode').value : 'unlocked';
+  const stageMap={};
+
+  allRecords.forEach(r=>{
+    if(venueFilter && r.venue_type!==venueFilter) return;
+    if(!r.venue_type || !r.day_of_week || !r.time_slot) return;
+    const key=`${r.venue_type}|${r.day_of_week}|${r.time_slot}`;
+    if(!stageMap[key]){
+      stageMap[key]={venue:r.venue_type,day:r.day_of_week,time:r.time_slot,records:[]};
+    }
+    stageMap[key].records.push(r);
+  });
+
+  return Object.values(stageMap).map(stage=>{
+    const locked=stage.records.some(r=>r.lottery_locked===true || r.lottery_locked==='true' || String(r.lottery_status||'').trim()!=='');
+    const capKey=settingKey(stage.venue,stage.day,stage.time);
+    const winnerCount=Number(capacitySettings[capKey] ?? capacityMap[stage.venue] ?? 0);
+    const peopleCount=new Set(stage.records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+    return {...stage,locked,winnerCount,peopleCount,canDraw:stage.records.length>0 && winnerCount>0 && (mode==='all' ? !locked : !locked)};
+  }).sort((a,b)=>{
+    const venueA=venueSortValue(a.venue);
+    const venueB=venueSortValue(b.venue);
+    if(venueA!==venueB) return venueA-venueB;
+    const dayA=daySortValue(a.day);
+    const dayB=daySortValue(b.day);
+    if(dayA!==dayB) return dayA-dayB;
+    const timeA=timeSortValue(a.time);
+    const timeB=timeSortValue(b.time);
+    return timeA-timeB;
+  });
+}
+
+function renderBatchLotteryPreview(){
+  const stages=buildBatchLotteryStages();
+  const drawable=stages.filter(s=>s.canDraw);
+  const locked=stages.filter(s=>s.locked);
+  const emptyOrNoCap=stages.filter(s=>!s.locked && s.winnerCount<=0);
+
+  const info=document.getElementById('batchLotteryInfo');
+  const table=document.getElementById('batchLotteryTable');
+  if(!info || !table) return;
+
+  info.innerHTML=`共 ${stages.length} 個場次｜可批次抽籤 ${drawable.length} 場｜已鎖定 ${locked.length} 場｜名額為0 ${emptyOrNoCap.length} 場`;
+
+  if(stages.length===0){
+    table.innerHTML='<div class="small">目前沒有符合條件的登記資料。</div>';
+    return;
+  }
+
+  table.innerHTML=`
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>項次</th><th>類型</th><th>星期</th><th>時段</th><th>登記筆數</th><th>登記人數</th><th>中籤名額</th><th>預計候補</th><th>狀態</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${stages.map((s,i)=>{
+            const waitCount=Math.max(0,s.peopleCount-s.winnerCount);
+            return `<tr>
+              <td>${i+1}</td>
+              <td><span class="tag blue">${escapeHtml(s.venue)}</span></td>
+              <td>${escapeHtml(s.day)}</td>
+              <td>${escapeHtml(s.time)}</td>
+              <td>${s.records.length}</td>
+              <td>${s.peopleCount}</td>
+              <td><strong>${s.winnerCount}</strong></td>
+              <td>${waitCount}</td>
+              <td>${s.locked?'<span class="tag green">已鎖定</span>':s.winnerCount<=0?'<span class="tag gray">名額0</span>':'<span class="tag warn">可抽籤</span>'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function runBatchLotteryAndLock(){
+  const stages=buildBatchLotteryStages().filter(s=>s.canDraw);
+  if(stages.length===0){
+    alert('沒有可批次抽籤的場次。請確認是否已設定名額，或場次是否已鎖定。');
+    return;
+  }
+
+  if(!confirm(`確定要批次抽籤並鎖定 ${stages.length} 個場次嗎？\\n系統會依各場次名額設定抽出中籤，其餘登記人會依序列為候補。`)) return;
+
+  let totalUpdated=0;
+  let totalExpected=0;
+  const errors=[];
+
+  for(const stage of stages){
+    const waitlistCount=Math.max(0,stage.peopleCount-stage.winnerCount);
+    const result=performLotteryWithWaitlist(stage.records,stage.winnerCount,waitlistCount);
+    const batch=`BATCH|${stage.venue}|${stage.day}|${stage.time}|${new Date().toISOString()}`;
+
+    const updateRows=[];
+    result.winners.forEach(r=>updateRows.push({id:r.id, lottery_status:'中籤'}));
+    result.waitlist.forEach((r,idx)=>updateRows.push({id:r.id, lottery_status:`候補${idx+1}`}));
+    result.losers.forEach(r=>updateRows.push({id:r.id, lottery_status:'未中籤'}));
+    totalExpected += updateRows.length;
+
+    const groups={};
+    updateRows.forEach(row=>{
+      if(!groups[row.lottery_status]) groups[row.lottery_status]=[];
+      groups[row.lottery_status].push(row.id);
+    });
+
+    for(const [status,ids] of Object.entries(groups)){
+      const {error,data}=await db
+        .from(RECORD_TABLE)
+        .update({
+          lottery_status: status,
+          lottery_batch: batch,
+          lottery_locked: true
+        })
+        .in('id',ids)
+        .select('id');
+
+      if(error){
+        errors.push(`${stage.venue}-${stage.day}-${stage.time}：${error.message||'寫入失敗'}`);
+      }else{
+        totalUpdated += (data||[]).length;
+      }
+    }
+  }
+
+  await loadAllData();
+  renderLotteryPage();
+
+  if(errors.length){
+    alert(`批次抽籤完成但有錯誤。\\n應更新 ${totalExpected} 筆，已更新 ${totalUpdated} 筆。\\n` + errors.slice(0,5).join('\\n'));
+  }else{
+    alert(`批次抽籤完成，已鎖定 ${stages.length} 場，共更新 ${totalUpdated} 筆。`);
+  }
 }
 
 function getLotteryStatusSummary(records){
