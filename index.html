@@ -839,6 +839,44 @@
       margin-bottom: 12px;
     }
 
+
+    .lottery-status-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-left: 6px;
+    }
+
+    .lottery-status-win {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .lottery-status-wait {
+      background: #fff7ed;
+      color: #9a3412;
+    }
+
+    .lottery-status-lose {
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .lottery-status-none {
+      background: #e5f2f7;
+      color: var(--primary-blue);
+    }
+
+    .lottery-result-note {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
     .rules-close {
       background: none;
       border: none;
@@ -1552,6 +1590,33 @@
       }
     }
 
+
+    function getLotteryStatusClass(status) {
+      const s = String(status || '');
+      if (s === '中籤') return 'lottery-status-win';
+      if (s.startsWith('候補')) return 'lottery-status-wait';
+      if (s === '未中籤') return 'lottery-status-lose';
+      return 'lottery-status-none';
+    }
+
+    function getLotteryStatusText(record) {
+      return record.lottery_status || '尚未抽籤';
+    }
+
+    function getLotteryResultNote(record) {
+      const status = String(record.lottery_status || '');
+      if (status === '中籤') {
+        return '<div class="lottery-result-note" style="background:#dcfce7;color:#166534;border-left:4px solid #16a34a;">🎉 恭喜中籤！請留意後續繳費或辦理通知。</div>';
+      }
+      if (status.startsWith('候補')) {
+        return `<div class="lottery-result-note" style="background:#fff7ed;color:#9a3412;border-left:4px solid #f97316;">⏳ 目前為${status}，若有名額釋出將依序通知。</div>`;
+      }
+      if (status === '未中籤') {
+        return '<div class="lottery-result-note" style="background:#f3f4f6;color:#374151;border-left:4px solid #94a3b8;">本次未中籤，感謝您的登記。</div>';
+      }
+      return '<div class="lottery-result-note" style="background:#e5f2f7;color:#075985;border-left:4px solid var(--primary-blue);">目前尚未抽籤，請留意後續公告。</div>';
+    }
+
     function renderRecords() {
       const container = document.getElementById('records-list');
       if (!container) return;
@@ -1592,7 +1657,19 @@
         groupedBySerial[record.serial_number].push(record);
       });
       
-      let html = `<div style="margin-bottom: 16px; padding: 12px; background: #e5f2f7; border-radius: 6px; font-weight: 700; color: var(--primary-blue);">總共登記 ${userRecords.length} 筆 • 登記總時數：${totalHours} 小時</div>`;
+      const resultCounts = userRecords.reduce((acc, r) => {
+        const s = r.lottery_status || '尚未抽籤';
+        acc[s] = (acc[s] || 0) + 1;
+        return acc;
+      }, {});
+      const resultSummary = Object.entries(resultCounts)
+        .map(([k,v]) => `${k} ${v}筆`)
+        .join(' ｜ ');
+
+      let html = `<div style="margin-bottom: 16px; padding: 12px; background: #e5f2f7; border-radius: 6px; font-weight: 700; color: var(--primary-blue);">
+        總共登記 ${userRecords.length} 筆 • 登記總時數：${totalHours} 小時
+        <div style="font-size:12px;margin-top:6px;color:#475569;">抽籤狀態：${resultSummary}</div>
+      </div>`;
       
       html += Object.entries(groupedBySerial).map(([serialNum, records]) => {
         let displayTimeText = '';
@@ -1665,8 +1742,8 @@
         <div style="background: #f3f4f6; padding: 14px; border-radius: 6px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="flex: 1; font-size: 14px; color: #333;">
             <div style="margin-bottom: 8px;"><strong>地點:</strong> ${records[0].location_name}</div>
-            <div style="margin-bottom: 8px;"><strong>類型:</strong> ${records[0].venue_type}</div>
-            <div style="margin-bottom: 10px;"><strong>登記時段:</strong> ${displayTimeText}</div>
+            <div style="margin-bottom: 8px;"><strong>類型:</strong> ${records[0].venue_type} <span class="lottery-status-badge ${getLotteryStatusClass(records[0].lottery_status)}">${getLotteryStatusText(records[0])}</span></div>
+            <div style="margin-bottom: 10px;"><strong>登記時段:</strong> ${displayTimeText}</div>${getLotteryResultNote(records[0])}
             <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid #d1d5db;">
               <div style="color: var(--primary-green); font-weight: 700; font-size: 13px;">
                 #${serialNum}
@@ -1676,9 +1753,13 @@
               </div>
             </div>
           </div>
-          <button data-serial="${serialNum}" class="delete-btn" style="background: none; border: none; cursor: pointer; padding: 4px; color: #7f1d1d; flex-shrink: 0; margin-left: 12px;" title="刪除">
-            <span data-lucide="trash-2" aria-hidden="true"></span>
-          </button>
+          ${records[0].lottery_status ? `
+            <div style="font-size:12px;color:#64748b;flex-shrink:0;margin-left:12px;">已抽籤<br>不可刪除</div>
+          ` : `
+            <button data-serial="${serialNum}" class="delete-btn" style="background: none; border: none; cursor: pointer; padding: 4px; color: #7f1d1d; flex-shrink: 0; margin-left: 12px;" title="刪除">
+              <span data-lucide="trash-2" aria-hidden="true"></span>
+            </button>
+          `}
         </div>
       `}).join('');
       
