@@ -603,7 +603,7 @@ function renderLotteryPage(){
         <div id="lotteryStageSummary"></div>
         <div id="unlockArea" style="display:none;margin-top:12px;"></div>
         <div id="lotteryList"></div>
-        <div id="lotteryResult"></div>
+        <div id="lotteryResult"></div><div id="lotteryNotifyPanel"></div>
       </div>
 
       <div id="batchLotteryPanel" style="display:none;">
@@ -829,6 +829,11 @@ function renderLotteryPage(){
 
     renderStageSummary(records, locked, selectedComplete);
     renderStageList(records, selectedComplete);
+    if(selectedComplete){
+      renderNotificationPanel(records, venue, day, time);
+    }else{
+      document.getElementById('lotteryNotifyPanel').innerHTML='';
+    }
 
     const unlockArea=document.getElementById('unlockArea');
     if(locked){
@@ -966,6 +971,92 @@ function renderLotteryPage(){
       renderLotteryResult(freshResult,'正式抽籤結果（已鎖定）',true);
     },0);
   };
+
+
+  function renderNotificationPanel(records, venue, day, time){
+    if(!records || records.length===0){
+      document.getElementById('lotteryNotifyPanel').innerHTML='';
+      return;
+    }
+
+    const winners=records.filter(r=>r.lottery_status==='中籤');
+    const waitlist=records.filter(r=>String(r.lottery_status||'').startsWith('候補'));
+    const losers=records.filter(r=>r.lottery_status==='未中籤');
+
+    function buildMsg(r){
+      const status=r.lottery_status || '';
+      if(status==='中籤'){
+        return `${r.name}您好，您登記的${venue}場地「${day} ${time}」已中籤，請於指定期限內完成後續手續。`;
+      }
+      if(String(status).startsWith('候補')){
+        return `${r.name}您好，您登記的${venue}場地「${day} ${time}」目前為${status}，若有名額釋出將依序通知。`;
+      }
+      return `${r.name}您好，您登記的${venue}場地「${day} ${time}」本次未中籤，感謝您的登記。`;
+    }
+
+    const allNotify=[...winners,...waitlist,...losers];
+
+    document.getElementById('lotteryNotifyPanel').innerHTML=`
+      <div class="panel" style="margin-top:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;">
+          <h3 style="margin:0;">📨 抽籤結果通知</h3>
+          <button id="copyAllNotifyBtn" class="btn btn-green">複製全部通知</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>狀態</th>
+                <th>姓名</th>
+                <th>手機</th>
+                <th>通知內容</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${allNotify.map(r=>{
+                const msg=buildMsg(r);
+                return `
+                  <tr>
+                    <td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'')}</span></td>
+                    <td>${escapeHtml(r.name||'')}</td>
+                    <td>${escapeHtml(r.phone||'')}</td>
+                    <td style="min-width:420px;">${escapeHtml(msg)}</td>
+                    <td>
+                      <button class="btn btn-gray copyNotifyBtn" data-msg="${encodeURIComponent(msg)}">複製通知</button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    document.querySelectorAll('.copyNotifyBtn').forEach(btn=>{
+      btn.onclick=async()=>{
+        const msg=decodeURIComponent(btn.dataset.msg || '');
+        try{
+          await navigator.clipboard.writeText(msg);
+          alert('已複製通知內容');
+        }catch(e){
+          prompt('請手動複製以下內容：',msg);
+        }
+      };
+    });
+
+    document.getElementById('copyAllNotifyBtn').onclick=async()=>{
+      const text=allNotify.map(r=>buildMsg(r)).join('\n\n');
+      try{
+        await navigator.clipboard.writeText(text);
+        alert('已複製全部通知');
+      }catch(e){
+        prompt('請手動複製以下內容：',text);
+      }
+    };
+  }
 
   function batchStages(){
     const venueFilter=document.getElementById('batchVenue')?.value || '';
