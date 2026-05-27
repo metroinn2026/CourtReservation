@@ -562,44 +562,134 @@ function renderLotteryPage(){
 
   document.getElementById('content').innerHTML=`
     <div class="panel">
-      <h3>🎲 單一場次抽籤</h3>
-      <div class="alert">
-        請先選定「運動類型＋星期＋時段」，確認本場次總表與名單無誤後，再正式抽籤並鎖定結果。
-      </div>
-      <div class="toolbar" style="grid-template-columns:repeat(5,1fr) auto auto;">
-        <select id="lotVenue"><option value="">請選擇類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
-        <select id="lotDay"><option value="">請選擇星期</option>${days.map(d=>`<option>${d}</option>`).join('')}</select>
-        <select id="lotTime"><option value="">請選擇時段</option>${times.map(t=>`<option>${escapeHtml(t)}</option>`).join('')}</select>
-        <input id="lotWinnerCount" type="number" min="1" value="1" placeholder="中籤人數">
-        <input id="lotWaitlistCount" type="number" min="0" value="0" placeholder="候補人數">
-        <button id="previewLot" class="btn btn-gray">預覽抽籤</button>
-        <button id="lockLot" class="btn btn-orange">正式抽籤並鎖定</button>
+      <h3>🎲 抽籤作業</h3>
+
+      <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+        <button id="singleLotteryTab" class="btn btn-primary">單一場次抽籤</button>
+        <button id="batchLotteryTab" class="btn btn-gray">批次抽籤</button>
       </div>
 
-      <div id="lotteryPreview"></div>
-      <div id="lotteryStageSummary"></div>
-      <div id="unlockArea" style="display:none;margin-top:12px;"></div>
-      <div id="lotteryList"></div>
-      <div id="lotteryResult"></div>
-    </div>
+      <div id="singleLotteryPanel">
+        <div class="alert">
+          單一場次抽籤適合用於確認某一個指定時段。請先選定「運動類型＋星期＋時段」，確認本場次總表與名單無誤後，再正式抽籤並鎖定結果。
+        </div>
 
-    <div class="panel">
-      <h3>⚡ 批次抽籤</h3>
-      <div class="alert">
-        這裡可以一次抽完所有場次。系統會依「運動類型＋星期＋時段」分場次，並讀取你在「名額設定」設定的可用名額；前面為中籤，其餘自動依序列為候補。
+        <div style="display:grid;grid-template-columns:repeat(5,1fr) auto auto;gap:12px;align-items:end;margin-bottom:14px;">
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">運動類型</label>
+            <select id="lotVenue"><option value="">請選擇類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
+          </div>
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">星期</label>
+            <select id="lotDay"><option value="">請選擇星期</option>${days.map(d=>`<option>${d}</option>`).join('')}</select>
+          </div>
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">時段</label>
+            <select id="lotTime"><option value="">請選擇時段</option>${times.map(t=>`<option>${escapeHtml(t)}</option>`).join('')}</select>
+          </div>
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">正取人數</label>
+            <input id="lotWinnerCount" type="number" min="1" value="1" placeholder="中籤人數">
+          </div>
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">備取人數</label>
+            <input id="lotWaitlistCount" type="number" min="0" value="0" placeholder="候補人數">
+          </div>
+          <button id="previewLot" class="btn btn-gray">預覽抽籤</button>
+          <button id="lockLot" class="btn btn-orange">正式抽籤並鎖定</button>
+        </div>
+
+        <div id="lotteryPreview"></div>
+        <div id="lotteryStageSummary"></div>
+        <div id="unlockArea" style="display:none;margin-top:12px;"></div>
+        <div id="lotteryList"></div>
+        <div id="lotteryResult"></div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
-        <select id="batchVenue" style="min-width:180px;">
-          <option value="">全部類型</option>
-          ${venueOrder.map(v=>`<option value="${v}">${v}</option>`).join('')}
-        </select>
-        <button id="previewBatchLot" class="btn btn-gray">預覽批次場次</button>
-        <button id="runBatchLot" class="btn btn-orange">一鍵批次抽籤並鎖定</button>
+
+      <div id="batchLotteryPanel" style="display:none;">
+        <div class="alert">
+          批次抽籤適合一次處理多個場次。系統會依「運動類型＋星期＋時段」分場次，並依你輸入的正取人數抽出中籤者，其餘自動依序列為備取。
+        </div>
+
+        <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr 1fr 1fr auto auto;gap:12px;align-items:end;margin-bottom:14px;">
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">抽籤類型</label>
+            <select id="batchVenue">
+              <option value="">全部類型</option>
+              ${venueOrder.map(v=>`<option value="${v}">${v}</option>`).join('')}
+            </select>
+          </div>
+
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">起始星期</label>
+            <select id="batchDayStart">
+              <option value="">周一開始</option>
+              ${days.map(d=>`<option value="${d}">${d}</option>`).join('')}
+            </select>
+          </div>
+
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">結束星期</label>
+            <select id="batchDayEnd">
+              <option value="">周日結束</option>
+              ${days.map(d=>`<option value="${d}">${d}</option>`).join('')}
+            </select>
+          </div>
+
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">起始時段</label>
+            <select id="batchTimeStart">
+              <option value="">最早時段</option>
+              ${times.map(t=>`<option value="${t}">${t}</option>`).join('')}
+            </select>
+          </div>
+
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">結束時段</label>
+            <select id="batchTimeEnd">
+              <option value="">最晚時段</option>
+              ${times.map(t=>`<option value="${t}">${t}</option>`).join('')}
+            </select>
+          </div>
+
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">每場正取人數</label>
+            <input id="batchWinnerCount" type="number" min="1" value="1" placeholder="正取人數">
+          </div>
+
+          <button id="previewBatchLot" class="btn btn-gray">預覽批次</button>
+          <button id="runBatchLot" class="btn btn-orange">批次抽籤並鎖定</button>
+        </div>
+
+        <div id="batchLotteryInfo" class="msg info">請先按「預覽批次」確認。</div>
+        <div id="batchLotteryTable"></div>
       </div>
-      <div id="batchLotteryInfo" class="msg info">請先按「預覽批次場次」確認。</div>
-      <div id="batchLotteryTable"></div>
     </div>
   `;
+
+  function switchLotteryTab(tab){
+    const singlePanel=document.getElementById('singleLotteryPanel');
+    const batchPanel=document.getElementById('batchLotteryPanel');
+    const singleTab=document.getElementById('singleLotteryTab');
+    const batchTab=document.getElementById('batchLotteryTab');
+
+    if(tab==='batch'){
+      singlePanel.style.display='none';
+      batchPanel.style.display='block';
+      singleTab.className='btn btn-gray';
+      batchTab.className='btn btn-primary';
+      previewBatch();
+    }else{
+      singlePanel.style.display='block';
+      batchPanel.style.display='none';
+      singleTab.className='btn btn-primary';
+      batchTab.className='btn btn-gray';
+      refresh();
+    }
+  }
+
+  document.getElementById('singleLotteryTab').onclick=()=>switchLotteryTab('single');
+  document.getElementById('batchLotteryTab').onclick=()=>switchLotteryTab('batch');
 
   function getSelectedRecords(){
     const venue=document.getElementById('lotVenue').value;
@@ -877,27 +967,68 @@ function renderLotteryPage(){
     },0);
   };
 
-  // batch lottery
   function batchStages(){
     const venueFilter=document.getElementById('batchVenue')?.value || '';
+    const dayStart=document.getElementById('batchDayStart')?.value || '';
+    const dayEnd=document.getElementById('batchDayEnd')?.value || '';
+    const timeStart=document.getElementById('batchTimeStart')?.value || '';
+    const timeEnd=document.getElementById('batchTimeEnd')?.value || '';
+    const winnerCountInput=Math.max(1, parseInt(document.getElementById('batchWinnerCount')?.value || '1',10));
+
+    const dayOrder={'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6,'周日':7};
+    const timeOrder={};
+    times.forEach((t,i)=>timeOrder[t]=i+1);
+
+    const startDayVal=dayStart ? dayOrder[dayStart] : 1;
+    const endDayVal=dayEnd ? dayOrder[dayEnd] : 7;
+    const startTimeVal=timeStart ? timeOrder[timeStart] : 1;
+    const endTimeVal=timeEnd ? timeOrder[timeEnd] : 999;
+
     const map={};
+
     allRecords.forEach(r=>{
       if(venueFilter && r.venue_type!==venueFilter) return;
+
+      const d=dayOrder[r.day_of_week] || 999;
+      const t=timeOrder[r.time_slot] || 999;
+
+      if(d < startDayVal || d > endDayVal) return;
+      if(t < startTimeVal || t > endTimeVal) return;
+
       if(!r.venue_type || !r.day_of_week || !r.time_slot) return;
+
       const key=`${r.venue_type}|${r.day_of_week}|${r.time_slot}`;
-      if(!map[key]) map[key]={venue:r.venue_type,day:r.day_of_week,time:r.time_slot,records:[]};
+
+      if(!map[key]){
+        map[key]={venue:r.venue_type,day:r.day_of_week,time:r.time_slot,records:[]};
+      }
+
       map[key].records.push(r);
     });
+
     return Object.values(map).map(s=>{
-      const capKey=settingKey(s.venue,s.day,s.time);
-      const winnerCount=Number(capacitySettings[capKey] ?? capacityMap[s.venue] ?? 0);
       const peopleCount=new Set(s.records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
-      const locked=s.records.some(r=>r.lottery_locked===true || r.lottery_locked==='true' || String(r.lottery_status||'').trim()!=='');
-      return {...s,winnerCount,peopleCount,locked,canDraw:!locked && winnerCount>0 && peopleCount>0};
+
+      const locked=s.records.some(r=>
+        r.lottery_locked===true ||
+        r.lottery_locked==='true' ||
+        String(r.lottery_status||'').trim()!==''
+      );
+
+      return {
+        ...s,
+        winnerCount:winnerCountInput,
+        peopleCount,
+        locked,
+        canDraw:!locked && winnerCountInput>0 && peopleCount>0
+      };
     }).sort((a,b)=>{
       const vo={'羽球':1,'籃球':2,'B1桌球':3,'B2桌球':4};
       const doo={'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6,'周日':7};
-      return (vo[a.venue]||9)-(vo[b.venue]||9) || (doo[a.day]||9)-(doo[b.day]||9) || String(a.time).localeCompare(String(b.time));
+
+      return (vo[a.venue]||9)-(vo[b.venue]||9)
+        || (doo[a.day]||9)-(doo[b.day]||9)
+        || String(a.time).localeCompare(String(b.time));
     });
   }
 
@@ -908,11 +1039,11 @@ function renderLotteryPage(){
     const info=document.getElementById('batchLotteryInfo');
     const table=document.getElementById('batchLotteryTable');
     if(!info||!table) return;
-    info.innerHTML=`共 ${stages.length} 個場次｜可批次抽籤 ${drawable.length} 場｜已鎖定 ${locked.length} 場`;
+    info.innerHTML=`共 ${stages.length} 個場次｜可批次抽籤 ${drawable.length} 場｜已鎖定 ${locked.length} 場｜每場正取 ${document.getElementById('batchWinnerCount')?.value || 1} 人`;
     table.innerHTML=stages.length?`
       <div class="table-wrap">
         <table>
-          <thead><tr><th>項次</th><th>類型</th><th>星期</th><th>時段</th><th>筆數</th><th>人數</th><th>中籤名額</th><th>預計候補</th><th>狀態</th></tr></thead>
+          <thead><tr><th>項次</th><th>類型</th><th>星期</th><th>時段</th><th>筆數</th><th>人數</th><th>正取</th><th>預計備取</th><th>狀態</th></tr></thead>
           <tbody>
             ${stages.map((s,i)=>`<tr>
               <td>${i+1}</td>
@@ -927,12 +1058,12 @@ function renderLotteryPage(){
             </tr>`).join('')}
           </tbody>
         </table>
-      </div>`:'<div class="small">目前沒有可批次抽籤的登記資料。</div>';
+      </div>`:'<div class="small">目前沒有符合條件的登記資料。</div>';
   }
 
   async function runBatch(){
     const stages=batchStages().filter(s=>s.canDraw);
-    if(stages.length===0){alert('沒有可批次抽籤的場次。請確認名額設定或是否已鎖定。');return;}
+    if(stages.length===0){alert('沒有可批次抽籤的場次。請確認範圍、正取人數或是否已鎖定。');return;}
     if(!confirm(`確定要批次抽籤並鎖定 ${stages.length} 個場次嗎？`)) return;
 
     let totalExpected=0, totalUpdated=0;
@@ -956,11 +1087,18 @@ function renderLotteryPage(){
     alert(`批次抽籤完成，共更新 ${totalUpdated}/${totalExpected} 筆。`);
     await loadAllData();
     renderLotteryPage();
+    switchLotteryTab('batch');
   }
 
   document.getElementById('previewBatchLot').onclick=previewBatch;
   document.getElementById('runBatchLot').onclick=runBatch;
-  document.getElementById('batchVenue').onchange=previewBatch;
+  ['batchVenue','batchDayStart','batchDayEnd','batchTimeStart','batchTimeEnd','batchWinnerCount'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){
+      el.onchange=previewBatch;
+      el.oninput=previewBatch;
+    }
+  });
 
   refresh();
   previewBatch();
