@@ -98,6 +98,7 @@
         <button data-page="records">📋 登記資料</button>
         <button data-page="capacity">🎯 名額設定</button>
         <button data-page="lottery">🎲 抽籤作業</button>
+        <button data-page="settings">📝 文字設定</button>
         <button data-page="accounts" id="accountsNav">👤 帳號權限</button>
       </nav>
       <div class="side-footer"><div id="sideUser">-</div><button id="logoutBtn" class="btn btn-gray" style="width:100%;margin-top:10px;">登出</button></div>
@@ -115,10 +116,12 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const ADMIN_TABLE = 'admin_users';
 const RECORD_TABLE = 'lottery_records';
 const CAPACITY_TABLE = 'lottery_capacity_settings';
+const SETTINGS_TABLE = 'system_settings';
 
 let currentAdmin = null;
 let allRecords = [];
 let capacitySettings = {};
+let systemSettings = {};
 let recordState = { q:'', venue:'', day:'', time:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let selectedRecordIds = new Set();
 let currentPage = 'dashboard';
@@ -199,14 +202,41 @@ async function enterApp(){
 function logout(){ sessionStorage.removeItem('venue_admin_session'); location.reload(); }
 
 async function loadAllData(){
-  const [recordsRes, capRes] = await Promise.all([
+  const [recordsRes, capRes, settingsRes] = await Promise.all([
     db.from(RECORD_TABLE).select('*').order('registered_at',{ascending:false}),
-    db.from(CAPACITY_TABLE).select('*')
+    db.from(CAPACITY_TABLE).select('*'),
+    db.from(SETTINGS_TABLE).select('*')
   ]);
-  if(recordsRes.error){ console.error(recordsRes.error); alert('讀取登記資料失敗，請確認 lottery_records 欄位與權限。'); }
+
+  if(recordsRes.error){
+    console.error(recordsRes.error);
+    alert('讀取登記資料失敗，請確認 lottery_records 欄位與權限。');
+  }
+
   allRecords=(recordsRes.data||[]).map(r=>({...r,__backendId:r.id}));
+
   capacitySettings={};
-  if(!capRes.error){ (capRes.data||[]).forEach(row=>{capacitySettings[settingKey(row.venue_type,row.day_of_week,row.time_slot)] = Number(row.winner_count||0);}); }
+  if(!capRes.error){
+    (capRes.data||[]).forEach(row=>{
+      capacitySettings[settingKey(row.venue_type,row.day_of_week,row.time_slot)] = Number(row.winner_count||0);
+    });
+  }
+
+  systemSettings={
+    rules_content: '請於登記期間內完成資料填寫，抽籤結果將依公告時間公布。',
+    register_notice: '請詳閱登記辦法後再進行登記。',
+    winner_template: '{name}您好，您登記的{venue}場地「{day} {time}」已中籤，請於指定期限內完成後續手續。',
+    waitlist_template: '{name}您好，您登記的{venue}場地「{day} {time}」目前為{status}，若有名額釋出將依序通知。',
+    loser_template: '{name}您好，您登記的{venue}場地「{day} {time}」本次未中籤，感謝您的登記。'
+  };
+
+  if(!settingsRes.error){
+    (settingsRes.data||[]).forEach(row=>{
+      systemSettings[row.key]=row.value || '';
+    });
+  }else{
+    console.warn('讀取文字設定失敗，請確認 system_settings 資料表與權限。', settingsRes.error);
+  }
 }
 
 function stats(records=allRecords){
@@ -228,7 +258,7 @@ function countSuspiciousPhones(){
 }
 function setActiveNav(page){
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
-  const title={dashboard:'總覽儀表板',records:'登記資料',capacity:'抽籤名額設定',lottery:'抽籤作業',accounts:'帳號權限管理'}[page] || '';
+  const title={dashboard:'總覽儀表板',records:'登記資料',capacity:'抽籤名額設定',lottery:'抽籤作業',settings:'文字設定中心',accounts:'帳號權限管理'}[page] || '';
   document.getElementById('pageTitle').textContent=title;
 }
 function renderPage(page){
@@ -238,6 +268,7 @@ function renderPage(page){
   if(page==='records') renderRecordsPage();
   if(page==='capacity') renderCapacityPage();
   if(page==='lottery') renderLotteryPage();
+  if(page==='settings') renderSettingsPage();
   if(page==='accounts') renderAccountsPage();
 }
 function renderDashboard(){
@@ -554,6 +585,33 @@ async function saveAllCapacity(){
   alert(`已儲存 ${window.currentCapacityVenue || ''} 共 ${rows.length} 筆名額設定`);
   await loadAllData();
   renderCapacityPage();
+}
+
+
+function applyTextTemplate(template, data){
+  return String(template || '').replace(/\{name\}/g, data.name || '')
+    .replace(/\{phone\}/g, data.phone || '')
+    .replace(/\{id_last4\}/g, data.id_last4 || '')
+    .replace(/\{venue\}/g, data.venue || '')
+    .replace(/\{day\}/g, data.day || '')
+    .replace(/\{time\}/g, data.time || '')
+    .replace(/\{status\}/g, data.status || '')
+    .replace(/\{serial_number\}/g, data.serial_number || '');
+}
+
+async function saveSetting(key, value){
+  const { error } = await db
+    .from(SETTINGS_TABLE)
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict:'key' });
+
+  if(error){
+    console.error(error);
+    alert('儲存失敗，請確認 system_settings 資料表與權限。');
+    return false;
+  }
+
+  systemSettings[key]=value;
+  return true;
 }
 
 function renderLotteryPage(){
@@ -985,13 +1043,22 @@ function renderLotteryPage(){
 
     function buildMsg(r){
       const status=r.lottery_status || '';
-      if(status==='中籤'){
-        return `${r.name}您好，您登記的${venue}場地「${day} ${time}」已中籤，請於指定期限內完成後續手續。`;
-      }
-      if(String(status).startsWith('候補')){
-        return `${r.name}您好，您登記的${venue}場地「${day} ${time}」目前為${status}，若有名額釋出將依序通知。`;
-      }
-      return `${r.name}您好，您登記的${venue}場地「${day} ${time}」本次未中籤，感謝您的登記。`;
+      const template = status==='中籤'
+        ? systemSettings.winner_template
+        : String(status).startsWith('候補')
+          ? systemSettings.waitlist_template
+          : systemSettings.loser_template;
+
+      return applyTextTemplate(template, {
+        name: r.name,
+        phone: r.phone,
+        id_last4: r.id_last4,
+        venue,
+        day,
+        time,
+        status,
+        serial_number: r.serial_number
+      });
     }
 
     const allNotify=[...winners,...waitlist,...losers];
@@ -1247,6 +1314,77 @@ function renderLotteryResult(result,title,locked){
     ${renderList(result.waitlist,'候補','#9a3412')}
     ${renderList(result.losers,'未中籤','#475569')}
   </div>`;
+}
+
+
+
+function renderSettingsPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="panel">
+      <h3>📝 文字設定中心</h3>
+      <div class="alert">
+        這裡可以直接修改前台登記辦法與抽籤結果通知文字。儲存後會寫入 Supabase，前台重新整理後會同步顯示。
+      </div>
+
+      <div class="two-col">
+        <div>
+          <div class="field">
+            <label>前台登記辦法</label>
+            <textarea id="rulesContentEditor" style="width:100%;min-height:320px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.rules_content || '')}</textarea>
+            <div class="small" style="margin-top:6px;">會顯示在前台「登記辦法」彈窗內。可直接換行。</div>
+          </div>
+
+          <div class="field">
+            <label>前台登記提醒短文</label>
+            <textarea id="registerNoticeEditor" style="width:100%;min-height:90px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.register_notice || '')}</textarea>
+            <div class="small" style="margin-top:6px;">可放在前台查詢／登記區塊上方的提醒文字。</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="field">
+            <label>中籤通知模板</label>
+            <textarea id="winnerTemplateEditor" style="width:100%;min-height:105px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.winner_template || '')}</textarea>
+          </div>
+
+          <div class="field">
+            <label>備取通知模板</label>
+            <textarea id="waitlistTemplateEditor" style="width:100%;min-height:105px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.waitlist_template || '')}</textarea>
+          </div>
+
+          <div class="field">
+            <label>未中籤通知模板</label>
+            <textarea id="loserTemplateEditor" style="width:100%;min-height:105px;border:1px solid #d1d5db;border-radius:10px;padding:12px;font-size:14px;line-height:1.8;">${escapeHtml(systemSettings.loser_template || '')}</textarea>
+          </div>
+
+          <div class="msg info">
+            可用代碼：{name}、{phone}、{id_last4}、{venue}、{day}、{time}、{status}、{serial_number}
+          </div>
+        </div>
+      </div>
+
+      <button id="saveTextSettingsBtn" class="btn btn-primary">儲存文字設定</button>
+    </div>
+  `;
+
+  document.getElementById('saveTextSettingsBtn').onclick=async()=>{
+    const payload=[
+      ['rules_content', document.getElementById('rulesContentEditor').value],
+      ['register_notice', document.getElementById('registerNoticeEditor').value],
+      ['winner_template', document.getElementById('winnerTemplateEditor').value],
+      ['waitlist_template', document.getElementById('waitlistTemplateEditor').value],
+      ['loser_template', document.getElementById('loserTemplateEditor').value]
+    ];
+
+    for(const [key,value] of payload){
+      const ok=await saveSetting(key,value);
+      if(!ok) return;
+    }
+
+    alert('文字設定已儲存');
+    await loadAllData();
+    renderSettingsPage();
+  };
 }
 
 

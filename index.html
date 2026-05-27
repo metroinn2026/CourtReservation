@@ -336,6 +336,47 @@
       }
 
 
+
+      if (!window.settingsSdk) {
+        const SETTINGS_SUPABASE_URL = 'https://wsvsdwuksuzcjisnpyin.supabase.co';
+        const SETTINGS_SUPABASE_KEY = 'sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
+        const SETTINGS_TABLE = 'system_settings';
+
+        function getSettingsSupabaseClient() {
+          if (!window.supabase) {
+            console.error('Supabase library not loaded');
+            return null;
+          }
+          if (!window.__venueLotterySupabaseClient) {
+            window.__venueLotterySupabaseClient = window.supabase.createClient(SETTINGS_SUPABASE_URL, SETTINGS_SUPABASE_KEY);
+          }
+          return window.__venueLotterySupabaseClient;
+        }
+
+        window.settingsSdk = {
+          async getAll() {
+            const client = getSettingsSupabaseClient();
+            if (!client) return {};
+
+            const { data, error } = await client
+              .from(SETTINGS_TABLE)
+              .select('*');
+
+            if (error) {
+              console.warn('讀取文字設定失敗', error);
+              return {};
+            }
+
+            const settings = {};
+            (data || []).forEach(row => {
+              settings[row.key] = row.value || '';
+            });
+
+            return settings;
+          }
+        };
+      }
+
       if (!window.lucide) {
         window.lucide = {
           createIcons() {
@@ -820,6 +861,7 @@
      <!-- Verification Section -->
      <div class="section" id="verification-section">
       <h2>🔎 查詢／登記我的資料</h2>
+      <div id="register-notice-box" style="display:none;background:#fff7ed;border-left:4px solid #FF9800;padding:12px;border-radius:8px;margin-bottom:16px;font-size:13px;line-height:1.7;color:#9a3412;"></div>
       <div id="verify-form">
        <div class="form-group">
         <label for="member-name">姓名 *</label> <input type="text" id="member-name" placeholder="請輸入姓名">
@@ -910,35 +952,16 @@
     <div class="rules-header">
      <h2 style="margin: 0; color: var(--primary-blue);">📋 登記辦法</h2><button class="rules-close" id="close-rules">✕</button>
     </div>
-    <div class="rules-body">
-     <h3>登記時間</h3>
-     <p>115年11月1日 (星期六) ～ 115年11月30日 (星期日)</p>
-     <h3>公布時間</h3>
-     <p>抽籤結果將於 115年12月10日 公布於官方網站</p>
-     <h3>繳費期限</h3>
-     <p>公布後10天內完成繳費（即115年12月20日前）</p>
-     <h3>登記注意事項</h3>
-     <ul>
-      <li>羽球及籃球每人各限登記一次，不分星期與時段</li>
-      <li>桌球場可登記多個時段，不限制登記次數</li>
-      <li>登記時需填寫完整的姓名、手機號碼與身分證後4碼</li>
-      <li>登記完成後可在「我的登記紀錄」查看詳細資訊</li>
-      <li>如需修改登記內容，請先刪除原登記後重新登記</li>
-     </ul>
-     <h3>抽籤規則</h3>
-     <ul>
-      <li>同一時段登記人數超過場地容額時進行抽籤</li>
-      <li>抽籤採電腦隨機抽籤方式進行</li>
-      <li>中籤人員需於期限內完成繳費始為確認登記</li>
-     </ul>
-     <h3>繳費方式</h3>
-     <p>詳情請參考公布之抽籤結果通知書</p>
-    </div>
+    <div class="rules-body" id="rules-body">載入中...</div>
    </div>
   </div>
   <script>
     let allRecords = [];
     let lotterySettings = {};
+    let systemSettings = {
+      rules_content: '請於登記期間內完成資料填寫，抽籤結果將依公告時間公布。',
+      register_notice: '請詳閱登記辦法後再進行登記。'
+    };
     let currentSelection = {
       name: '',
       phone: '',
@@ -989,6 +1012,31 @@
       }
     };
 
+
+    function renderSystemTextSettings() {
+      const rulesBody = document.getElementById('rules-body');
+      if (rulesBody) {
+        rulesBody.innerHTML = String(systemSettings.rules_content || '請詳閱登記辦法。').replace(/\n/g, '<br>');
+      }
+
+      const noticeBox = document.getElementById('register-notice-box');
+      if (noticeBox && systemSettings.register_notice) {
+        noticeBox.innerHTML = String(systemSettings.register_notice).replace(/\n/g, '<br>');
+        noticeBox.style.display = 'block';
+      }
+    }
+
+    async function loadSystemSettings() {
+      if (!window.settingsSdk) {
+        renderSystemTextSettings();
+        return;
+      }
+
+      const settings = await window.settingsSdk.getAll();
+      systemSettings = { ...systemSettings, ...(settings || {}) };
+      renderSystemTextSettings();
+    }
+
     // Initialize Data SDK and setup listeners
     async function initApp() {
       const initResult = await window.dataSdk.init(dataHandler);
@@ -1002,6 +1050,8 @@
           console.warn('Capacity SDK init failed. 請確認 Supabase 已建立 lottery_capacity_settings 資料表與權限。');
         }
       }
+
+      await loadSystemSettings();
 
       // Setup all event listeners AFTER SDK is ready
       setupAllEventListeners();
