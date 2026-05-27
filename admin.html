@@ -588,15 +588,34 @@ function renderLotteryPage(){
     const venue=document.getElementById('lotVenue').value;
     const day=document.getElementById('lotDay').value;
     const time=document.getElementById('lotTime').value;
-    const records=allRecords.filter(r=>
-      (!venue||r.venue_type===venue)&&
-      (!day||r.day_of_week===day)&&
-      (!time||r.time_slot===time)
-    );
-    return {venue,day,time,records};
+    const selectedComplete=!!venue && !!day && !!time;
+    const records=selectedComplete ? allRecords.filter(r=>
+      r.venue_type===venue &&
+      r.day_of_week===day &&
+      r.time_slot===time
+    ) : [];
+    return {venue,day,time,selectedComplete,records};
   }
 
-  function renderStageSummary(records, locked){
+  function localStatusValue(status){
+    const s=String(status||'未抽籤');
+    if(s==='中籤') return 1;
+    if(s.startsWith('候補')) return 2 + (parseInt(s.replace('候補',''),10)||0);
+    if(s==='未中籤') return 50;
+    return 99;
+  }
+
+  function renderStageSummary(records, locked, selectedComplete){
+    if(!selectedComplete){
+      document.getElementById('lotteryStageSummary').innerHTML=`
+        <div class="panel" style="background:#f8fafc;margin-top:16px;">
+          <h3>📊 本場次總表</h3>
+          <div class="small">請先選擇完整的「運動類型、星期、時段」，系統會在這裡顯示本場次統計。</div>
+        </div>
+      `;
+      return;
+    }
+
     const selectedPeople=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
     const statusCounts={};
     records.forEach(r=>{
@@ -609,7 +628,7 @@ function renderLotteryPage(){
     const notYet=statusCounts['未抽籤']||0;
 
     document.getElementById('lotteryStageSummary').innerHTML=`
-      <div class="cards" style="grid-template-columns:repeat(6,1fr);margin:16px 0;">
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:16px 0;">
         <div class="stat"><div class="label">登記筆數</div><div class="num">${records.length}</div></div>
         <div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${selectedPeople}</div></div>
         <div class="stat"><div class="label">中籤</div><div class="num" style="color:#166534">${winner}</div></div>
@@ -621,14 +640,30 @@ function renderLotteryPage(){
     `;
   }
 
-  function renderStageList(records){
-    if(records.length===0){
-      document.getElementById('lotteryList').innerHTML=`<div class="panel"><h3>📋 本場次名單</h3><div class="small">請先選擇場次，或目前篩選條件查無資料。</div></div>`;
+  function renderStageList(records, selectedComplete){
+    if(!selectedComplete){
+      document.getElementById('lotteryList').innerHTML=`
+        <div class="panel">
+          <h3>📋 本場次名單</h3>
+          <div class="small">請先選擇完整場次，這裡會顯示符合該場次的登記名單。</div>
+        </div>
+      `;
       return;
     }
+
+    if(records.length===0){
+      document.getElementById('lotteryList').innerHTML=`
+        <div class="panel">
+          <h3>📋 本場次名單</h3>
+          <div class="small">此場次目前沒有登記資料。</div>
+        </div>
+      `;
+      return;
+    }
+
     const sorted=[...records].sort((a,b)=>{
-      const sa=statusSortValue(a.lottery_status);
-      const sb=statusSortValue(b.lottery_status);
+      const sa=localStatusValue(a.lottery_status);
+      const sb=localStatusValue(b.lottery_status);
       if(sa!==sb) return sa-sb;
       return String(a.registered_at||'').localeCompare(String(b.registered_at||''));
     });
@@ -651,7 +686,7 @@ function renderLotteryPage(){
                 <tr>
                   <td>${i+1}</td>
                   <td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td>
-                  <td>${suspiciousTag(r)}</td>
+                  <td>${typeof suspiciousTag === 'function' ? suspiciousTag(r) : ''}</td>
                   <td><strong>${escapeHtml(r.serial_number)}</strong></td>
                   <td>${escapeHtml(r.name)}</td>
                   <td>${escapeHtml(r.phone)}</td>
@@ -672,10 +707,9 @@ function renderLotteryPage(){
   }
 
   const refresh=()=>{
-    const {venue,day,time,records}=getSelectedRecords();
-    const selectedComplete=!!venue && !!day && !!time;
+    const {venue,day,time,selectedComplete,records}=getSelectedRecords();
     const locked=selectedComplete && records.length>0 && records.some(r=>r.lottery_locked === true || r.lottery_locked === 'true' || String(r.lottery_status||'').trim() !== '');
-    const statusSummary=getLotteryStatusSummary(records);
+    const statusSummary=selectedComplete ? getLotteryStatusSummary(records) : '';
 
     document.getElementById('lotteryPreview').innerHTML=`
       <div class="msg ${locked?'error':'info'}">
@@ -686,8 +720,8 @@ function renderLotteryPage(){
       </div>
     `;
 
-    renderStageSummary(records, locked);
-    renderStageList(records);
+    renderStageSummary(records, locked, selectedComplete);
+    renderStageList(records, selectedComplete);
 
     const unlockArea=document.getElementById('unlockArea');
     if(locked){
