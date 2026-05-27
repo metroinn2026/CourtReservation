@@ -98,6 +98,7 @@
         <button data-page="capacity">🎯 名額設定</button>
         <button data-page="lottery">🎲 抽籤作業</button>
         <button data-page="settings">📝 文字設定</button>
+        <button data-page="logs">🧾 操作紀錄</button>
         <button data-page="accounts" id="accountsNav">👤 帳號權限</button>
       </nav>
       <div class="side-footer"><div id="sideUser">-</div><button id="logoutBtn" class="btn btn-gray" style="width:100%;margin-top:10px;">登出</button></div>
@@ -116,9 +117,11 @@ const ADMIN_TABLE = 'admin_users';
 const RECORD_TABLE = 'lottery_records';
 const CAPACITY_TABLE = 'lottery_capacity_settings';
 const SETTINGS_TABLE = 'system_settings';
+const LOG_TABLE = 'admin_operation_logs';
 
 let currentAdmin = null;
 let allRecords = [];
+let allLogs = [];
 let capacitySettings = {};
 let systemSettings = {};
 let recordState = { q:'', venue:'', day:'', time:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
@@ -214,6 +217,10 @@ async function loadAllData(){
 
   allRecords=(recordsRes.data||[]).map(r=>({...r,__backendId:r.id}));
 
+  const logsRes = await db.from(LOG_TABLE).select('*').order('created_at',{ascending:false}).limit(200);
+  allLogs = logsRes.error ? [] : (logsRes.data || []);
+  if(logsRes.error) console.warn('操作紀錄讀取失敗，請確認 admin_operation_logs 資料表是否已建立。', logsRes.error);
+
   capacitySettings={};
   if(!capRes.error){
     (capRes.data||[]).forEach(row=>{
@@ -257,7 +264,7 @@ function countSuspiciousPhones(){
 }
 function setActiveNav(page){
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
-  const title={dashboard:'總覽儀表板',records:'登記資料',capacity:'抽籤名額設定',lottery:'抽籤作業',settings:'文字設定中心',accounts:'帳號權限管理'}[page] || '';
+  const title={dashboard:'總覽儀表板',records:'登記資料',capacity:'抽籤名額設定',lottery:'抽籤作業',settings:'文字設定中心',logs:'操作紀錄',accounts:'帳號權限管理'}[page] || '';
   document.getElementById('pageTitle').textContent=title;
 }
 function renderPage(page){
@@ -268,6 +275,7 @@ function renderPage(page){
   if(page==='capacity') renderCapacityPage();
   if(page==='lottery') renderLotteryPage();
   if(page==='settings') renderSettingsPage();
+  if(page==='logs') renderLogsPage();
   if(page==='accounts') renderAccountsPage();
 }
 function renderDashboard(){
@@ -535,11 +543,28 @@ async function publishCurrentFilteredStage(published){
     alert('目前篩選場次沒有資料。');
     return;
   }
-  const noResult=records.filter(r=>!r.lottery_status).length;
-  const action=published ? '公布' : '取消公布';
-  const extra=noResult>0 ? `\n提醒：本場次仍有 ${noResult} 筆尚未設定抽籤狀態。` : '';
-  if(!confirm(`確定要${action}目前場次結果嗎？\n${recordState.venue}｜${recordState.day}｜${recordState.time}\n共 ${records.length} 筆${extra}`)) return;
-  const ok=await publishRecords(records.map(r=>r.id), published);
+  const okConfirm=await confirmPublishRecords(records,published,`${recordState.venue}｜${recordState.day}｜${recordState.time}`);
+  if(!okConfirm) return;
+  const ok=await publishRecords(records.map(r=>r.id), published, {scope:'單一場次', venue:recordState.venue, day:recordState.day, time:recordState.time});
+  if(ok){
+    await loadAllData();
+    renderRecordsPage();
+  }
+}
+
+async function publishCurrentVenueAllWeek(published){
+  if(!recordState.venue){
+    alert('請先選擇「類型」，再公布此類型全部結果。');
+    return;
+  }
+  const records=allRecords.filter(r=>r.venue_type===recordState.venue);
+  if(records.length===0){
+    alert('此類型目前沒有登記資料。');
+    return;
+  }
+  const okConfirm=await confirmPublishRecords(records,published,`${recordState.venue}｜周一至周日｜全部時段`);
+  if(!okConfirm) return;
+  const ok=await publishRecords(records.map(r=>r.id), published, {scope:'球類全部', venue:recordState.venue, day:'周一至周日', time:'全部時段'});
   if(ok){
     await loadAllData();
     renderRecordsPage();
@@ -606,6 +631,7 @@ function confirmDelete(id){
     const ids=allRecords.filter(x=>x.serial_number===serial).map(x=>x.id);
     const {error}=await db.from(RECORD_TABLE).delete().in('id',ids);
     if(error){ alert('刪除失敗'); console.error(error); return; }
+    await writeOperationLog('刪除登記資料', {serial_number:serial, name:r?.name||'', phone:r?.phone||'', total:ids.length}, ids);
     selectedRecordIds.clear();
     await loadAllData(); renderPage(currentPage);
   });
@@ -616,6 +642,7 @@ function batchDeleteSelectedRecords(){
   showModal('確認批次刪除',`確定要刪除已勾選的 ${ids.length} 筆登記資料嗎？刪除後無法復原。`,async()=>{
     const {error}=await db.from(RECORD_TABLE).delete().in('id',ids);
     if(error){ alert('批次刪除失敗'); console.error(error); return; }
+    await writeOperationLog('批次刪除登記資料', {total:ids.length}, ids);
     selectedRecordIds.clear();
     await loadAllData(); renderPage(currentPage);
   });
@@ -780,26 +807,49 @@ async function updateRecordLotteryStatus(recordId, status){
     payload.lottery_locked=true;
   }
 
+  const before=allRecords.find(r=>String(r.id)===String(recordId));
   const {error}=await db.from(RECORD_TABLE).update(payload).eq('id',recordId);
   if(error){
     console.error(error);
     alert('更新抽籤狀態失敗');
     return false;
   }
+  await writeOperationLog('變更抽籤狀態', {
+    record_id: recordId,
+    name: before?.name || '',
+    phone: before?.phone || '',
+    venue_type: before?.venue_type || '',
+    day_of_week: before?.day_of_week || '',
+    time_slot: before?.time_slot || '',
+    before_status: before?.lottery_status || '未抽籤',
+    after_status: status || '未抽籤'
+  }, [recordId]);
   return true;
 }
 
-async function publishRecords(recordIds, published){
+async function publishRecords(recordIds, published, meta={}){
   if(!recordIds || recordIds.length===0){
     alert('沒有可更新的資料');
     return false;
   }
 
-  const {error,data}=await db
+  const publishPayload={result_published:published, updated_at:new Date().toISOString(), published_at: published ? new Date().toISOString() : null};
+  let {error,data}=await db
     .from(RECORD_TABLE)
-    .update({result_published:published})
+    .update(publishPayload)
     .in('id',recordIds)
     .select('id');
+
+  if(error && String(error.message||'').includes('published_at')){
+    console.warn('published_at 欄位尚未建立，改用無公布時間模式更新。', error);
+    const fallback=await db
+      .from(RECORD_TABLE)
+      .update({result_published:published, updated_at:new Date().toISOString()})
+      .in('id',recordIds)
+      .select('id');
+    error=fallback.error;
+    data=fallback.data;
+  }
 
   if(error){
     console.error(error);
@@ -807,8 +857,99 @@ async function publishRecords(recordIds, published){
     return false;
   }
 
+  await writeOperationLog(published ? '公布抽籤結果' : '取消公布抽籤結果', {
+    scope: meta.scope || '',
+    venue_type: meta.venue || '',
+    day_of_week: meta.day || '',
+    time_slot: meta.time || '',
+    total: (data||[]).length,
+    summary: buildPublishSummary(recordIds.map(id=>allRecords.find(r=>String(r.id)===String(id))).filter(Boolean))
+  }, recordIds);
+
   alert(`${published?'已公布':'已取消公布'}，共更新 ${(data||[]).length} 筆`);
   return true;
+}
+
+function buildPublishSummary(records){
+  const counts={total:records.length,winner:0,waitlist:0,loser:0,noResult:0,published:0};
+  records.forEach(r=>{
+    const s=String(r.lottery_status||'');
+    if(s==='中籤') counts.winner++;
+    else if(s.startsWith('候補')) counts.waitlist++;
+    else if(s==='未中籤') counts.loser++;
+    else counts.noResult++;
+    if(r.result_published) counts.published++;
+  });
+  return counts;
+}
+
+function buildPublishSummaryHtml(records, scopeLabel, published){
+  const c=buildPublishSummary(records);
+  return `
+    <div style="line-height:1.8;">
+      <div style="font-weight:900;color:#0f172a;margin-bottom:8px;">${published?'即將公布':'即將取消公布'}：${escapeHtml(scopeLabel)}</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:10px 0;">
+        <div class="msg info" style="margin:0;">總筆數：<strong>${c.total}</strong></div>
+        <div class="msg info" style="margin:0;">已公布：<strong>${c.published}</strong></div>
+        <div class="msg ok" style="margin:0;">中籤：<strong>${c.winner}</strong></div>
+        <div class="msg info" style="margin:0;">候補：<strong>${c.waitlist}</strong></div>
+        <div class="msg info" style="margin:0;">未中籤：<strong>${c.loser}</strong></div>
+        <div class="msg ${c.noResult?'error':'ok'}" style="margin:0;">尚未抽籤：<strong>${c.noResult}</strong></div>
+      </div>
+      ${c.noResult ? '<div class="alert">提醒：仍有資料尚未設定抽籤狀態，公布後民眾可能看到「尚未抽籤」。</div>' : ''}
+      <div class="small">按下確認後才會執行；按取消會返回原畫面。</div>
+    </div>`;
+}
+
+function confirmPublishRecords(records, published, scopeLabel){
+  return confirmModal(published?'確認公布結果':'確認取消公布', buildPublishSummaryHtml(records, scopeLabel, published));
+}
+
+async function writeOperationLog(action, detail={}, recordIds=[]){
+  try{
+    const payload={
+      admin_id: currentAdmin?.id || null,
+      admin_username: currentAdmin?.username || '',
+      admin_display_name: currentAdmin?.display_name || '',
+      action,
+      detail,
+      record_ids: Array.isArray(recordIds) ? recordIds.map(String) : [],
+      created_at: new Date().toISOString()
+    };
+    const {error}=await db.from(LOG_TABLE).insert([payload]);
+    if(error) console.warn('操作紀錄寫入失敗，請確認 admin_operation_logs 資料表與 RLS policy。', error);
+  }catch(e){
+    console.warn('操作紀錄寫入失敗', e);
+  }
+}
+
+function renderLogsPage(){
+  const rows=allLogs || [];
+  const htmlRows=rows.map(log=>{
+    const detail=log.detail || {};
+    const scope=[detail.venue_type,detail.day_of_week,detail.time_slot].filter(Boolean).join('｜') || detail.scope || '-';
+    const summary=detail.summary ? `總${detail.summary.total||0}｜中籤${detail.summary.winner||0}｜候補${detail.summary.waitlist||0}｜未中籤${detail.summary.loser||0}｜未抽籤${detail.summary.noResult||0}` : '';
+    return `<tr>
+      <td>${log.created_at?new Date(log.created_at).toLocaleString('zh-TW',{hour12:false}):''}</td>
+      <td><strong>${escapeHtml(log.admin_display_name||log.admin_username||'-')}</strong></td>
+      <td><span class="tag blue">${escapeHtml(log.action||'')}</span></td>
+      <td>${escapeHtml(scope)}</td>
+      <td>${escapeHtml(detail.name||'')}</td>
+      <td>${escapeHtml((detail.before_status&&detail.after_status)?`${detail.before_status} → ${detail.after_status}`:summary)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="panel">
+      <h3>🧾 操作紀錄</h3>
+      <div class="alert">記錄後台重要操作，例如變更抽籤狀態、公布／取消公布結果。若此頁空白，請先執行我附上的 SQL 建立 admin_operation_logs。</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>時間</th><th>管理員</th><th>操作</th><th>範圍</th><th>對象</th><th>內容</th></tr></thead>
+          <tbody>${htmlRows || '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:20px;">目前尚無操作紀錄</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function publishStatusTag(record){
@@ -1207,9 +1348,9 @@ function renderLotteryPage(){
     const unpubBtn=document.getElementById('unpublishStageBtn');
 
     if(pubBtn) pubBtn.onclick=async()=>{
-      const okConfirm=await confirmModal('確認公布本場次結果','確定要公布本場次抽籤結果給民眾查詢嗎？');
+      const okConfirm=await confirmPublishRecords(sorted,true,`${sorted[0].venue_type}｜${sorted[0].day_of_week}｜${sorted[0].time_slot}`);
       if(!okConfirm) return;
-      const ok=await publishRecords(ids,true);
+      const ok=await publishRecords(ids,true,{scope:'抽籤頁單一場次',venue:sorted[0].venue_type,day:sorted[0].day_of_week,time:sorted[0].time_slot});
       if(ok){
         await loadAllData();
         renderLotteryPage();
@@ -1218,9 +1359,9 @@ function renderLotteryPage(){
     };
 
     if(unpubBtn) unpubBtn.onclick=async()=>{
-      const okConfirm=await confirmModal('確認取消公布','確定要取消公布本場次抽籤結果嗎？');
+      const okConfirm=await confirmPublishRecords(sorted,false,`${sorted[0].venue_type}｜${sorted[0].day_of_week}｜${sorted[0].time_slot}`);
       if(!okConfirm) return;
-      const ok=await publishRecords(ids,false);
+      const ok=await publishRecords(ids,false,{scope:'抽籤頁單一場次',venue:sorted[0].venue_type,day:sorted[0].day_of_week,time:sorted[0].time_slot});
       if(ok){
         await loadAllData();
         renderLotteryPage();
@@ -1394,6 +1535,7 @@ function renderLotteryPage(){
       return;
     }
 
+    await writeOperationLog('正式抽籤並鎖定', {venue_type:venue, day_of_week:day, time_slot:time, winner_count:result.winners.length, waitlist_count:result.waitlist.length, loser_count:result.losers.length, total:updatedCount}, updateRows.map(r=>r.id));
     alert(`正式抽籤結果已鎖定，共更新 ${updatedCount} 筆`);
     await loadAllData();
 
@@ -1624,6 +1766,7 @@ function renderLotteryPage(){
         totalUpdated += (data||[]).length;
       }
     }
+    await writeOperationLog('批次抽籤並鎖定', {stage_count:stages.length, total_updated:totalUpdated, total_expected:totalExpected}, []);
     alert(`批次抽籤完成，共更新 ${totalUpdated}/${totalExpected} 筆。`);
     await loadAllData();
     renderLotteryPage();
