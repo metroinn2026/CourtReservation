@@ -490,7 +490,7 @@ function renderRecordsPage(){
   selectedRecordIds.clear();
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
-  document.getElementById('content').innerHTML=`${renderCards(stats())}<div class="panel"><h3>📋 詳細登記資料</h3><div class="toolbar"><input id="searchQ" placeholder="搜尋姓名／手機／後4碼／序號" value="${escapeHtml(recordState.q)}"><select id="filterVenue"><option value="">全部類型</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select><select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select><select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select><select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select><button id="exportBtn" class="btn btn-green">匯出</button><button id="batchDeleteBtn" class="btn btn-danger">刪除勾選</button></div><div id="recordsTable"></div></div>`;
+  document.getElementById('content').innerHTML=`${renderCards(stats())}<div class="panel"><h3>📋 登記資料</h3><div class="alert">建議操作流程：先用「類型＋星期＋時段」篩出單一場次 → 確認抽籤狀態 → 按「公布目前場次結果」。民眾前台才會看到結果。</div><div class="toolbar"><input id="searchQ" placeholder="搜尋姓名／手機／後4碼／序號" value="${escapeHtml(recordState.q)}"><select id="filterVenue"><option value="">全部類型</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select><select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select><select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select><select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select><button id="exportBtn" class="btn btn-green">匯出</button><button id="publishCurrentStageBtn" class="btn btn-green">公布目前場次結果</button><button id="unpublishCurrentStageBtn" class="btn btn-gray">取消公布目前場次</button><button id="batchDeleteBtn" class="btn btn-danger">刪除勾選</button></div><div id="recordsStageHint"></div><div id="recordsTable"></div></div>`;
   document.getElementById('perPage').value=String(recordState.perPage);
   ['searchQ','filterVenue','filterDay','filterTime','perPage'].forEach(id=>{
     document.getElementById(id).addEventListener(id==='searchQ'?'input':'change',()=>{
@@ -499,12 +499,50 @@ function renderRecordsPage(){
       recordState.day=document.getElementById('filterDay').value;
       recordState.time=document.getElementById('filterTime').value;
       recordState.perPage=parseInt(document.getElementById('perPage').value,10);
-      recordState.page=1; selectedRecordIds.clear(); renderRecordsTable();
+      recordState.page=1; selectedRecordIds.clear(); renderRecordsStageHint(); renderRecordsTable();
     });
   });
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
+  document.getElementById('publishCurrentStageBtn').onclick=()=>publishCurrentFilteredStage(true);
+  document.getElementById('unpublishCurrentStageBtn').onclick=()=>publishCurrentFilteredStage(false);
   document.getElementById('batchDeleteBtn').onclick=batchDeleteSelectedRecords;
+  renderRecordsStageHint();
   renderRecordsTable();
+}
+
+function renderRecordsStageHint(){
+  const box=document.getElementById('recordsStageHint');
+  if(!box) return;
+  const filtered=getFilteredRecords();
+  const isSingleStage=!!recordState.venue && !!recordState.day && !!recordState.time;
+  if(!isSingleStage){
+    box.innerHTML='<div class="msg info">請先選擇「類型、星期、時段」篩出單一場次後，再公布結果，避免誤公布全部資料。</div>';
+    return;
+  }
+  const published=filtered.filter(r=>r.result_published).length;
+  const hasResult=filtered.filter(r=>r.lottery_status).length;
+  box.innerHTML=`<div class="msg info"><strong>目前場次：</strong>${escapeHtml(recordState.venue)}｜${escapeHtml(recordState.day)}｜${escapeHtml(recordState.time)}　共 ${filtered.length} 筆，已設定抽籤狀態 ${hasResult} 筆，已公布 ${published} 筆。</div>`;
+}
+
+async function publishCurrentFilteredStage(published){
+  if(!recordState.venue || !recordState.day || !recordState.time){
+    alert('請先用「類型＋星期＋時段」篩選出單一場次，再公布結果。');
+    return;
+  }
+  const records=getFilteredRecords();
+  if(records.length===0){
+    alert('目前篩選場次沒有資料。');
+    return;
+  }
+  const noResult=records.filter(r=>!r.lottery_status).length;
+  const action=published ? '公布' : '取消公布';
+  const extra=noResult>0 ? `\n提醒：本場次仍有 ${noResult} 筆尚未設定抽籤狀態。` : '';
+  if(!confirm(`確定要${action}目前場次結果嗎？\n${recordState.venue}｜${recordState.day}｜${recordState.time}\n共 ${records.length} 筆${extra}`)) return;
+  const ok=await publishRecords(records.map(r=>r.id), published);
+  if(ok){
+    await loadAllData();
+    renderRecordsPage();
+  }
 }
 function renderRecordsTable(){
   const filtered=getFilteredRecords();
@@ -532,7 +570,7 @@ function renderRecordsTable(){
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
-  bindSortHeaders(); bindSortHeaders();
+  bindSortHeaders();
   document.getElementById('prevPage').disabled=recordState.page<=1;
   document.getElementById('nextPage').disabled=recordState.page>=totalPages;
   document.getElementById('prevPage').onclick=()=>{recordState.page--;renderRecordsTable();};
@@ -809,10 +847,10 @@ function renderLotteryPage(){
 
       <div id="singleLotteryPanel">
         <div class="alert">
-          單一場次抽籤適合用於確認某一個指定時段。請先選定「運動類型＋星期＋時段」，確認本場次總表與名單無誤後，再正式抽籤並鎖定結果。
+          建議流程：①選場次 → ②按預覽抽籤確認名單 → ③正式抽籤並鎖定 → ④回「登記資料」確認與公布結果。
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(5,1fr) auto auto;gap:12px;align-items:end;margin-bottom:14px;">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:end;margin-bottom:14px;">
           <div>
             <label class="small" style="font-weight:900;color:#334155;">運動類型</label>
             <select id="lotVenue"><option value="">請選擇類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
@@ -827,14 +865,14 @@ function renderLotteryPage(){
           </div>
           <div>
             <label class="small" style="font-weight:900;color:#334155;">正取人數</label>
-            <input id="lotWinnerCount" type="number" min="1" value="1" placeholder="中籤人數">
+            <input id="lotWinnerCount" type="number" min="1" value="1" placeholder="例如 3">
           </div>
           <div>
-            <label class="small" style="font-weight:900;color:#334155;">備取人數</label>
-            <input id="lotWaitlistCount" type="number" min="0" value="0" placeholder="候補人數">
+            <label class="small" style="font-weight:900;color:#334155;">候補人數</label>
+            <input id="lotWaitlistCount" type="number" min="0" value="3" placeholder="例如 3">
           </div>
-          <button id="previewLot" class="btn btn-gray">預覽抽籤</button>
-          <button id="lockLot" class="btn btn-orange">正式抽籤並鎖定</button>
+          <button id="previewLot" class="btn btn-gray">① 預覽抽籤</button>
+          <button id="lockLot" class="btn btn-orange">② 正式抽籤並鎖定</button>
         </div>
 
         <div id="lotteryPreview"></div>
