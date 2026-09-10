@@ -435,7 +435,14 @@ function stats(records=allRecords){
   return {total,people,hours,byVenue};
 }
 function renderCards(s){
-  return `<div class="cards"><div class="stat"><div class="label">登記筆數</div><div class="num">${s.total}</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${s.people}</div></div><div class="stat"><div class="label">總登記時數</div><div class="num" style="color:var(--orange)">${s.hours}</div></div><div class="stat"><div class="label">同手機多身分</div><div class="num" style="font-size:28px;color:#9a3412">${countSuspiciousPhones()}</div></div></div>`;
+  const anomalyCount=buildDataAnomalies().length;
+  return `<div class="cards"><div class="stat"><div class="label">登記筆數</div><div class="num">${s.total}</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${s.people}</div></div><div class="stat"><div class="label">總登記時數</div><div class="num" style="color:var(--orange)">${s.hours}</div></div><div class="stat" id="recordAnomalySummaryCard" style="cursor:pointer" title="前往異常檢核中心"><div class="label">異常待確認</div><div class="num" style="font-size:28px;color:#9a3412">${anomalyCount}</div><div class="small">點擊查看異常檢核項目</div></div></div>`;
+}
+function goToAnomalyCenter(){
+  currentPage='dashboard';
+  setActiveNav('dashboard');
+  renderDashboard();
+  setTimeout(()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'}),50);
 }
 function countSuspiciousPhones(){
   const group={};
@@ -748,6 +755,8 @@ function renderRecordsPage(){
     document.getElementById('recordsPanelPublish').classList.toggle('hidden',tab!=='publish');
   };
   document.querySelectorAll('.records-function-tab').forEach(btn=>btn.onclick=()=>switchActionTab(btn.dataset.actionTab));
+  const anomalySummaryCard=document.getElementById('recordAnomalySummaryCard');
+  if(anomalySummaryCard) anomalySummaryCard.onclick=goToAnomalyCenter;
 
   document.getElementById('perPage').value=String(recordState.perPage);
   const applyRecordFilters=()=>{
@@ -837,7 +846,7 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>公布</th><th>異常註記</th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>${sortHeader('類型','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>公布</th><th>異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>${sortHeader('類型','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>
@@ -856,6 +865,7 @@ function renderRecordsTable(){
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
   bindSortHeaders();
+  const anomalyHelpBtn=document.getElementById('anomalyHelpBtn'); if(anomalyHelpBtn) anomalyHelpBtn.onclick=showAnomalyDefinitionModal;
   document.getElementById('prevPage').disabled=recordState.page<=1;
   document.getElementById('nextPage').disabled=recordState.page>=totalPages;
   document.getElementById('prevPage').onclick=()=>{recordState.page--;renderRecordsTable();};
@@ -2570,6 +2580,20 @@ function exportToCsv(records){
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`登記清單_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
+function showAnomalyDefinitionModal(){
+  const body=`
+    <div style="display:grid;gap:10px;text-align:left;">
+      <div><strong>同手機多身分</strong><br><span>同一手機號碼對應不同身分證後4碼，提醒確認是否為代填或資料異常。</span></div>
+      <div><strong>重複場次登記</strong><br><span>同一申請人於相同球場、星期及時段出現2筆以上登記資料。</span></div>
+      <div><strong>超過申請上限</strong><br><span>申請筆數超過目前設定之登記規則，例如羽球、籃球每人限登記1個時段。</span></div>
+      <div><strong>中籤人數超過名額</strong><br><span>同一場次設定為「中籤」的人數超過該場次可用名額。</span></div>
+      <div><strong>公布資料不完整</strong><br><span>同一場次已有部分結果公布，但仍存在尚未設定抽籤結果的資料。</span></div>
+      <div><strong>候補順位異常</strong><br><span>同一場次候補順位出現重複或不連續情形，需人工確認。</span></div>
+      <div style="margin-top:4px;padding:10px 12px;background:#f8fafc;border-radius:10px;color:#64748b;">異常註記僅供管理人員檢核參考，系統不會自動刪除或修改資料。</div>
+    </div>`;
+  showModal('異常註記說明', body, ()=>{}, false);
+}
+
 function showModal(title,body,onOk,withInput=false,onCancel=null){
   const el=document.createElement('div'); el.className='modal';
   el.innerHTML=`<div class="modal-card"><h3>${title}</h3><div class="small">${body}</div>${withInput?'<input id="modalInput" type="password" style="width:100%;margin-top:12px;border:1px solid #d1d5db;border-radius:10px;padding:10px">':''}<div class="modal-actions"><button class="btn btn-gray" id="mCancel">取消</button><button class="btn btn-primary" id="mOk">確認</button></div></div>`;
