@@ -2951,6 +2951,157 @@
   }
 </style>
 
+
+<style id="backend-data-boundary-align-v1">
+  /* =========================================================
+     全後台資料區左右邊界統一
+     - 標題列色塊、資料列、表格外框使用同一寬度
+     - 移除資料表額外左右縮排
+     ========================================================= */
+
+  /* 首頁兩個主要資料區採完全相同的內容寬度 */
+  .anomaly-center-clean,
+  .dashboard-tasks-panel{
+    padding:18px 20px!important;
+    box-sizing:border-box!important;
+  }
+
+  .anomaly-center-clean .anomaly-info-row,
+  .dashboard-tasks-panel .pending-stage-info-row{
+    margin-left:0!important;
+    margin-right:0!important;
+    padding-left:0!important;
+    padding-right:0!important;
+    width:100%!important;
+    box-sizing:border-box!important;
+  }
+
+  .anomaly-center-clean .anomaly-flat-list,
+  .dashboard-tasks-panel .dashboard-task-table-wrap{
+    margin:10px 0 0!important;
+    width:100%!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+  }
+
+  /* 待處理場次：表頭色塊必須完整貼齊表格左右邊界 */
+  .dashboard-tasks-panel .dashboard-task-table{
+    width:100%!important;
+    min-width:100%!important;
+    border-spacing:0!important;
+    border-collapse:collapse!important;
+  }
+
+  .dashboard-tasks-panel .dashboard-task-table thead{
+    width:100%!important;
+  }
+
+  .dashboard-tasks-panel .dashboard-task-table thead tr{
+    background:#dfe8f3!important;
+  }
+
+  .dashboard-tasks-panel .dashboard-task-table thead th{
+    background:#dfe8f3!important;
+    color:#31445d!important;
+    font-weight:900!important;
+    border-bottom:1px solid #c5d2e1!important;
+    padding:13px 16px!important;
+  }
+
+  .dashboard-tasks-panel .dashboard-task-table tbody td{
+    padding:13px 16px!important;
+  }
+
+  /* 全後台：直接承載資料的 table-wrap 不再額外左右縮排 */
+  #content .panel > .table-wrap,
+  #content .flat-section > .table-wrap,
+  #recordsWorkspace .table-wrap,
+  #dayCheckTable .table-wrap,
+  #bulkCapTable .table-wrap,
+  #recordsPublishWorkspace .table-wrap,
+  .dashboard-task-table-wrap{
+    width:100%!important;
+    max-width:100%!important;
+    margin-left:0!important;
+    margin-right:0!important;
+    box-sizing:border-box!important;
+  }
+
+  /* 登記資料先前曾設定 20px 額外 margin，統一由父層 padding 控制 */
+  #recordsWorkspace > #recordsTable .records-list-actionbar,
+  #recordsWorkspace > #recordsTable .records-table-wrap,
+  #recordsWorkspace > #recordsTable .pager{
+    margin-left:0!important;
+    margin-right:0!important;
+  }
+
+  #recordsWorkspace .records-table-meta{
+    margin-left:0!important;
+    margin-right:0!important;
+  }
+
+  /* 抽籤場次處理清單：篩選列與資料表完全同寬 */
+  #dayCheckTable > .panel{
+    padding-left:20px!important;
+    padding-right:20px!important;
+  }
+
+  #dayCheckTable .stage-list-filters,
+  #dayCheckTable .table-wrap{
+    width:100%!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+  }
+
+  #dayCheckTable .stage-list-filters{
+    margin-left:0!important;
+    margin-right:0!important;
+  }
+
+  /* 名額設定：工具列與表格同一左右基準 */
+  .capacity-main-panel > .capacity-toolbar,
+  .capacity-main-panel > #bulkCapTable{
+    width:100%!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+  }
+
+  .capacity-main-panel > #bulkCapTable .table-wrap{
+    margin-left:0!important;
+    margin-right:0!important;
+  }
+
+  /* 操作紀錄 / 一般資料表：統一表頭辨識度 */
+  #content .table-wrap table thead th{
+    background:#e5edf6!important;
+    color:#334155!important;
+    font-weight:900!important;
+  }
+
+  /* 異常中心本身沒有傳統表頭，仍保留白底分隔線 */
+  .anomaly-center-clean .anomaly-flat-list{
+    border:1px solid #dce5ef!important;
+  }
+
+  /* 保證表格左右端沒有因 border-radius 產生視覺縮排 */
+  #content .table-wrap{
+    overflow:hidden auto!important;
+  }
+
+  #content .table-wrap table{
+    margin:0!important;
+  }
+
+  @media(max-width:900px){
+    .anomaly-center-clean,
+    .dashboard-tasks-panel,
+    #dayCheckTable > .panel{
+      padding-left:16px!important;
+      padding-right:16px!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
