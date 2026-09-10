@@ -3034,7 +3034,8 @@ function renderLotteryPage(){
       if(v) v.value=venue;
       if(d) d.value=day;
       if(d) d.dispatchEvent(new Event('change'));
-      switchLotteryTab('publish');
+      renderDayCheck();
+      renderImportSummary();
     },0);
   }
 
@@ -3055,6 +3056,65 @@ function renderLotteryPage(){
   }
 
   function renderDayCheck(){
+    const table=document.getElementById('dayCheckTable');
+    if(!table) return;
+
+    const {location,venue,day,time,records}=getDayCheckRecords();
+
+    if(!records.length){
+      table.innerHTML='<div class="msg info">目前條件沒有登記資料；可調整場地、球類、星期或時段後再試。</div>';
+      return;
+    }
+
+    // 以「場地＋球類＋星期＋時段」視為一個完整抽籤場次
+    const stageMap={};
+    records.forEach(r=>{
+      const loc=recordLocation(r);
+      const key=`${loc}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
+      if(!stageMap[key]){
+        stageMap[key]={
+          location:loc,
+          venue:r.venue_type||'',
+          day:r.day_of_week||'',
+          time:r.time_slot||'',
+          records:[]
+        };
+      }
+      stageMap[key].records.push(r);
+    });
+
+    const stages=Object.values(stageMap).map(s=>{
+      const people=new Set(s.records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+      const withResult=s.records.filter(r=>String(r.lottery_status||'').trim()).length;
+      const published=s.records.filter(r=>r.result_published).length;
+      const configuredCapacity=Number(
+        capacitySettings[settingKey(s.venue,s.day,s.time)] ??
+        capacityMap[s.venue] ??
+        0
+      );
+      const anomalyTypes=[...new Set(s.records.flatMap(r=>getRecordAnomalyTypes(r)))];
+
+      let status='待抽籤';
+      if(withResult>0 && withResult<s.records.length) status='處理中';
+      if(withResult===s.records.length && withResult>0){
+        status=published===s.records.length ? '已公布' : '已完成';
+      }
+
+      return {
+        ...s,
+        people,
+        capacity:configuredCapacity,
+        anomalyTypes,
+        status
+      };
+    }).sort((a,b)=>{
+      const locCmp=String(a.location).localeCompare(String(b.location),'zh-Hant');
+      if(locCmp!==0) return locCmp;
+      return venueSortValue(a.venue)-venueSortValue(b.venue)
+        || daySortValue(a.day)-daySortValue(b.day)
+        || timeSortValue(a.time)-timeSortValue(b.time);
+    });
+
     const statusTag=(s)=>{
       if(s==='已公布') return '<span class="tag green">已公布</span>';
       if(s==='已完成') return '<span class="tag blue">已完成</span>';
@@ -3771,7 +3831,7 @@ function renderLotteryPage(){
     alert(`批次抽籤完成，共更新 ${totalUpdated}/${totalExpected} 筆。`);
     await loadAllData();
     renderLotteryPage();
-    switchLotteryTab('batch');
+    switchBuiltInLotteryTab('batch');
   }
 
   document.getElementById('previewBatchLot').onclick=previewBatch;
