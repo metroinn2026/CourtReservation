@@ -655,6 +655,125 @@
   }
 </style>
 
+
+<style id="records-workflow-redesign">
+  .records-main-panel{overflow:visible!important;}
+  .records-fixed-filter{
+    margin:0 20px 14px;
+    padding:14px 16px;
+    background:#f4f7fb;
+    border:1px solid #dbe4ee;
+    border-radius:14px;
+  }
+  .records-fixed-filter-title{
+    font-size:13px;
+    font-weight:900;
+    color:#334155;
+    margin-bottom:10px;
+  }
+  .records-shared-toolbar{
+    grid-template-columns:minmax(210px,1.4fr) repeat(5,minmax(115px,.85fr)) 110px auto auto!important;
+    margin:0!important;
+  }
+  .records-scope-card{
+    margin:0 20px 12px;
+    padding:13px 16px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    flex-wrap:wrap;
+    background:#fff;
+    border:1px solid #dbe4ee;
+    border-left:4px solid var(--blue);
+    border-radius:12px;
+  }
+  .records-scope-title{
+    font-size:12px;
+    font-weight:900;
+    color:#64748b;
+  }
+  .records-scope-value{
+    margin-top:3px;
+    font-size:16px;
+    font-weight:900;
+    color:#0f172a;
+  }
+  .records-scope-stats{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex-wrap:wrap;
+    color:#526174;
+    font-size:12.5px;
+  }
+  .records-scope-stats strong{color:#0f172a;}
+  .records-scope-stats .scope-warn{color:#9a3412;}
+  .records-workspace-head{
+    margin:14px 20px 10px;
+    padding:0 2px;
+  }
+  .records-workspace-head strong{
+    font-size:15px;
+    color:#172033;
+  }
+  .records-table-meta{
+    margin:0 20px 10px!important;
+  }
+  #recordsWorkspace > #recordsTable .records-list-actionbar,
+  #recordsWorkspace > #recordsTable .records-table-wrap,
+  #recordsWorkspace > #recordsTable .pager{
+    margin-left:20px;
+    margin-right:20px;
+  }
+  .publish-workspace-card{
+    margin:14px 20px 12px;
+    padding:16px;
+    border:1px solid #d7e2ed;
+    border-radius:14px;
+    background:#f8fbff;
+  }
+  .publish-workspace-main{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+  }
+  .publish-scope-value{
+    margin-top:4px;
+    font-size:18px;
+    font-weight:900;
+    color:#0f172a;
+  }
+  .publish-counts{
+    display:flex;
+    gap:10px 18px;
+    flex-wrap:wrap;
+    margin:14px 0;
+    padding:12px 0;
+    border-top:1px solid #e2e8f0;
+    border-bottom:1px solid #e2e8f0;
+    font-size:13px;
+    color:#526174;
+  }
+  .publish-counts strong{color:#0f172a;}
+  .publish-actions{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .records-function-tabs{
+    margin-top:4px!important;
+  }
+  .records-function-tab{
+    min-width:72px;
+  }
+  @media(max-width:1300px){
+    .records-shared-toolbar{grid-template-columns:repeat(3,minmax(170px,1fr))!important;}
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1279,76 +1398,82 @@ function getFilteredRecords(){
   });
   return sortRecords(filteredRecords);
 }
+
+function currentRecordsScopeLabel(){
+  const parts=[];
+  if(recordState.location) parts.push(locationLabel(recordState.location));
+  if(recordState.venue) parts.push(recordState.venue);
+  if(recordState.day) parts.push(recordState.day);
+  if(recordState.time) parts.push(recordState.time);
+  return parts.join('｜') || '全部資料';
+}
+
+function renderRecordsScopeSummary(){
+  const box=document.getElementById('recordsScopeSummary');
+  if(!box) return;
+  const records=getFilteredRecords();
+  const c=buildPublishSummary(records);
+  const people=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+  const scope=currentRecordsScopeLabel();
+  box.innerHTML=`
+    <div class="records-scope-card">
+      <div>
+        <div class="records-scope-title">目前工作範圍</div>
+        <div class="records-scope-value">${escapeHtml(scope)}</div>
+      </div>
+      <div class="records-scope-stats">
+        <span>共 <strong>${records.length}</strong> 筆</span>
+        <span>人數 <strong>${people}</strong></span>
+        <span>中籤 <strong>${c.winner}</strong></span>
+        <span>候補 <strong>${c.waitlist}</strong></span>
+        <span>未中籤 <strong>${c.loser}</strong></span>
+        <span class="${c.noResult?'scope-warn':''}">未抽籤 <strong>${c.noResult}</strong></span>
+      </div>
+    </div>`;
+}
+
 function renderRecordsPage(){
   selectedRecordIds.clear();
   const locations=getAdminLocations();
   if(!recordState.location) recordState.location=DEFAULT_LOCATION;
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
+
   document.getElementById('content').innerHTML=`${renderCards(stats())}
-    <div class="panel">
+    <div class="panel records-main-panel">
       <h3>登記資料</h3>
 
-      <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
-        <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">資料篩選</button>
-        <button class="records-function-tab ${recordsActionTab==='batch'?'active':''}" data-action-tab="batch">批次處理</button>
-        <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
-      </div>
-
-      <div id="recordsPanelFilter" class="records-function-panel ${recordsActionTab==='filter'?'':'hidden'}">
-        <div class="records-action-title">資料篩選</div>
-        <div class="toolbar" style="margin-bottom:0">
-          <input id="searchQ" placeholder="搜尋姓名／手機／後4碼／序號" value="${escapeHtml(recordState.q)}">
+      <div class="records-fixed-filter">
+        <div class="records-fixed-filter-title">篩選條件</div>
+        <div class="toolbar records-shared-toolbar">
+          <input id="searchQ" placeholder="搜尋姓名／手機／末4碼／序號" value="${escapeHtml(recordState.q)}">
           <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
           <select id="filterVenue"><option value="">全部球類</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
           <select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
           <select id="filterAnomaly">
-            <option value="">全部異常狀態</option>
+            <option value="">全部異常</option>
             ${['手機重複','超過次數','超過名額','公布未完成','候補異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
           </select>
           <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
-          <button id="applyFilterBtn" class="btn btn-primary">套用篩選</button>
-          <button id="exportBtn" class="btn btn-primary">匯出目前篩選名單</button>
+          <button id="applyFilterBtn" class="btn btn-primary">套用條件</button>
+          <button id="exportBtn" class="btn btn-gray">匯出目前名單</button>
         </div>
       </div>
 
-      <div id="recordsPanelBatch" class="records-function-panel ${recordsActionTab==='batch'?'':'hidden'}">
-        <div class="records-action-title">批次處理</div>
-        <div class="section-note" style="margin-top:0;">批次操作已固定在登記清單上方。先勾選資料，即可一次變更狀態、刪除，最後統一儲存狀態變更。</div>
+      <div id="recordsScopeSummary"></div>
+
+      <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
+        <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
+        <button class="records-function-tab ${recordsActionTab==='batch'?'active':''}" data-action-tab="batch">批次處理</button>
+        <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
       </div>
 
-      <div id="recordsPanelPublish" class="records-function-panel ${recordsActionTab==='publish'?'':'hidden'}">
-        <div class="records-action-title">結果公告</div>
-        <div class="records-publish-main">
-          <button id="publishCurrentStageBtn" class="btn btn-primary">公布目前場次</button>
-          <button id="publishVenueAllWeekBtn" class="btn btn-primary">公布目前球類全部結果</button>
-          <div class="records-publish-secondary">
-            <button id="morePublishActionsBtn" class="btn btn-gray">取消公告 ▾</button>
-            <div id="morePublishActionsMenu" class="records-more-menu hidden">
-              <button id="unpublishCurrentStageBtn" class="btn btn-gray">取消公布目前場次</button>
-              <button id="unpublishVenueAllWeekBtn" class="btn btn-gray">取消公布目前球類全部結果</button>
-            </div>
-          </div>
-        </div>
-        <div class="section-note">結果確認無誤後再公布；只有完成公布的資料才會同步顯示於民眾前台。</div>
-      </div>
-
-      <div id="recordsStageHint"></div><div id="recordsTable"></div>
+      <div id="recordsWorkspace"></div>
     </div>`;
 
-  const switchActionTab=(tab)=>{
-    recordsActionTab=tab;
-    document.querySelectorAll('.records-function-tab').forEach(btn=>btn.classList.toggle('active',btn.dataset.actionTab===tab));
-    document.getElementById('recordsPanelFilter').classList.toggle('hidden',tab!=='filter');
-    document.getElementById('recordsPanelBatch').classList.toggle('hidden',tab!=='batch');
-    document.getElementById('recordsPanelPublish').classList.toggle('hidden',tab!=='publish');
-  };
-  document.querySelectorAll('.records-function-tab').forEach(btn=>btn.onclick=()=>switchActionTab(btn.dataset.actionTab));
-  const anomalySummaryCard=document.getElementById('recordAnomalySummaryCard');
-  if(anomalySummaryCard) anomalySummaryCard.onclick=goToAnomalyCenter;
-
   document.getElementById('perPage').value=String(recordState.perPage);
+
   const applyRecordFilters=()=>{
     recordState.q=document.getElementById('searchQ').value;
     recordState.location=document.getElementById('filterLocation').value || DEFAULT_LOCATION;
@@ -1357,75 +1482,258 @@ function renderRecordsPage(){
     recordState.time=document.getElementById('filterTime').value;
     recordState.anomaly=document.getElementById('filterAnomaly').value;
     recordState.perPage=parseInt(document.getElementById('perPage').value,10);
-    recordState.page=1; selectedRecordIds.clear(); renderRecordsStageHint(); renderRecordsTable();
+    recordState.page=1;
+    selectedRecordIds.clear();
+    renderRecordsScopeSummary();
+    renderRecordsWorkspace();
   };
+
   document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
   document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
   document.getElementById('perPage').addEventListener('change',applyRecordFilters);
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
-  document.getElementById('publishCurrentStageBtn').onclick=()=>publishCurrentFilteredStage(true);
-  document.getElementById('unpublishCurrentStageBtn').onclick=()=>publishCurrentFilteredStage(false);
-  document.getElementById('publishVenueAllWeekBtn').onclick=()=>publishCurrentVenueAllWeek(true);
-  document.getElementById('unpublishVenueAllWeekBtn').onclick=()=>publishCurrentVenueAllWeek(false);
-  const moreBtn=document.getElementById('morePublishActionsBtn');
-  const moreMenu=document.getElementById('morePublishActionsMenu');
-  moreBtn.onclick=(e)=>{e.stopPropagation();moreMenu.classList.toggle('hidden');};
-  document.addEventListener('click',e=>{
-    if(!moreBtn.contains(e.target) && !moreMenu.contains(e.target)) moreMenu.classList.add('hidden');
+
+  document.querySelectorAll('.records-function-tab').forEach(btn=>{
+    btn.onclick=()=>{
+      recordsActionTab=btn.dataset.actionTab;
+      selectedRecordIds.clear();
+      document.querySelectorAll('.records-function-tab').forEach(x=>x.classList.toggle('active',x===btn));
+      renderRecordsWorkspace();
+    };
   });
-  renderRecordsStageHint();
+
+  const anomalySummaryCard=document.getElementById('recordAnomalySummaryCard');
+  if(anomalySummaryCard) anomalySummaryCard.onclick=goToAnomalyCenter;
+
+  renderRecordsScopeSummary();
+  renderRecordsWorkspace();
+}
+
+function renderRecordsWorkspace(){
+  const box=document.getElementById('recordsWorkspace');
+  if(!box) return;
+  if(recordsActionTab==='publish'){
+    box.innerHTML=`<div id="recordsPublishWorkspace"></div><div id="recordsTable"></div>`;
+    renderRecordsPublishWorkspace();
+    renderRecordsTable();
+    return;
+  }
+  if(recordsActionTab==='batch'){
+    box.innerHTML=`
+      <div class="records-workspace-head">
+        <div>
+          <strong>批次處理</strong>
+          <div class="small">勾選清單後可一次變更狀態或刪除；個別狀態也可直接使用下拉選單調整。</div>
+        </div>
+      </div>
+      <div id="recordsTable"></div>`;
+    renderRecordsTable();
+    return;
+  }
+  box.innerHTML=`
+    <div class="records-workspace-head">
+      <div>
+        <strong>登記清單</strong>
+        <div class="small">目前清單會依上方工作範圍顯示；需要匯出時使用上方「匯出目前名單」。</div>
+      </div>
+    </div>
+    <div id="recordsTable"></div>`;
   renderRecordsTable();
 }
-function renderRecordsStageHint(){
-  const box=document.getElementById('recordsStageHint');
+
+function renderRecordsPublishWorkspace(){
+  const box=document.getElementById('recordsPublishWorkspace');
   if(!box) return;
-  const filtered=getFilteredRecords();
-  const isSingleStage=!!recordState.venue && !!recordState.day && !!recordState.time;
-  if(!isSingleStage){
-    box.innerHTML='<div class="msg info">① 請先設定篩選條件。公布單一場次時需選擇「類型、星期、時段」；如要一次公布整個球類，至少選擇「類型」。</div>';
-    return;
-  }
-  const published=filtered.filter(r=>r.result_published).length;
-  const hasResult=filtered.filter(r=>r.lottery_status).length;
-  box.innerHTML=`<div class="msg info"><strong>目前場次：</strong>${recordState.location?escapeHtml(recordState.location)+'｜':''}${escapeHtml(recordState.venue)}｜${escapeHtml(recordState.day)}｜${escapeHtml(recordState.time)}　共 ${filtered.length} 筆，已設定抽籤狀態 ${hasResult} 筆，已公布 ${published} 筆。</div>`;
-}
-
-async function publishCurrentFilteredStage(published){
-  if(!recordState.venue || !recordState.day || !recordState.time){
-    alert('請先用「類型＋星期＋時段」篩選出單一場次，再公布結果。');
-    return;
-  }
   const records=getFilteredRecords();
-  if(records.length===0){
-    alert('目前篩選場次沒有資料。');
+  const c=buildPublishSummary(records);
+  const scope=currentRecordsScopeLabel();
+  const hasPublishScope=!!recordState.venue;
+  const allPublished=records.length>0 && records.every(r=>r.result_published);
+  const somePublished=records.some(r=>r.result_published);
+
+  let stateText='尚未選擇可公告範圍';
+  let stateClass='gray';
+  if(hasPublishScope && records.length===0){ stateText='目前條件無資料'; stateClass='gray'; }
+  else if(hasPublishScope && c.noResult>0){ stateText=`尚有 ${c.noResult} 筆未抽籤`; stateClass='warn'; }
+  else if(hasPublishScope && allPublished){ stateText='目前範圍已全部公布'; stateClass='green'; }
+  else if(hasPublishScope && somePublished){ stateText='目前範圍部分已公布'; stateClass='warn'; }
+  else if(hasPublishScope && records.length){ stateText='可公布'; stateClass='blue'; }
+
+  box.innerHTML=`
+    <div class="publish-workspace-card">
+      <div class="publish-workspace-main">
+        <div>
+          <div class="records-scope-title">目前公告範圍</div>
+          <div class="publish-scope-value">${escapeHtml(scope)}</div>
+          <div class="small" style="margin-top:6px;">公告會套用到目前上方篩選出的資料。</div>
+        </div>
+        <span class="tag ${stateClass}">${escapeHtml(stateText)}</span>
+      </div>
+
+      <div class="publish-counts">
+        <span>總筆數 <strong>${c.total}</strong></span>
+        <span>中籤 <strong>${c.winner}</strong></span>
+        <span>候補 <strong>${c.waitlist}</strong></span>
+        <span>未中籤 <strong>${c.loser}</strong></span>
+        <span>未抽籤 <strong>${c.noResult}</strong></span>
+        <span>已公布 <strong>${c.published}</strong></span>
+      </div>
+
+      <div class="publish-actions">
+        <button id="publishFilteredBtn" class="btn btn-primary" ${(!hasPublishScope || !records.length || c.noResult>0 || allPublished)?'disabled':''}>公布目前篩選結果</button>
+        <button id="unpublishFilteredBtn" class="btn btn-gray" ${(!records.length || !somePublished)?'disabled':''}>取消公布目前範圍</button>
+      </div>
+      ${!hasPublishScope?'<div class="section-note">為避免誤公告，至少需選擇「球類」後才能公布；可再搭配星期、時段縮小範圍。</div>':''}
+      ${c.noResult>0?`<div class="section-note" style="color:#9a3412;">尚有 ${c.noResult} 筆未設定抽籤結果，完成後才可公布。</div>`:''}
+    </div>`;
+
+  const publishBtn=document.getElementById('publishFilteredBtn');
+  const unpublishBtn=document.getElementById('unpublishFilteredBtn');
+  if(publishBtn) publishBtn.onclick=()=>publishCurrentFilteredRange(true);
+  if(unpublishBtn) unpublishBtn.onclick=()=>publishCurrentFilteredRange(false);
+}
+
+async function publishCurrentFilteredRange(published){
+  const records=getFilteredRecords();
+  if(!records.length){
+    alert('目前篩選範圍沒有資料。');
     return;
   }
-  const okConfirm=await confirmPublishRecords(records,published,`${recordState.venue}｜${recordState.day}｜${recordState.time}`);
+  if(published && !recordState.venue){
+    alert('為避免誤公告，請至少選擇「球類」後再公布。');
+    return;
+  }
+  const noResult=records.filter(r=>!String(r.lottery_status||'').trim()).length;
+  if(published && noResult>0){
+    alert(`目前範圍仍有 ${noResult} 筆未設定抽籤結果，請先完成結果處理。`);
+    return;
+  }
+
+  const scope=currentRecordsScopeLabel();
+  const okConfirm=await confirmPublishRecords(records,published,scope);
   if(!okConfirm) return;
-  const ok=await publishRecords(records.map(r=>r.id), published, {scope:'單一場次', venue:recordState.venue, day:recordState.day, time:recordState.time});
+
+  const ok=await publishRecords(records.map(r=>r.id), published, {
+    scope:'目前篩選範圍',
+    venue:recordState.venue || '',
+    day:recordState.day || '',
+    time:recordState.time || '',
+    location:recordState.location || ''
+  });
   if(ok){
     await loadAllData();
     renderRecordsPage();
   }
 }
 
-async function publishCurrentVenueAllWeek(published){
-  if(!recordState.venue){
-    alert('請先選擇「類型」，再公布該類型全部結果。');
-    return;
+function renderRecordsTable(){
+  const filtered=getFilteredRecords();
+  const totalPages=Math.max(1,Math.ceil(filtered.length/recordState.perPage));
+  if(recordState.page>totalPages) recordState.page=totalPages;
+  const start=(recordState.page-1)*recordState.perPage;
+  const rows=filtered.slice(start,start+recordState.perPage);
+  const isBatch=recordsActionTab==='batch';
+  const pageIds=rows.map(r=>String(r.id));
+  const allPageSelected=isBatch && pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
+
+  let html=`<div class="small records-table-meta"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span>`;
+  if(isBatch) html+=`<span>已勾選 <strong>${selectedRecordIds.size}</strong> 筆｜已修改 <strong>${pendingRecordStatusChanges.size}</strong> 筆</span>`;
+  html+=`</div>`;
+
+  if(isBatch){
+    html+=`
+      <div class="records-list-actionbar">
+        <div class="records-list-action-left">
+          <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
+            <option value="__none__">批次變更狀態</option>
+            <option value="中籤">中籤</option>
+            <option value="候補1">候補1</option>
+            <option value="候補2">候補2</option>
+            <option value="候補3">候補3</option>
+            <option value="未中籤">未中籤</option>
+            <option value="__clear__">未抽籤</option>
+          </select>
+          <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>套用至勾選</button>
+          <button id="deleteSelectedFromListBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>刪除勾選資料</button>
+        </div>
+        <button id="savePendingRecordStatusBtn" class="btn btn-primary" ${pendingRecordStatusChanges.size?'':'disabled'}>
+          儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
+        </button>
+      </div>`;
   }
-  const records=allRecords.filter(r=>r.venue_type===recordState.venue);
-  if(records.length===0){
-    alert('此類型目前沒有登記資料。');
-    return;
+
+  html+=`<div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr>`;
+  if(isBatch) html+=`<th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th>`;
+  html+=`<th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('手機','phone')}</th><th style="width:72px;">${sortHeader('末4碼','id_last4')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
+
+  rows.forEach((r,i)=>{
+    html+=`<tr>`;
+    if(isBatch) html+=`<td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(String(r.id))?'checked':''}></td>`;
+    html+=`<td>${start+i+1}</td>
+      <td>${isBatch ? recordStatusSelect(r) : recordStatusTag(r.lottery_status)}</td>
+      <td>${publishStatusTag(r)}</td>
+      <td>${anomalyTags(r)}</td>
+      <td><strong>${escapeHtml(r.serial_number)}</strong></td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.phone)}</td>
+      <td>${escapeHtml(r.id_last4||'')}</td>
+      <td>${escapeHtml(shortLocationName(recordLocation(r)))}</td>
+      <td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td>
+      <td>${escapeHtml(r.day_of_week)}</td>
+      <td>${escapeHtml(r.time_slot)}</td>
+      <td>${recordHours(r)}h</td>
+      <td>${formatCompactDateTime(r.registered_at)}</td>
+    </tr>`;
+  });
+
+  html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
+  document.getElementById('recordsTable').innerHTML=html;
+
+  bindSortHeaders();
+  const anomalyHelpBtn=document.getElementById('anomalyHelpBtn');
+  if(anomalyHelpBtn) anomalyHelpBtn.onclick=showAnomalyDefinitionModal;
+
+  document.getElementById('prevPage').disabled=recordState.page<=1;
+  document.getElementById('nextPage').disabled=recordState.page>=totalPages;
+  document.getElementById('prevPage').onclick=()=>{recordState.page--;renderRecordsTable();};
+  document.getElementById('nextPage').onclick=()=>{recordState.page++;renderRecordsTable();};
+
+  if(!isBatch) return;
+
+  const selectPage=document.getElementById('selectPageRecords');
+  if(selectPage){
+    selectPage.onchange=()=>{
+      pageIds.forEach(id=>{ if(selectPage.checked) selectedRecordIds.add(id); else selectedRecordIds.delete(id); });
+      renderRecordsTable();
+    };
   }
-  const okConfirm=await confirmPublishRecords(records,published,`${recordState.venue}｜周一至周日｜全部時段`);
-  if(!okConfirm) return;
-  const ok=await publishRecords(records.map(r=>r.id), published, {scope:'球類全部', venue:recordState.venue, day:'周一至周日', time:'全部時段'});
-  if(ok){
-    await loadAllData();
-    renderRecordsPage();
-  }
+  document.querySelectorAll('.record-check').forEach(chk=>{
+    chk.onchange=()=>{
+      const id=String(chk.dataset.id);
+      if(chk.checked) selectedRecordIds.add(id); else selectedRecordIds.delete(id);
+      renderRecordsTable();
+    };
+  });
+
+  document.querySelectorAll('.record-status-select').forEach(sel=>{
+    sel.onchange=()=>{
+      const id=String(sel.dataset.statusId);
+      const original=String(sel.dataset.original||'');
+      const next=String(sel.value||'');
+      if(next===original) pendingRecordStatusChanges.delete(id);
+      else pendingRecordStatusChanges.set(id,next);
+      renderRecordsTable();
+    };
+  });
+
+  const applySelectedStatusBtn=document.getElementById('applySelectedStatusBtn');
+  if(applySelectedStatusBtn) applySelectedStatusBtn.onclick=stageSelectedRecordStatus;
+
+  const deleteSelectedFromListBtn=document.getElementById('deleteSelectedFromListBtn');
+  if(deleteSelectedFromListBtn) deleteSelectedFromListBtn.onclick=batchDeleteSelectedRecords;
+
+  const saveStatusBtn=document.getElementById('savePendingRecordStatusBtn');
+  if(saveStatusBtn) saveStatusBtn.onclick=savePendingRecordStatusChanges;
 }
 
 function shortLocationName(value){
