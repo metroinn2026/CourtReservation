@@ -141,7 +141,7 @@ let allRecords = [];
 let allLogs = [];
 let capacitySettings = {};
 let systemSettings = {};
-let recordState = { q:'', venue:'', day:'', time:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
+let recordState = { q:'', venue:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let recordsActionTab = 'filter';
 let selectedRecordIds = new Set();
 let currentPage = 'dashboard';
@@ -166,6 +166,55 @@ function isSuspiciousPhone(record){
   return ids.size > 1;
 }
 function suspiciousTag(record){ return isSuspiciousPhone(record) ? '<span class="tag warn">同手機多身分</span>' : '<span class="tag gray">正常</span>'; }
+function getRecordAnomalyTypes(record){
+  const types=[];
+  const records=allRecords||[];
+  const phone=normalizePhone(record.phone);
+
+  // 同手機多身分
+  if(phone){
+    const ids=new Set(records.filter(r=>normalizePhone(r.phone)===phone).map(r=>String(r.id_last4||'').trim()).filter(Boolean));
+    if(ids.size>1) types.push('同手機多身分');
+  }
+
+  // 重複場次登記
+  const pk=personKey(record);
+  if(pk!=='|'){
+    const same=records.filter(r=>personKey(r)===pk && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
+    if(same.length>1) types.push('重複場次登記');
+  }
+
+  // 超過申請上限（目前羽球／籃球每人限1時段）
+  if(['羽球','籃球'].includes(record.venue_type) && pk!=='|'){
+    const slots=new Set(records.filter(r=>personKey(r)===pk && r.venue_type===record.venue_type).map(r=>`${r.day_of_week||''}|${r.time_slot||''}`));
+    if(slots.size>1) types.push('超過申請上限');
+  }
+
+  const stage=records.filter(r=>r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
+  if(stage.length){
+    const start=getStageStartTime(record.time_slot);
+    const cap=Number(capacitySettings[settingKey(record.venue_type,record.day_of_week,start)] ?? capacityMap[record.venue_type] ?? 0);
+    const winners=stage.filter(x=>x.lottery_status==='中籤').length;
+    if(cap>=0 && winners>cap) types.push('中籤人數超過名額');
+
+    const published=stage.filter(x=>x.result_published).length;
+    const noResult=stage.filter(x=>!String(x.lottery_status||'').trim()).length;
+    if(published>0 && noResult>0) types.push('公布資料不完整');
+
+    const nums=stage.map(x=>String(x.lottery_status||'').match(/^候補(\d+)$/)).filter(Boolean).map(m=>Number(m[1])).sort((a,b)=>a-b);
+    if(nums.length){
+      const dup=nums.some((n,i)=>i>0 && n===nums[i-1]);
+      const gap=nums.some((n,i)=>n!==i+1);
+      if(dup||gap) types.push('候補順位異常');
+    }
+  }
+  return [...new Set(types)];
+}
+function anomalyTags(record){
+  const types=getRecordAnomalyTypes(record);
+  if(!types.length) return '<span class="tag gray">正常</span>';
+  return types.map(t=>`<span class="tag ${['重複場次登記','超過申請上限','中籤人數超過名額','公布資料不完整'].includes(t)?'error':'warn'}" style="margin:2px 4px 2px 0;display:inline-block;">${escapeHtml(t)}</span>`).join('');
+}
 
 function getStageStartTime(timeSlot){
   const m=String(timeSlot||'').match(/(\d{2}:\d{2})/);
@@ -273,7 +322,7 @@ function renderAnomalyCenter(issues){
     return `<div style="border:1px solid ${error?'#fecaca':'#fde68a'};background:${error?'#fff7f7':'#fffbeb'};border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:minmax(160px,220px) 1fr auto;gap:14px;align-items:start;">
       <div><div style="font-weight:900;color:${error?'#b91c1c':'#92400e'};">${error?'⚠️':'🔎'} ${escapeHtml(type)}</div><div class="small" style="margin-top:4px;">${list.length} 項異常／${total} 筆（或人次）</div></div>
       <div>${examples}${more}</div>
-      <button class="btn btn-gray anomaly-go" data-target="${target}">前往查看</button>
+      <button class="btn btn-gray anomaly-go" data-target="records" data-anomaly="${escapeHtml(type)}">前往查看</button>
     </div>`;
   }).join('');
   return `<div class="panel" id="anomalyCenter"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;"><div><h3 style="margin:0 0 6px;">🛡️ 異常檢核中心</h3><div class="small">系統自動檢查可能的人工作業錯誤；僅提供提醒，不會自動刪除或修改資料。</div></div><span class="tag warn">${issues.length} 項待確認</span></div><div style="display:grid;gap:10px;">${rows}</div></div>`;
@@ -521,7 +570,7 @@ function renderDashboard(){
   go('quickCapacity','capacity'); go('quickRecords','records'); go('quickLottery','lottery');
   const qp=document.getElementById('quickPublish'); if(qp) qp.onclick=()=>{ recordsActionTab='publish'; renderPage('records'); };
   const anomalyCard=document.getElementById('anomalySummaryCard'); if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
-  document.querySelectorAll('.anomaly-go').forEach(b=>b.onclick=()=>{ const target=b.dataset.target||'records'; renderPage(target); });
+  document.querySelectorAll('.anomaly-go').forEach(b=>b.onclick=()=>{ recordState.anomaly=b.dataset.anomaly||''; recordState.q=''; recordState.venue=''; recordState.day=''; recordState.time=''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); });
   document.querySelectorAll('.dash-go-lottery').forEach(b=>b.onclick=()=>renderPage('lottery'));
   document.querySelectorAll('.dash-go-records').forEach(b=>b.onclick=()=>renderPage('records'));
 }
@@ -619,6 +668,7 @@ function getFilteredRecords(){
     if(recordState.venue && r.venue_type!==recordState.venue) return false;
     if(recordState.day && r.day_of_week!==recordState.day) return false;
     if(recordState.time && r.time_slot!==recordState.time) return false;
+    if(recordState.anomaly && !getRecordAnomalyTypes(r).includes(recordState.anomaly)) return false;
     if(q){
       const hay=`${r.name||''} ${r.phone||''} ${r.id_last4||''} ${r.serial_number||''} ${r.venue_type||''} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
       if(!hay.includes(q)) return false;
@@ -648,10 +698,14 @@ function renderRecordsPage(){
           <select id="filterVenue"><option value="">全部類型</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
           <select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
+          <select id="filterAnomaly">
+            <option value="">全部異常狀態</option>
+            ${['同手機多身分','重複場次登記','超過申請上限','中籤人數超過名額','公布資料不完整','候補順位異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
+          </select>
           <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
           <button id="applyFilterBtn" class="btn btn-primary">套用篩選</button>
         </div>
-        <div class="section-note">可依姓名、手機末四碼、登記序號、球場、星期及時段快速查找資料。</div>
+        <div class="section-note">可依姓名、手機末四碼、登記序號、球場、星期、時段及異常狀態快速查找資料。</div>
       </div>
 
       <div id="recordsPanelBatch" class="records-function-panel ${recordsActionTab==='batch'?'':'hidden'}">
@@ -701,6 +755,7 @@ function renderRecordsPage(){
     recordState.venue=document.getElementById('filterVenue').value;
     recordState.day=document.getElementById('filterDay').value;
     recordState.time=document.getElementById('filterTime').value;
+    recordState.anomaly=document.getElementById('filterAnomaly').value;
     recordState.perPage=parseInt(document.getElementById('perPage').value,10);
     recordState.page=1; selectedRecordIds.clear(); renderRecordsStageHint(); renderRecordsTable();
   };
@@ -782,7 +837,7 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>公布</th><th>狀態</th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>${sortHeader('類型','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>公布</th><th>異常註記</th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>${sortHeader('類型','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>
@@ -796,7 +851,7 @@ function renderRecordsTable(){
       </select>
     </td>
     <td>${publishStatusTag(r)}</td>
-    <td>${suspiciousTag(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
+    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
@@ -1625,7 +1680,7 @@ function renderLotteryPage(){
       <div class="panel">
         <h3>本日登記清單</h3>
         <div class="table-wrap"><table><thead><tr><th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>後4碼</th><th>時段</th><th>登記時間</th></tr></thead><tbody>
-          ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${suspiciousTag(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
+          ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
         </tbody></table></div>
       </div>`;
   }
@@ -2019,7 +2074,7 @@ function renderLotteryPage(){
           <table>
             <thead>
               <tr>
-                <th>狀態</th>
+                <th>異常註記</th>
                 <th>姓名</th>
                 <th>手機</th>
                 <th>通知內容</th>
@@ -2146,7 +2201,7 @@ function renderLotteryPage(){
     table.innerHTML=stages.length?`
       <div class="table-wrap">
         <table>
-          <thead><tr><th>項次</th><th>類型</th><th>星期</th><th>時段</th><th>筆數</th><th>人數</th><th>正取</th><th>預計備取</th><th>狀態</th></tr></thead>
+          <thead><tr><th>項次</th><th>類型</th><th>星期</th><th>時段</th><th>筆數</th><th>人數</th><th>正取</th><th>預計備取</th><th>異常註記</th></tr></thead>
           <tbody>
             ${stages.map((s,i)=>`<tr>
               <td>${i+1}</td>
