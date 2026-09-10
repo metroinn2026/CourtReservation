@@ -849,6 +849,112 @@
   }
 </style>
 
+
+<style id="anomaly-capacity-final-cleanup">
+  .tag.anomaly-red{
+    display:inline-flex!important;
+    align-items:center!important;
+    padding:4px 8px!important;
+    margin:1px 3px 1px 0!important;
+    border-radius:999px!important;
+    background:#fff1f2!important;
+    border:1px solid #fecdd3!important;
+    color:#b42318!important;
+    font-size:12px!important;
+    font-weight:800!important;
+    line-height:1.2!important;
+    white-space:nowrap!important;
+  }
+
+  .capacity-toolbar{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:24px;
+    flex-wrap:wrap;
+    margin:0 20px 18px;
+    padding:14px 16px;
+    background:#f7f9fc;
+    border:1px solid #dbe4ee;
+    border-radius:14px;
+  }
+
+  .capacity-toolbar-main,
+  .capacity-toolbar-actions{
+    display:flex;
+    align-items:flex-end;
+    gap:18px;
+    flex-wrap:wrap;
+  }
+
+  .capacity-toolbar-actions{
+    margin-left:auto;
+  }
+
+  .capacity-field,
+  .capacity-tabs-wrap{
+    display:flex;
+    flex-direction:column;
+    gap:7px;
+  }
+
+  .capacity-field label,
+  .capacity-tabs-wrap > label{
+    font-size:12px;
+    line-height:1;
+    font-weight:900;
+    color:#475569;
+  }
+
+  #capacityLocation{
+    min-width:140px!important;
+    width:140px!important;
+  }
+
+  .capacity-number-field input{
+    width:90px!important;
+    min-width:90px!important;
+  }
+
+  .capacity-tabs-wrap .admin-tabs{
+    margin:0!important;
+    padding:0!important;
+    gap:22px!important;
+    border-bottom:1px solid #dbe4ee!important;
+  }
+
+  .capacity-tabs-wrap .admin-tab{
+    padding-top:8px!important;
+    padding-bottom:10px!important;
+  }
+
+  .capacity-action-buttons{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+
+  .capacity-action-buttons .btn{
+    min-height:42px!important;
+    white-space:nowrap;
+  }
+
+  @media(max-width:1050px){
+    .capacity-toolbar{
+      align-items:stretch;
+    }
+    .capacity-toolbar-main,
+    .capacity-toolbar-actions{
+      width:100%;
+    }
+    .capacity-toolbar-actions{
+      margin-left:0;
+      justify-content:flex-start;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1005,7 +1111,7 @@ function getRecordAnomalyTypes(record){
 function anomalyTags(record){
   const types=getRecordAnomalyTypes(record);
   if(!types.length) return '<span class="tag gray">正常</span>';
-  return types.map(t=>`<span class="tag ${['超過次數','超過名額','公布未完成'].includes(t)?'error':'warn'}" style="margin:2px 4px 2px 0;display:inline-block;">${escapeHtml(t)}</span>`).join('');
+  return types.map(t=>`<span class="tag anomaly-red">${escapeHtml(t)}</span>`).join('');
 }
 
 function getStageStartTime(timeSlot){
@@ -2062,42 +2168,64 @@ function batchDeleteSelectedRecords(){
 }
 
 function renderCapacityPage(){
+  const venueOrder=['羽球','籃球','B1桌球','B2桌球'];
   if(!window.currentCapacityVenue) window.currentCapacityVenue='羽球';
   if(!window.currentCapacityLocation) window.currentCapacityLocation=DEFAULT_LOCATION;
+
   document.getElementById('content').innerHTML=`
     <div class="panel">
       <h3>🎯 抽籤名額設定</h3>
-      <div class="alert">為避免畫面太複雜，改為一次編輯一種運動類型。請先選擇上方類型，輸入各星期與時段名額後，按「儲存目前類型」。</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-          <div>
-            <div class="small" style="font-weight:900;color:#334155;margin-bottom:6px;">場地</div>
-            <select id="capacityLocation" ${shouldLockLocationFilter()?'disabled':''} style="min-width:140px;border:1px solid #d1d5db;border-radius:10px;padding:9px 12px;background:#fff;">${renderLocationOptions(window.currentCapacityLocation || DEFAULT_LOCATION, false)}</select>
+
+      <div class="capacity-toolbar">
+        <div class="capacity-toolbar-main">
+          <div class="capacity-field">
+            <label>場地</label>
+            <select id="capacityLocation" ${shouldLockLocationFilter()?'disabled':''}>
+              ${renderLocationOptions(window.currentCapacityLocation || DEFAULT_LOCATION, false)}
+            </select>
           </div>
-          <div id="capTabs" class="admin-tabs compact" role="tablist" aria-label="運動類型">
-          ${venueOrder.map(v=>`<button class="admin-tab ${window.currentCapacityVenue===v?'active':''} cap-tab" data-venue="${v}" role="tab">${v}</button>`).join('')}
+
+          <div class="capacity-tabs-wrap">
+            <label>球類</label>
+            <div id="capTabs" class="admin-tabs compact" role="tablist" aria-label="運動類型">
+              ${venueOrder.map(v=>`<button class="admin-tab ${window.currentCapacityVenue===v?'active':''} cap-tab" data-venue="${v}" role="tab">${v}</button>`).join('')}
+            </div>
+          </div>
         </div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <input id="defaultCapValue" type="number" min="0" value="1"
-                 style="width:90px;border:1px solid #d1d5db;border-radius:8px;padding:9px;"
-                 placeholder="名額">
-          <button id="fillDefaultCapBtn" class="btn btn-gray">套用數字</button>
-          <button id="clearAllCapBtn" class="btn btn-danger">本頁清為0</button>
-          <button id="saveAllCapBtn" class="btn btn-primary">儲存目前類型</button>
+
+        <div class="capacity-toolbar-actions">
+          <div class="capacity-field capacity-number-field">
+            <label>統一名額</label>
+            <input id="defaultCapValue" type="number" min="0" value="1" placeholder="名額">
+          </div>
+
+          <div class="capacity-action-buttons">
+            <button id="fillDefaultCapBtn" class="btn btn-gray">套用數字</button>
+            <button id="clearAllCapBtn" class="btn btn-gray">本頁清為0</button>
+            <button id="saveAllCapBtn" class="btn btn-primary">儲存目前類型</button>
+          </div>
         </div>
       </div>
+
       <div id="bulkCapTable"></div>
     </div>
   `;
+
   document.querySelectorAll('.cap-tab').forEach(btn=>{
     btn.onclick=()=>{
       window.currentCapacityVenue=btn.dataset.venue;
       renderCapacityPage();
     };
   });
+
   renderBulkCapacityTable();
-  const capLoc=document.getElementById('capacityLocation'); if(capLoc) capLoc.onchange=()=>{ window.currentCapacityLocation=capLoc.value || DEFAULT_LOCATION; renderCapacityPage(); };
+
+  const capLoc=document.getElementById('capacityLocation');
+  if(capLoc) capLoc.onchange=()=>{
+    window.currentCapacityLocation=capLoc.value || DEFAULT_LOCATION;
+    renderCapacityPage();
+  };
+
   document.getElementById('fillDefaultCapBtn').onclick=()=>fillDefaultCapacity();
   document.getElementById('clearAllCapBtn').onclick=()=>clearAllCapacity();
   document.getElementById('saveAllCapBtn').onclick=()=>saveAllCapacity();
