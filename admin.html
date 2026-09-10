@@ -2440,6 +2440,100 @@
   }
 </style>
 
+
+<style id="records-filter-layout-final">
+  /* 登記資料篩選列：全部條件排在同一列，每頁筆數固定在最右側 */
+  .records-main-panel > .records-fixed-filter{
+    display:block!important;
+    padding:18px 20px!important;
+  }
+
+  .records-fixed-filter-title{
+    margin:0 0 12px!important;
+  }
+
+  .records-shared-toolbar{
+    display:grid!important;
+    grid-template-columns:
+      minmax(220px,1.55fr)
+      140px
+      150px
+      150px
+      165px
+      150px
+      120px!important;
+    gap:12px!important;
+    align-items:center!important;
+    width:100%!important;
+    margin:0!important;
+  }
+
+  .records-shared-toolbar > *{
+    min-width:0!important;
+    width:100%!important;
+    box-sizing:border-box!important;
+  }
+
+  #perPage{
+    width:120px!important;
+    min-width:120px!important;
+    justify-self:end!important;
+  }
+
+  /* 操作按鈕移到原本第二列「每頁20筆」的位置：靠左排列 */
+  .records-filter-actions{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    gap:10px!important;
+    margin:12px 0 0!important;
+    padding:0!important;
+  }
+
+  .records-filter-actions .btn{
+    min-width:142px!important;
+    height:42px!important;
+  }
+
+  @media(max-width:1380px){
+    .records-shared-toolbar{
+      grid-template-columns:
+        minmax(210px,1.5fr)
+        130px
+        140px
+        140px
+        155px
+        140px
+        115px!important;
+      gap:10px!important;
+    }
+    #perPage{
+      width:115px!important;
+      min-width:115px!important;
+    }
+  }
+
+  @media(max-width:1120px){
+    .records-shared-toolbar{
+      grid-template-columns:repeat(4,minmax(150px,1fr))!important;
+    }
+    #perPage{
+      width:100%!important;
+      min-width:0!important;
+      justify-self:stretch!important;
+    }
+  }
+
+  @media(max-width:760px){
+    .records-shared-toolbar{
+      grid-template-columns:repeat(2,minmax(140px,1fr))!important;
+    }
+    .records-filter-actions{
+      flex-wrap:wrap!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
