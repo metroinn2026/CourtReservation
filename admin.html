@@ -1388,6 +1388,54 @@
   }
 </style>
 
+
+<style id="anomaly-info-row-align-final">
+  .anomaly-center-head{
+    display:block!important;
+    margin-bottom:8px!important;
+  }
+
+  .anomaly-center-head h3{
+    margin:0!important;
+  }
+
+  .anomaly-info-row{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:16px!important;
+    margin:0 0 10px!important;
+    padding:0!important;
+  }
+
+  .anomaly-info-row .small{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+    color:#64748b!important;
+  }
+
+  .anomaly-total-line{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+    color:#b42318!important;
+    font-size:12.5px!important;
+    font-weight:900!important;
+    text-align:right!important;
+    white-space:nowrap!important;
+    background:transparent!important;
+    border:0!important;
+    border-radius:0!important;
+  }
+
+  @media(max-width:720px){
+    .anomaly-info-row{
+      align-items:flex-start!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1642,12 +1690,12 @@ function renderAnomalyCenter(issues){
     return `
       <div class="panel anomaly-center-clean" id="anomalyCenter">
         <div class="anomaly-center-head">
-          <div>
-            <h3>異常檢核中心</h3>
-            <div class="small">系統自動檢查可能需要人工確認的資料。</div>
-          </div>
+          <h3>異常檢核中心</h3>
         </div>
-        <div class="anomaly-total-line">0 項待確認</div>
+        <div class="anomaly-info-row">
+          <div class="small">系統自動檢查可能需要人工確認的資料。</div>
+          <div class="anomaly-total-line">0 項待確認</div>
+        </div>
         <div class="anomaly-empty">目前未發現需人工確認的資料異常。</div>
       </div>`;
   }
@@ -1686,13 +1734,14 @@ function renderAnomalyCenter(issues){
   return `
     <div class="panel anomaly-center-clean" id="anomalyCenter">
       <div class="anomaly-center-head">
-        <div>
-          <h3>異常檢核中心</h3>
-          <div class="small">系統自動檢查可能需要人工確認的資料，僅提醒，不會自動修改。</div>
-        </div>
+        <h3>異常檢核中心</h3>
       </div>
 
-      <div class="anomaly-total-line">${issues.length} 項待確認</div>
+      <div class="anomaly-info-row">
+        <div class="small">系統自動檢查可能需要人工確認的資料，僅提醒，不會自動修改。</div>
+        <div class="anomaly-total-line">${issues.length} 項待確認</div>
+      </div>
+
       <div class="anomaly-list">
         ${rows}
       </div>
