@@ -1666,8 +1666,44 @@ function showMsg(el, text, type='error'){ document.getElementById(el).innerHTML 
 function roleName(role){ return role === 'super_admin' ? '超級管理員' : '一般管理員'; }
 function normalizePhone(v){ return String(v||'').replace(/\D/g,'').replace(/^886/,'0'); }
 function recordLocation(r){ return String(r?.location_name||'').trim() || DEFAULT_LOCATION; }
-function getTimeOptionsForVenue(venue){ return venue && venue.includes('桌球') ? ['09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00'] : ['06:00','08:00','10:00','12:00','14:00','16:00','18:00','20:00']; }
-function formatTimeSlotDisplay(startTime, isTableTennis){ const h=parseInt(startTime.split(':')[0],10); return `${startTime}-${String(h+1).padStart(2,'0')}:59`; }
+function getVenueDurationHours(venue){
+  return venue==='籃球' ? 2 : 1;
+}
+function getTimeOptionsForVenue(venue){
+  const duration=getVenueDurationHours(venue);
+  const step=duration;
+  const starts=[];
+  for(let h=6; h+duration<=22; h+=step){
+    starts.push(`${String(h).padStart(2,'0')}:00`);
+  }
+  return starts;
+}
+function formatTimeSlotDisplay(startTime, venue=''){
+  const h=parseInt(String(startTime).split(':')[0],10);
+  const duration=getVenueDurationHours(venue);
+  const endHour=h+duration-1;
+  return `${String(h).padStart(2,'0')}:00-${String(endHour).padStart(2,'0')}:59`;
+}
+function getRuleTimeSlots(venue=''){
+  return getTimeOptionsForVenue(venue).map(st=>formatTimeSlotDisplay(st,venue));
+}
+function renderRuleTimeOptions(venue='',selected='',allLabel='全部時段',allowAll=true){
+  const slots=getRuleTimeSlots(venue);
+  const options=[];
+  if(allowAll) options.push(`<option value="">${escapeHtml(allLabel)}</option>`);
+  slots.forEach(slot=>{
+    options.push(`<option value="${escapeHtml(slot)}" ${selected===slot?'selected':''}>${escapeHtml(slot)}</option>`);
+  });
+  return options.join('');
+}
+function refreshRuleTimeSelect(selectId, venue, selected=''){
+  const el=document.getElementById(selectId);
+  if(!el) return;
+  const slots=getRuleTimeSlots(venue);
+  const keep=slots.includes(selected) ? selected : '';
+  el.innerHTML=renderRuleTimeOptions(venue,keep,'全部時段',true);
+  el.value=keep;
+}
 function settingKey(venue, day, timeSlot){ return `${venue}|${day}|${timeSlot}`; }
 function countSlot(venue,day,startTime,location=DEFAULT_LOCATION){ return allRecords.filter(r=>recordLocation(r)===location && r.venue_type===venue && r.day_of_week===day && String(r.time_slot||'').includes(startTime)).length; }
 function recordHours(r){ const t=String(r.time_slot||''); const parts=t.split('-'); const sh=parseInt(parts[0],10); const eh=parseInt((parts[1]||'').split(':')[0],10); if(!isNaN(sh)&&!isNaN(eh)) return Math.max(1,eh-sh+1); return String(r.venue_type||'').includes('桌球') ? 1 : 2; }
@@ -2330,7 +2366,7 @@ function renderRecordsPage(){
   const locations=getAdminLocations();
   if(!recordState.location) recordState.location=DEFAULT_LOCATION;
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
-  const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
+  const times=getRuleTimeSlots(recordState.venue);
 
   document.getElementById('content').innerHTML=`${renderCards(stats())}
     <div class="panel records-main-panel">
@@ -2343,7 +2379,7 @@ function renderRecordsPage(){
           <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
           <select id="filterVenue"><option value="">全部球類</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
-          <select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
+          <select id="filterTime" title="未選球類：每小時；羽球/桌球：每1小時；籃球：每2小時">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
           <select id="filterAnomaly" title="篩選正常或指定異常狀態">
             <option value="" ${recordState.anomaly===''?'selected':''}>全部</option>
             <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
@@ -2381,6 +2417,14 @@ function renderRecordsPage(){
   };
 
   document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
+  const recordVenueSelect=document.getElementById('filterVenue');
+  if(recordVenueSelect){
+    recordVenueSelect.onchange=()=>{
+      const timeSelect=document.getElementById('filterTime');
+      const currentTime=timeSelect?.value || '';
+      refreshRuleTimeSelect('filterTime',recordVenueSelect.value,currentTime);
+    };
+  }
   document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
   document.getElementById('perPage').addEventListener('change',applyRecordFilters);
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
@@ -2954,7 +2998,7 @@ function renderBulkCapacityTable(){
   let totalCapacity = 0;
   days.forEach(day=>{
     times.forEach(st=>{
-      const slot=formatTimeSlotDisplay(st,venue.includes('桌球'));
+      const slot=formatTimeSlotDisplay(st,venue);
       const key=settingKey(venue,day,slot);
       const val=Number(capacitySettings[key] ?? capacityMap[venue] ?? 0);
       if(val>0) filledCount++;
@@ -2974,7 +3018,7 @@ function renderBulkCapacityTable(){
         <thead>
           <tr>
             <th style="width:90px;">星期</th>
-            ${times.map(st=>`<th style="text-align:center;">${formatTimeSlotDisplay(st,venue.includes('桌球'))}</th>`).join('')}
+            ${times.map(st=>`<th style="text-align:center;">${formatTimeSlotDisplay(st,venue)}</th>`).join('')}
           </tr>
         </thead>
         <tbody>
@@ -2982,7 +3026,7 @@ function renderBulkCapacityTable(){
             <tr>
               <td><strong>${day}</strong></td>
               ${times.map(st=>{
-                const slot=formatTimeSlotDisplay(st,venue.includes('桌球'));
+                const slot=formatTimeSlotDisplay(st,venue);
                 const key=settingKey(venue,day,slot);
                 const val=capacitySettings[key] ?? capacityMap[venue] ?? 0;
                 const registered=countSlot(venue,day,st,location);
@@ -3251,7 +3295,7 @@ function renderLotteryPage(){
   const locations=getAdminLocations();
   window.currentLotteryLocation = window.currentLotteryLocation || DEFAULT_LOCATION;
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
-  const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
+  const times=getRuleTimeSlots('');
 
   document.getElementById('content').innerHTML=`
     <div class="panel">
@@ -3273,7 +3317,7 @@ function renderLotteryPage(){
           </div>
           <div>
             <label class="small" style="font-weight:900;color:#334155;">時段</label>
-            <select id="dayCheckTime"><option value="">全部時段</option>${times.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
+            <select id="dayCheckTime" title="未選球類：每小時；羽球/桌球：每1小時；籃球：每2小時">${renderRuleTimeOptions('', '', '全部時段', true)}</select>
           </div>
           <div class="lottery-filter-actions">
             <button id="refreshLotteryContext" class="btn btn-gray">篩選</button>
@@ -3317,7 +3361,7 @@ function renderLotteryPage(){
           </div>
           <div>
             <label class="small" style="font-weight:900;color:#334155;">時段</label>
-            <select id="lotTime"><option value="">請選擇時段</option>${times.map(t=>`<option>${escapeHtml(t)}</option>`).join('')}</select>
+            <select id="lotTime"><option value="">請選擇時段</option>${getRuleTimeSlots('').map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
           </div>
           <div>
             <label class="small" style="font-weight:900;color:#334155;">正取人數</label>
@@ -3452,7 +3496,16 @@ function renderLotteryPage(){
   document.getElementById('singleLotteryTab').onclick=()=>switchBuiltInLotteryTab('single');
   document.getElementById('batchLotteryTab').onclick=()=>switchBuiltInLotteryTab('batch');
   document.getElementById('refreshLotteryContext').onclick=()=>{ window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION; const lotLoc=document.getElementById('lotLocation'); if(lotLoc) lotLoc.value=window.currentLotteryLocation; const batchLoc=document.getElementById('batchLocation'); if(batchLoc) batchLoc.value=window.currentLotteryLocation; renderDayCheck(); renderImportSummary(); previewBatch(); };
-  ['dayCheckLocation','dayCheckVenue','dayCheckDay','dayCheckTime'].forEach(id=>{ const el=document.getElementById(id); if(el) el.onchange=()=>{ window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION; const lotLoc=document.getElementById('lotLocation'); if(lotLoc) lotLoc.value=window.currentLotteryLocation; const batchLoc=document.getElementById('batchLocation'); if(batchLoc) batchLoc.value=window.currentLotteryLocation; renderDayCheck(); renderImportSummary(); }; });
+  ['dayCheckLocation','dayCheckDay','dayCheckTime'].forEach(id=>{ const el=document.getElementById(id); if(el) el.onchange=()=>{ window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION; const lotLoc=document.getElementById('lotLocation'); if(lotLoc) lotLoc.value=window.currentLotteryLocation; const batchLoc=document.getElementById('batchLocation'); if(batchLoc) batchLoc.value=window.currentLotteryLocation; renderDayCheck(); renderImportSummary(); }; });
+  const dayCheckVenueSelect=document.getElementById('dayCheckVenue');
+  if(dayCheckVenueSelect){
+    dayCheckVenueSelect.onchange=()=>{
+      refreshRuleTimeSelect('dayCheckTime',dayCheckVenueSelect.value,'');
+      window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION;
+      renderDayCheck();
+      renderImportSummary();
+    };
+  }
   document.getElementById('exportDayCheckBtn').onclick=()=>{
     const {records}=getDayCheckRecords();
     if(records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
@@ -3618,7 +3671,10 @@ function renderLotteryPage(){
     setTimeout(()=>{
       const v=document.getElementById('dayCheckVenue');
       const d=document.getElementById('dayCheckDay');
-      if(v) v.value=venue;
+      if(v){
+        v.value=venue;
+        refreshRuleTimeSelect('dayCheckTime',venue,'');
+      }
       if(d) d.value=day;
       if(d) d.dispatchEvent(new Event('change'));
       renderDayCheck();
@@ -4090,17 +4146,31 @@ function renderLotteryPage(){
     if(l) l.value=location;
     if(v) v.value=venue;
     if(d) d.value=day;
-    if(t) t.value=time;
+    if(t){
+      const slots=getRuleTimeSlots(venue);
+      t.innerHTML='<option value="">請選擇時段</option>'+slots.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
+      t.value=time;
+    }
     refresh();
   }
 
-  ['lotLocation','lotVenue','lotDay','lotTime','lotWinnerCount','lotWaitlistCount'].forEach(id=>{
+  ['lotLocation','lotDay','lotTime','lotWinnerCount','lotWaitlistCount'].forEach(id=>{
     const el=document.getElementById(id);
     if(!el) return;
     const handler=()=>{ clearPendingBuiltInLottery(); refresh(); };
     el.onchange=handler;
     el.oninput=handler;
   });
+  const lotVenueSelect=document.getElementById('lotVenue');
+  if(lotVenueSelect){
+    lotVenueSelect.onchange=()=>{
+      const lotTime=document.getElementById('lotTime');
+      const slots=getRuleTimeSlots(lotVenueSelect.value);
+      lotTime.innerHTML='<option value="">請選擇時段</option>'+slots.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+      clearPendingBuiltInLottery();
+      refresh();
+    };
+  }
 
   const loadBtn=document.getElementById('loadLotStage');
   if(loadBtn) loadBtn.onclick=()=>{
