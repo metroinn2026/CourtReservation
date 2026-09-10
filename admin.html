@@ -1673,6 +1673,172 @@
   }
 </style>
 
+
+<style id="ui_minimal_layers_refresh">
+  /* 重新精簡後台層級：保留標題在外、減少多重色框 */
+  .records-main-panel,
+  .lottery-main-panel,
+  .capacity-main-panel{
+    background:transparent!important;
+    border:none!important;
+    box-shadow:none!important;
+    padding:0!important;
+    margin-bottom:18px!important;
+  }
+
+  .records-main-panel > .records-fixed-filter,
+  .lottery-main-panel > .lottery-context,
+  .capacity-main-panel > .capacity-toolbar,
+  #recordsWorkspace,
+  .lottery-main-panel > #dayCheckPanel,
+  .capacity-main-panel > #bulkCapTable{
+    background:#fff!important;
+    border:1px solid #dde6f0!important;
+    border-radius:16px!important;
+    box-shadow:0 4px 16px rgba(15,23,42,.04)!important;
+  }
+
+  /* 登記資料 */
+  .records-main-panel > .records-fixed-filter{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) auto!important;
+    gap:12px 16px!important;
+    margin:0 0 14px!important;
+    padding:18px 20px!important;
+  }
+  .records-fixed-filter-title{
+    grid-column:1 / -1!important;
+    margin:0!important;
+    font-size:14px!important;
+    font-weight:900!important;
+    color:#334155!important;
+  }
+  .records-shared-toolbar{
+    display:grid!important;
+    grid-template-columns:minmax(220px,1.55fr) repeat(5,minmax(108px,1fr))!important;
+    gap:12px!important;
+    margin:0!important;
+    align-items:end!important;
+  }
+  .records-filter-actions{
+    display:flex!important;
+    align-items:end!important;
+    justify-content:flex-end!important;
+    gap:10px!important;
+    margin:0!important;
+    padding:0!important;
+  }
+  .records-main-panel .records-function-tabs{
+    margin:0 0 10px!important;
+    padding:0 4px!important;
+  }
+  #recordsWorkspace{
+    padding:0 0 14px!important;
+    overflow:hidden!important;
+  }
+  .records-inline-scope{
+    margin:0 20px!important;
+    padding:14px 0 12px!important;
+    border-bottom:1px solid #e5e7eb!important;
+    background:transparent!important;
+  }
+  .records-table-meta{
+    margin:14px 20px 10px!important;
+  }
+  .records-list-actionbar{
+    margin:0 20px 12px!important;
+    padding:12px 14px!important;
+    background:#f8fafc!important;
+    border:1px solid #e2e8f0!important;
+    border-radius:12px!important;
+  }
+  .publish-workspace-card{
+    margin:14px 20px 12px!important;
+    padding:0 0 12px!important;
+    background:transparent!important;
+    border:none!important;
+    border-bottom:1px solid #e5e7eb!important;
+    border-radius:0!important;
+  }
+  .publish-counts{
+    margin:12px 0!important;
+    padding:10px 0!important;
+  }
+
+  /* 抽籤作業 */
+  .lottery-main-panel > .lottery-context{
+    margin:0 0 14px!important;
+    padding:18px 20px!important;
+  }
+  .lottery-main-panel .lottery-context-grid{
+    grid-template-columns:repeat(4,minmax(118px,1fr)) auto!important;
+    gap:12px 14px!important;
+    align-items:end!important;
+  }
+  .lottery-main-panel .lottery-filter-actions{
+    display:flex!important;
+    align-items:end!important;
+    justify-content:flex-end!important;
+    gap:10px!important;
+    flex-wrap:wrap!important;
+  }
+  .lottery-main-panel > #dayCheckPanel,
+  .capacity-main-panel > #bulkCapTable{
+    padding:16px 18px!important;
+  }
+  .lottery-main-panel .lottery-action-card,
+  .lottery-main-panel .lottery-advanced{
+    box-shadow:none!important;
+  }
+
+  /* 抽籤名額設定 */
+  .capacity-main-panel > .capacity-toolbar{
+    margin:0 0 14px!important;
+    padding:18px 20px!important;
+  }
+
+  /* 文字設定 / 異常區等內部卡片再少一點顏色 */
+  .anomaly-row,
+  .pending-stage-row,
+  .account-row{
+    background:#fff!important;
+  }
+  .alert{
+    background:#f8fafc!important;
+    border:1px solid #e2e8f0!important;
+    color:#475569!important;
+  }
+
+  /* 響應式 */
+  @media (max-width: 1440px){
+    .records-shared-toolbar{
+      grid-template-columns:repeat(4,minmax(160px,1fr))!important;
+    }
+    .records-filter-actions{
+      grid-column:1 / -1!important;
+      justify-content:flex-start!important;
+    }
+    .lottery-main-panel .lottery-context-grid{
+      grid-template-columns:repeat(3,minmax(160px,1fr))!important;
+    }
+    .lottery-main-panel .lottery-filter-actions{
+      grid-column:1 / -1!important;
+      justify-content:flex-start!important;
+    }
+  }
+  @media (max-width: 960px){
+    .records-main-panel > .records-fixed-filter,
+    .lottery-main-panel > .lottery-context,
+    .capacity-main-panel > .capacity-toolbar{
+      padding:16px!important;
+    }
+    .records-shared-toolbar,
+    .lottery-main-panel .lottery-context-grid{
+      grid-template-columns:repeat(2,minmax(140px,1fr))!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -3021,7 +3187,7 @@ function renderCapacityPage(){
   if(!window.currentCapacityLocation) window.currentCapacityLocation=DEFAULT_LOCATION;
 
   document.getElementById('content').innerHTML=`
-    <div class="panel">
+    <div class="panel capacity-main-panel">
       <h3>🎯 抽籤名額設定</h3>
 
       <div class="capacity-toolbar">
@@ -3390,7 +3556,7 @@ function renderLotteryPage(){
   const times=getRuleTimeSlots('');
 
   document.getElementById('content').innerHTML=`
-    <div class="panel">
+    <div class="panel lottery-main-panel">
       <h3>抽籤作業中心</h3>
 
       <div class="lottery-context">
