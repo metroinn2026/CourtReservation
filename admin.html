@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>北投會館運動場域智慧租借管理系統｜管理後台</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root{
       --blue:#007AB0;--blue2:#005A8C;--green:#40AF36;--orange:#FF9800;--red:#dc2626;
@@ -60,7 +61,7 @@
     <div class="hero">
       <div class="hero-badge">Metro Inn Admin Console</div>
       <h1>北投會館運動場域智慧租借管理系統｜管理後台</h1>
-      <p>穩定版電腦後台，支援帳號權限、登記資料查詢、分頁、批次刪除、名額設定、抽籤與 CSV 匯出。</p>
+      <p>穩定版電腦後台，支援帳號權限、登記資料查詢、分頁、批次刪除、名額設定、抽籤名單匯出與 Excel 結果匯入。</p>
       <div class="hero-grid">
         <div class="hero-card"><strong>帳號</strong><span>超級管理員與一般管理員</span></div>
         <div class="hero-card"><strong>資料</strong><span>搜尋、勾選、批次刪除</span></div>
@@ -1000,9 +1001,9 @@ function renderLotteryPage(){
 
       <div id="dayCheckPanel">
         <div class="alert">
-          先選「運動類型＋星期」，即可一次檢查同一天全部時段的登記清單與抽籤狀態；確認無誤後，可切到「批次抽籤」處理，公布則回「登記資料」按「公布此類型全部結果」。
+          建議流程：①選擇「運動類型＋星期」 → ②匯出本日清單並於 Excel 完成抽籤 → ③匯入抽籤結果 → ④確認結果後再公布。匯入只需辨識「序號」與「抽籤狀態」兩欄，其餘欄位可保留；抽籤狀態可填「中籤、未中籤、候補1、候補2…」。
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr auto auto;gap:12px;align-items:end;margin-bottom:14px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr auto auto auto;gap:12px;align-items:end;margin-bottom:14px;">
           <div>
             <label class="small" style="font-weight:900;color:#334155;">運動類型</label>
             <select id="dayCheckVenue"><option value="">請選擇類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
@@ -1011,9 +1012,12 @@ function renderLotteryPage(){
             <label class="small" style="font-weight:900;color:#334155;">星期</label>
             <select id="dayCheckDay"><option value="">請選擇星期</option>${days.map(d=>`<option>${d}</option>`).join('')}</select>
           </div>
-          <button id="exportDayCheckBtn" class="btn btn-green">匯出本日清單</button>
-          <button id="goBatchDayBtn" class="btn btn-orange">帶入批次抽籤</button>
+          <button id="exportDayCheckBtn" class="btn btn-green">① 匯出本日清單</button>
+          <button id="importLotteryResultBtn" class="btn btn-primary">② 匯入抽籤結果</button>
+          <button id="goBatchDayBtn" class="btn btn-gray">系統批次抽籤</button>
+          <input id="importLotteryFile" type="file" accept=".xlsx,.xls,.csv" style="display:none;">
         </div>
+        <div id="importLotteryPreview"></div>
         <div id="dayCheckSummary"></div>
         <div id="dayCheckTable"></div>
       </div>
@@ -1146,6 +1150,171 @@ function renderLotteryPage(){
     if(records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
     exportToCsv(records);
   };
+  document.getElementById('importLotteryResultBtn').onclick=()=>{
+    const {venue,day,records}=getDayCheckRecords();
+    if(!venue || !day || records.length===0){
+      alert('請先選擇「運動類型」與「星期」，再匯入該日抽籤結果。');
+      return;
+    }
+    document.getElementById('importLotteryFile').click();
+  };
+
+  document.getElementById('importLotteryFile').onchange=async(e)=>{
+    const file=e.target.files?.[0];
+    e.target.value='';
+    if(!file) return;
+    try{
+      const parsed=await parseLotteryResultFile(file);
+      renderLotteryImportPreview(parsed,file.name);
+    }catch(err){
+      console.error(err);
+      alert('讀取檔案失敗：' + (err?.message || '請確認檔案格式'));
+    }
+  };
+
+  async function parseLotteryResultFile(file){
+    if(typeof XLSX==='undefined') throw new Error('Excel 讀取元件尚未載入，請重新整理頁面後再試。');
+    const buffer=await file.arrayBuffer();
+    const workbook=XLSX.read(buffer,{type:'array'});
+    const sheet=workbook.Sheets[workbook.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false});
+    if(!rows.length) throw new Error('檔案內沒有可讀取的資料。');
+
+    const findValue=(row,names)=>{
+      for(const n of names){
+        if(Object.prototype.hasOwnProperty.call(row,n)) return row[n];
+      }
+      return '';
+    };
+    const normalizeStatus=(value)=>{
+      let v=String(value??'').trim().replace(/\s+/g,'');
+      if(!v || v==='未抽籤') return '';
+      if(v==='正取' || v==='中選' || v==='中籤') return '中籤';
+      if(v==='落選' || v==='未中選' || v==='未中籤') return '未中籤';
+      const m=v.match(/^(?:候補|備取)(\d+)$/);
+      if(m) return `候補${Number(m[1])}`;
+      return null;
+    };
+
+    const {venue,day,records}=getDayCheckRecords();
+    const recordMap=new Map(records.map(r=>[String(r.serial_number||'').trim(),r]));
+    const seen=new Set();
+    const valid=[];
+    const errors=[];
+    const skipped=[];
+
+    rows.forEach((row,idx)=>{
+      const serial=String(findValue(row,['序號','登記序號','serial_number','Serial Number'])??'').trim();
+      const rawStatus=findValue(row,['抽籤狀態','抽籤結果','結果','lottery_status','Lottery Status']);
+      const status=normalizeStatus(rawStatus);
+      const excelRow=idx+2;
+      if(!serial && !String(rawStatus??'').trim()) return;
+      if(!serial){ errors.push({row:excelRow,serial:'',status:String(rawStatus??''),reason:'缺少序號'}); return; }
+      if(seen.has(serial)){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'序號重複'}); return; }
+      seen.add(serial);
+      const record=recordMap.get(serial);
+      if(!record){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:`找不到目前「${venue}｜${day}」的登記資料`}); return; }
+      if(status===null){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'抽籤狀態格式不符'}); return; }
+      if(!status){ skipped.push({row:excelRow,serial,name:record.name,reason:'抽籤狀態空白'}); return; }
+      if(record.result_published){ errors.push({row:excelRow,serial,status,reason:'此筆結果已公布，請先取消公布'}); return; }
+      if(record.lottery_locked || String(record.lottery_status||'').trim()){
+        errors.push({row:excelRow,serial,status,reason:'此筆已有抽籤結果或已鎖定，請先解除鎖定'}); return;
+      }
+      valid.push({row:excelRow,serial,status,record});
+    });
+
+    if(valid.length===0 && errors.length===0) throw new Error('未找到可匯入的抽籤結果。請確認欄位包含「序號」及「抽籤狀態」。');
+    return {valid,errors,skipped,venue,day,totalRows:rows.length};
+  }
+
+  function renderLotteryImportPreview(parsed,fileName){
+    const box=document.getElementById('importLotteryPreview');
+    if(!box) return;
+    window.pendingLotteryImport=parsed;
+    const counts={winner:0,wait:0,lose:0};
+    parsed.valid.forEach(x=>{
+      if(x.status==='中籤') counts.winner++;
+      else if(String(x.status).startsWith('候補')) counts.wait++;
+      else if(x.status==='未中籤') counts.lose++;
+    });
+    const errorRows=parsed.errors.slice(0,8).map(x=>`<tr><td>${x.row}</td><td>${escapeHtml(x.serial)}</td><td>${escapeHtml(x.status)}</td><td style="color:#b91c1c;font-weight:800;">${escapeHtml(x.reason)}</td></tr>`).join('');
+    box.innerHTML=`
+      <div class="panel" style="border:2px solid #93c5fd;background:#f8fbff;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+          <div>
+            <h3 style="margin:0 0 4px;">📥 抽籤結果匯入預覽</h3>
+            <div class="small">${escapeHtml(fileName)}｜${escapeHtml(parsed.venue)}｜${escapeHtml(parsed.day)}</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="cancelLotteryImportBtn" class="btn btn-gray">取消</button>
+            <button id="confirmLotteryImportBtn" class="btn btn-primary" ${parsed.valid.length===0 || parsed.errors.length>0 ? 'disabled' : ''}>確認匯入並鎖定</button>
+          </div>
+        </div>
+        <div class="cards" style="margin-bottom:12px;">
+          <div class="stat"><div class="label">可匯入</div><div class="num">${parsed.valid.length}</div></div>
+          <div class="stat"><div class="label">中籤</div><div class="num" style="color:#16a34a">${counts.winner}</div></div>
+          <div class="stat"><div class="label">候補</div><div class="num" style="color:#d97706">${counts.wait}</div></div>
+          <div class="stat"><div class="label">未中籤</div><div class="num" style="color:#64748b">${counts.lose}</div></div>
+        </div>
+        ${parsed.errors.length ? `<div class="msg error"><strong>有 ${parsed.errors.length} 筆需要修正，為避免誤匯入，目前暫不開放確認。</strong><br>請修正 Excel 後重新上傳。</div><div class="table-wrap" style="margin-bottom:12px;"><table style="min-width:650px"><thead><tr><th>Excel列</th><th>序號</th><th>抽籤狀態</th><th>原因</th></tr></thead><tbody>${errorRows}</tbody></table></div>${parsed.errors.length>8?`<div class="small">另有 ${parsed.errors.length-8} 筆錯誤未顯示。</div>`:''}` : '<div class="msg ok">格式檢查完成，可確認匯入。匯入後結果會先鎖定且維持「未公布」，請確認無誤後再執行公布。</div>'}
+        ${parsed.skipped.length ? `<div class="small">另有 ${parsed.skipped.length} 筆因「抽籤狀態空白」而略過，不會更新。</div>` : ''}
+      </div>`;
+    document.getElementById('cancelLotteryImportBtn').onclick=()=>{ box.innerHTML=''; window.pendingLotteryImport=null; };
+    const confirmBtn=document.getElementById('confirmLotteryImportBtn');
+    if(confirmBtn) confirmBtn.onclick=()=>confirmLotteryImport(parsed);
+  }
+
+  async function confirmLotteryImport(parsed){
+    if(!parsed || parsed.valid.length===0 || parsed.errors.length>0) return;
+    const ok=await confirmModal('確認匯入抽籤結果',`確定匯入 <strong>${parsed.valid.length}</strong> 筆抽籤結果並鎖定嗎？<br><br>${escapeHtml(parsed.venue)}｜${escapeHtml(parsed.day)}<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
+    if(!ok) return;
+    const btn=document.getElementById('confirmLotteryImportBtn');
+    if(btn){ btn.disabled=true; btn.textContent='匯入中...'; }
+    const batchId=`excel-${Date.now()}`;
+    const successIds=[];
+    const failed=[];
+    const items=parsed.valid;
+    for(let i=0;i<items.length;i+=15){
+      const chunk=items.slice(i,i+15);
+      const results=await Promise.all(chunk.map(async item=>{
+        const {error,data}=await db.from(RECORD_TABLE).update({
+          lottery_status:item.status,
+          lottery_locked:true,
+          lottery_batch:batchId,
+          result_published:false,
+          updated_at:new Date().toISOString()
+        }).eq('id',item.record.id).select('id');
+        const noUpdate=!error && (!data || data.length===0);
+        return {item,error:noUpdate ? new Error('資料未更新，請確認權限或資料狀態') : error};
+      }));
+      results.forEach(({item,error})=>{
+        if(error) failed.push({serial:item.serial,error});
+        else successIds.push(item.record.id);
+      });
+    }
+    await writeOperationLog('匯入 Excel 抽籤結果', {
+      venue_type:parsed.venue,
+      day_of_week:parsed.day,
+      imported_count:successIds.length,
+      failed_count:failed.length,
+      batch_id:batchId
+    }, successIds);
+    if(failed.length){
+      alert(`已匯入 ${successIds.length} 筆，另有 ${failed.length} 筆更新失敗。請重新整理後確認。`);
+    }else{
+      alert(`已匯入並鎖定 ${successIds.length} 筆抽籤結果。結果尚未公布，請確認後再執行公布。`);
+    }
+    const venue=parsed.venue, day=parsed.day;
+    await loadAllData();
+    renderLotteryPage();
+    setTimeout(()=>{
+      const v=document.getElementById('dayCheckVenue');
+      const d=document.getElementById('dayCheckDay');
+      if(v) v.value=venue;
+      if(d) d.value=day;
+      if(d) d.dispatchEvent(new Event('change'));
+    },0);
+  }
   document.getElementById('goBatchDayBtn').onclick=()=>{
     const {venue,day,records}=getDayCheckRecords();
     if(!venue || !day || records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
