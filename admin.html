@@ -46,7 +46,19 @@
     .content{padding:28px;max-width:1600px}
     .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px}.stat{background:#fff;border:1px solid var(--border);border-radius:18px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.04)}.stat .label{font-size:12px;color:var(--muted);font-weight:800}.stat .num{font-size:30px;font-weight:900;margin-top:8px;color:var(--blue)}
     .panel{background:#fff;border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:18px;box-shadow:0 8px 24px rgba(15,23,42,.04)}.panel h3{margin:0 0 14px;font-size:17px;color:var(--blue)}
-    .toolbar{display:grid;grid-template-columns:1.4fr repeat(4,1fr) auto auto;gap:10px;margin-bottom:14px;align-items:end}
+    
+    .toolbar{display:grid;grid-template-columns:1.4fr repeat(4,1fr) auto;gap:10px;margin-bottom:14px;align-items:end}
+    .records-action-box{border:1px solid var(--border);border-radius:14px;padding:14px;margin:12px 0;background:#f8fafc}
+    .records-action-title{font-size:13px;font-weight:900;color:#334155;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+    .records-action-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .records-action-row select{min-width:220px;max-width:290px;border:1px solid #d1d5db;border-radius:10px;padding:10px 12px;font-size:14px;background:#fff}
+    .records-publish-box{border-color:#bae6fd;background:#f0f9ff}
+    .records-publish-main{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .records-publish-secondary{margin-left:auto;position:relative}
+    .records-more-menu{position:absolute;right:0;top:44px;min-width:220px;background:white;border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 14px 34px rgba(15,23,42,.14);z-index:20}
+    .records-more-menu button{display:block;width:100%;text-align:left;margin:4px 0}
+    .section-note{font-size:12px;color:#64748b;margin-top:8px;line-height:1.6}
+
     .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px}table{width:100%;border-collapse:collapse;background:white;font-size:13px;min-width:1000px}th{background:#f8fafc;text-align:left;color:#475569;font-size:12px;padding:11px;border-bottom:1px solid var(--border);white-space:nowrap}td{padding:11px;border-bottom:1px solid #f1f5f9;white-space:nowrap}tr:hover td{background:#f8fafc}
     .tag{display:inline-block;padding:4px 8px;border-radius:999px;font-weight:800;font-size:12px}.tag.blue{background:#e5f2f7;color:var(--blue)}.tag.warn{background:#fff7ed;color:#9a3412}.tag.green{background:#dcfce7;color:#166534}.tag.gray{background:#f3f4f6;color:#374151}
     .pager{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:13px;color:#475569}.pager-controls{display:flex;gap:8px;align-items:center}.inline-form{display:grid;grid-template-columns:repeat(5,1fr) auto;gap:10px;align-items:end}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:18px}.alert{border-left:4px solid var(--orange);background:#fff7ed;color:#9a3412;padding:12px;border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6}
@@ -498,18 +510,63 @@ function renderRecordsPage(){
   selectedRecordIds.clear();
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
-  document.getElementById('content').innerHTML=`${renderCards(stats())}<div class="panel"><h3>📋 登記資料</h3><div class="alert">建議操作流程：可先用「類型＋星期＋時段」公布單一場次；若全部時段都確認完，也可以只選「類型」後，一次公布該類型周一到周日全部結果。民眾前台才會看到結果。</div><div class="toolbar"><input id="searchQ" placeholder="搜尋姓名／手機／後4碼／序號" value="${escapeHtml(recordState.q)}"><select id="filterVenue"><option value="">全部類型</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select><select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select><select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select><select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select><select id="batchLotteryStatus" title="先勾選資料，再選擇要統一變更的抽籤狀態"><option value="">批次變更抽籤狀態</option><option value="中籤">中籤</option><option value="候補1">候補1</option><option value="候補2">候補2</option><option value="候補3">候補3</option><option value="未中籤">未中籤</option><option value="__clear__">未抽籤</option></select><button id="batchLotteryStatusBtn" class="btn btn-primary">套用至勾選</button><button id="exportBtn" class="btn btn-green">匯出</button><button id="publishCurrentStageBtn" class="btn btn-green">公布目前場次結果</button><button id="unpublishCurrentStageBtn" class="btn btn-gray">取消公布目前場次</button><button id="publishVenueAllWeekBtn" class="btn btn-orange">公布此類型全部結果</button><button id="unpublishVenueAllWeekBtn" class="btn btn-gray">取消公布此類型全部</button><button id="batchDeleteBtn" class="btn btn-danger">刪除勾選</button></div><div id="recordsStageHint"></div><div id="recordsTable"></div></div>`;
+  document.getElementById('content').innerHTML=`${renderCards(stats())}
+    <div class="panel">
+      <h3>📋 登記資料</h3>
+      <div class="alert">建議操作流程：先篩選資料，再進行名單匯出或抽籤狀態處理；結果確認完成後，再執行公布。只有已公布的結果會同步顯示於民眾前台。</div>
+
+      <div class="toolbar">
+        <input id="searchQ" placeholder="搜尋姓名／手機／後4碼／序號" value="${escapeHtml(recordState.q)}">
+        <select id="filterVenue"><option value="">全部類型</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
+        <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
+        <select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
+        <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
+        <button id="applyFilterBtn" class="btn btn-primary">套用篩選</button>
+      </div>
+
+      <div class="records-action-box">
+        <div class="records-action-title">② 批次處理</div>
+        <div class="records-action-row">
+          <button id="exportBtn" class="btn btn-primary">匯出名單</button>
+          <select id="batchLotteryStatus" title="先勾選資料，再選擇要統一變更的抽籤狀態">
+            <option value="">選擇抽籤狀態</option><option value="中籤">中籤</option><option value="候補1">候補1</option><option value="候補2">候補2</option><option value="候補3">候補3</option><option value="未中籤">未中籤</option><option value="__clear__">未抽籤</option>
+          </select>
+          <button id="batchLotteryStatusBtn" class="btn btn-primary">套用至勾選</button>
+          <button id="batchDeleteBtn" class="btn btn-gray">刪除勾選</button>
+        </div>
+        <div class="section-note">先勾選下方登記資料，再批次變更抽籤狀態；匯出名單則會依目前篩選條件產出。</div>
+      </div>
+
+      <div class="records-action-box records-publish-box">
+        <div class="records-action-title">③ 結果公布</div>
+        <div class="records-publish-main">
+          <button id="publishCurrentStageBtn" class="btn btn-primary">公布目前場次</button>
+          <button id="publishVenueAllWeekBtn" class="btn btn-primary">公布篩選類型全部結果</button>
+          <div class="records-publish-secondary">
+            <button id="morePublishActionsBtn" class="btn btn-gray">更多公布操作 ▾</button>
+            <div id="morePublishActionsMenu" class="records-more-menu hidden">
+              <button id="unpublishCurrentStageBtn" class="btn btn-gray">取消公布目前場次</button>
+              <button id="unpublishVenueAllWeekBtn" class="btn btn-gray">取消公布篩選類型全部結果</button>
+            </div>
+          </div>
+        </div>
+        <div class="section-note">請先確認抽籤結果無誤再公布；公布後民眾前台才會顯示中籤或候補結果。</div>
+      </div>
+
+      <div id="recordsStageHint"></div><div id="recordsTable"></div>
+    </div>`;
   document.getElementById('perPage').value=String(recordState.perPage);
-  ['searchQ','filterVenue','filterDay','filterTime','perPage'].forEach(id=>{
-    document.getElementById(id).addEventListener(id==='searchQ'?'input':'change',()=>{
-      recordState.q=document.getElementById('searchQ').value;
-      recordState.venue=document.getElementById('filterVenue').value;
-      recordState.day=document.getElementById('filterDay').value;
-      recordState.time=document.getElementById('filterTime').value;
-      recordState.perPage=parseInt(document.getElementById('perPage').value,10);
-      recordState.page=1; selectedRecordIds.clear(); renderRecordsStageHint(); renderRecordsTable();
-    });
-  });
+  const applyRecordFilters=()=>{
+    recordState.q=document.getElementById('searchQ').value;
+    recordState.venue=document.getElementById('filterVenue').value;
+    recordState.day=document.getElementById('filterDay').value;
+    recordState.time=document.getElementById('filterTime').value;
+    recordState.perPage=parseInt(document.getElementById('perPage').value,10);
+    recordState.page=1; selectedRecordIds.clear(); renderRecordsStageHint(); renderRecordsTable();
+  };
+  document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
+  document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
+  document.getElementById('perPage').addEventListener('change',applyRecordFilters);
   document.getElementById('batchLotteryStatusBtn').onclick=batchUpdateSelectedLotteryStatus;
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
   document.getElementById('publishCurrentStageBtn').onclick=()=>publishCurrentFilteredStage(true);
@@ -517,6 +574,12 @@ function renderRecordsPage(){
   document.getElementById('publishVenueAllWeekBtn').onclick=()=>publishCurrentVenueAllWeek(true);
   document.getElementById('unpublishVenueAllWeekBtn').onclick=()=>publishCurrentVenueAllWeek(false);
   document.getElementById('batchDeleteBtn').onclick=batchDeleteSelectedRecords;
+  const moreBtn=document.getElementById('morePublishActionsBtn');
+  const moreMenu=document.getElementById('morePublishActionsMenu');
+  moreBtn.onclick=()=>moreMenu.classList.toggle('hidden');
+  document.addEventListener('click',e=>{
+    if(!moreBtn.contains(e.target) && !moreMenu.contains(e.target)) moreMenu.classList.add('hidden');
+  }, {once:true});
   renderRecordsStageHint();
   renderRecordsTable();
 }
@@ -527,7 +590,7 @@ function renderRecordsStageHint(){
   const filtered=getFilteredRecords();
   const isSingleStage=!!recordState.venue && !!recordState.day && !!recordState.time;
   if(!isSingleStage){
-    box.innerHTML='<div class="msg info">若要公布單一場次，請選擇「類型、星期、時段」；若要公布整個球類，請至少選擇「類型」，再按「公布此類型全部結果」。</div>';
+    box.innerHTML='<div class="msg info">① 請先設定篩選條件。公布單一場次時需選擇「類型、星期、時段」；如要一次公布整個球類，至少選擇「類型」。</div>';
     return;
   }
   const published=filtered.filter(r=>r.result_published).length;
@@ -556,7 +619,7 @@ async function publishCurrentFilteredStage(published){
 
 async function publishCurrentVenueAllWeek(published){
   if(!recordState.venue){
-    alert('請先選擇「類型」，再公布此類型全部結果。');
+    alert('請先選擇「類型」，再公布該類型全部結果。');
     return;
   }
   const records=allRecords.filter(r=>r.venue_type===recordState.venue);
