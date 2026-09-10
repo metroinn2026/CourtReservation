@@ -1581,6 +1581,71 @@
   }
 </style>
 
+
+<style id="lottery-filter-compact-spacing">
+  .lottery-context-grid{
+    display:grid!important;
+    grid-template-columns:120px 150px 140px 160px auto!important;
+    gap:12px!important;
+    align-items:end!important;
+    justify-content:start!important;
+  }
+
+  .lottery-context-grid > div{
+    min-width:0!important;
+  }
+
+  #dayCheckLocation{
+    width:120px!important;
+    min-width:120px!important;
+  }
+
+  #dayCheckVenue{
+    width:150px!important;
+    min-width:150px!important;
+  }
+
+  #dayCheckDay{
+    width:140px!important;
+    min-width:140px!important;
+  }
+
+  #dayCheckTime{
+    width:160px!important;
+    min-width:160px!important;
+  }
+
+  .lottery-filter-actions{
+    display:flex!important;
+    align-items:flex-end!important;
+    gap:8px!important;
+    flex-wrap:nowrap!important;
+    margin-left:2px!important;
+  }
+
+  .lottery-filter-actions .btn{
+    min-height:42px!important;
+    height:42px!important;
+    white-space:nowrap!important;
+  }
+
+  @media(max-width:1100px){
+    .lottery-context-grid{
+      grid-template-columns:repeat(4,minmax(130px,1fr))!important;
+    }
+    .lottery-filter-actions{
+      grid-column:1 / -1;
+      margin-left:0!important;
+    }
+  }
+
+  @media(max-width:760px){
+    .lottery-context-grid{
+      grid-template-columns:repeat(2,minmax(150px,1fr))!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
