@@ -1497,6 +1497,55 @@
   }
 </style>
 
+
+<style id="dashboard-info-row-unified-spacing">
+  .anomaly-info-row,
+  .pending-stage-info-row{
+    margin:0 20px 10px!important;
+    padding:0!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:16px!important;
+    box-sizing:border-box!important;
+  }
+
+  .anomaly-info-row .small,
+  .pending-stage-info-row .small{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+    color:#64748b!important;
+  }
+
+  .anomaly-total-line,
+  .pending-stage-total{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+    font-size:12.5px!important;
+    font-weight:900!important;
+    text-align:right!important;
+    white-space:nowrap!important;
+  }
+
+  .anomaly-total-line{
+    color:#b42318!important;
+  }
+
+  .pending-stage-total{
+    color:var(--blue)!important;
+  }
+
+  @media(max-width:720px){
+    .anomaly-info-row,
+    .pending-stage-info-row{
+      align-items:flex-start!important;
+      flex-wrap:wrap!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
