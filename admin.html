@@ -1436,6 +1436,67 @@
   }
 </style>
 
+
+<style id="dashboard-alignment-polish">
+  /* 異常檢核中心：說明與待確認數量左右內縮，和下方清單對齊 */
+  .anomaly-info-row{
+    margin:0 20px 10px!important;
+    padding:0!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:16px!important;
+  }
+
+  .anomaly-info-row .small{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+  }
+
+  .anomaly-total-line{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+    white-space:nowrap!important;
+  }
+
+  /* 待處理場次：說明與右側數量同一列同一高度 */
+  .pending-stage-info-row{
+    margin:0 20px 10px!important;
+    padding:0!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:16px!important;
+  }
+
+  .pending-stage-info-row .small{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+    color:#64748b!important;
+  }
+
+  .pending-stage-total{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+    color:var(--blue)!important;
+    font-size:12.5px!important;
+    font-weight:900!important;
+    white-space:nowrap!important;
+  }
+
+  @media(max-width:720px){
+    .anomaly-info-row,
+    .pending-stage-info-row{
+      align-items:flex-start!important;
+      flex-wrap:wrap!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1974,9 +2035,8 @@ function renderDashboard(){
       <div class="dashboard-panel-heading">
         <div>
           <h3>待處理場次</h3>
-          <div class="small">只列出尚待抽籤或尚待公告的場次，完成後會自動移除。</div>
-        </div>
-        <div class="dashboard-task-total">共 ${pendingLotteryStages.length+pendingPublishStages.length} 個待辦場次</div>
+          <div class="pending-stage-info-row"><div class="small">只列出尚待抽籤或尚待公告的場次，完成後會自動移除。</div>
+        </div><div class="pending-stage-total">共 ${pendingLotteryStages.length+pendingPublishStages.length} 個待辦場次</div></div>
       </div>
       ${taskHtml}
     </div>
