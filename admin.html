@@ -2534,6 +2534,297 @@
   }
 </style>
 
+
+<style id="backend-single-surface-unify-v2">
+  /* =========================================================
+     全後台統一：一個功能區只保留一個主要內容面
+     內部篩選 / 操作 / 表格以留白、細線分隔，不再色塊疊色塊
+     ========================================================= */
+
+  /* 基礎內容面 */
+  #content .section-title-outside + .panel,
+  #dayCheckTable > .panel,
+  #recordsWorkspace,
+  #bulkCapTable,
+  .accounts-form-card,
+  .accounts-security-card,
+  .accounts-note-card,
+  .accounts-list-card{
+    box-sizing:border-box!important;
+  }
+
+  /* ---------- 抽籤：場次處理清單 ---------- */
+  #dayCheckTable > .panel{
+    background:#fff!important;
+    border:0!important;
+    border-radius:14px!important;
+    box-shadow:none!important;
+    padding:18px 20px!important;
+    margin:0 0 22px!important;
+  }
+
+  #dayCheckTable > .panel > h3{
+    margin:0 0 14px!important;
+    padding:0!important;
+  }
+
+  /* 篩選列與表格視覺合成同一塊 */
+  #dayCheckTable .stage-list-filters{
+    display:flex!important;
+    align-items:flex-end!important;
+    gap:12px!important;
+    flex-wrap:wrap!important;
+    margin:0!important;
+    padding:0 0 16px!important;
+    background:transparent!important;
+    border:0!important;
+    border-bottom:1px solid #e2e8f0!important;
+    border-radius:0!important;
+  }
+
+  #dayCheckTable .stage-list-filter-field label{
+    margin-bottom:6px!important;
+  }
+
+  #dayCheckTable .stage-list-filter-count{
+    margin-left:auto!important;
+    padding-bottom:9px!important;
+  }
+
+  #dayCheckTable .table-wrap{
+    margin:0!important;
+    padding:0!important;
+    background:transparent!important;
+    border:0!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+  }
+
+  #dayCheckTable .table-wrap table{
+    margin:0!important;
+    border-radius:0!important;
+  }
+
+  #dayCheckTable .table-wrap th{
+    padding-top:13px!important;
+    padding-bottom:13px!important;
+  }
+
+  /* 第二張清單也保持同一種單層內容面 */
+  #dayCheckTable > .panel + .panel{
+    margin-top:0!important;
+  }
+
+  /* ---------- 登記資料：工具列 + 操作 + 表格 ---------- */
+  #recordsWorkspace{
+    background:#fff!important;
+    border:0!important;
+    border-radius:14px!important;
+    box-shadow:none!important;
+    overflow:hidden!important;
+    padding:0 20px 16px!important;
+  }
+
+  #recordsWorkspace .records-inline-scope{
+    margin:0!important;
+    padding:14px 0 12px!important;
+    border-bottom:1px solid #e2e8f0!important;
+  }
+
+  #recordsWorkspace .records-table-meta{
+    margin:14px 0 10px!important;
+    padding:0!important;
+  }
+
+  #recordsWorkspace .records-list-actionbar{
+    margin:0 0 12px!important;
+    padding:10px 0 12px!important;
+    background:transparent!important;
+    border:0!important;
+    border-bottom:1px solid #e2e8f0!important;
+    border-radius:0!important;
+  }
+
+  #recordsWorkspace .records-table-wrap{
+    margin:0!important;
+    border:0!important;
+    border-radius:0!important;
+  }
+
+  #recordsWorkspace .pager{
+    margin:12px 0 0!important;
+  }
+
+  /* 結果公告不要另外再一張卡 */
+  #recordsWorkspace .publish-workspace-card{
+    margin:0!important;
+    padding:16px 0 14px!important;
+    background:transparent!important;
+    border:0!important;
+    border-bottom:1px solid #e2e8f0!important;
+    border-radius:0!important;
+  }
+
+  /* ---------- 登記資料篩選：同一工具列，不再框中框 ---------- */
+  .records-main-panel > .records-fixed-filter{
+    background:#fff!important;
+    border:0!important;
+    border-radius:14px!important;
+    box-shadow:none!important;
+    padding:18px 20px!important;
+  }
+
+  .records-fixed-filter-title{
+    margin-bottom:12px!important;
+  }
+
+  /* ---------- 抽籤主要篩選 ---------- */
+  .lottery-main-panel > .lottery-context{
+    background:#fff!important;
+    border:0!important;
+    border-radius:14px!important;
+    box-shadow:none!important;
+    padding:18px 20px!important;
+  }
+
+  /* ---------- 名額設定：操作列與表格形成單一內容面 ---------- */
+  .capacity-main-panel > .capacity-toolbar{
+    background:#fff!important;
+    border:0!important;
+    border-radius:14px 14px 0 0!important;
+    box-shadow:none!important;
+    margin-bottom:0!important;
+    padding:18px 20px 16px!important;
+    border-bottom:1px solid #e2e8f0!important;
+  }
+
+  .capacity-main-panel > #bulkCapTable{
+    background:#fff!important;
+    border:0!important;
+    border-radius:0 0 14px 14px!important;
+    box-shadow:none!important;
+    padding:0 20px 18px!important;
+  }
+
+  /* 名額摘要卡改成平面資訊列，避免4張小卡 */
+  #bulkCapTable > div[style*="grid-template-columns:repeat(4"]{
+    display:flex!important;
+    flex-wrap:wrap!important;
+    gap:0!important;
+    margin:0!important;
+    padding:12px 0!important;
+    border-bottom:1px solid #e2e8f0!important;
+  }
+
+  #bulkCapTable > div[style*="grid-template-columns:repeat(4"] .stat{
+    flex:1 1 180px!important;
+    min-width:160px!important;
+    background:transparent!important;
+    border:0!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+    padding:8px 16px!important;
+    border-right:1px solid #e2e8f0!important;
+  }
+
+  #bulkCapTable > div[style*="grid-template-columns:repeat(4"] .stat:first-child{
+    padding-left:0!important;
+  }
+  #bulkCapTable > div[style*="grid-template-columns:repeat(4"] .stat:last-child{
+    border-right:0!important;
+  }
+
+  /* ---------- 文字設定：提示、編輯器、儲存視為同一內容區 ---------- */
+  #settingsTabContent{
+    margin:0!important;
+    padding:0 20px!important;
+  }
+
+  #settingsTabContent .alert,
+  #settingsTabContent .msg{
+    background:transparent!important;
+    border:0!important;
+    border-bottom:1px solid #e2e8f0!important;
+    border-radius:0!important;
+    padding:12px 0!important;
+    margin:0 0 14px!important;
+  }
+
+  .settings-save-actions{
+    margin:14px 20px 18px!important;
+  }
+
+  /* ---------- 首頁：異常 / 待辦採單層清單，不要清單再包色塊 ---------- */
+  .anomaly-center-clean,
+  .dashboard-tasks-panel{
+    background:#fff!important;
+    border:0!important;
+    border-radius:14px!important;
+    box-shadow:none!important;
+    padding:18px 20px!important;
+  }
+
+  .anomaly-flat-list,
+  .dashboard-task-table-wrap{
+    background:transparent!important;
+    border:0!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+  }
+
+  .anomaly-flat-row{
+    border-radius:0!important;
+    background:transparent!important;
+  }
+
+  /* ---------- 帳號權限：卡片感再降一層 ---------- */
+  .accounts-note-card,
+  .accounts-form-card,
+  .accounts-security-card,
+  .accounts-list-card{
+    box-shadow:none!important;
+    border:0!important;
+  }
+
+  /* ---------- 全站資料表 ---------- */
+  #content .table-wrap{
+    box-shadow:none!important;
+  }
+
+  /* 同一內容面的左右對齊基準 */
+  #dayCheckTable > .panel,
+  #recordsWorkspace,
+  .records-main-panel > .records-fixed-filter,
+  .lottery-main-panel > .lottery-context,
+  .capacity-main-panel > .capacity-toolbar,
+  .capacity-main-panel > #bulkCapTable,
+  .anomaly-center-clean,
+  .dashboard-tasks-panel{
+    width:100%!important;
+    max-width:100%!important;
+  }
+
+  @media(max-width:900px){
+    #dayCheckTable > .panel,
+    #recordsWorkspace,
+    .records-main-panel > .records-fixed-filter,
+    .lottery-main-panel > .lottery-context,
+    .capacity-main-panel > .capacity-toolbar,
+    .capacity-main-panel > #bulkCapTable,
+    .anomaly-center-clean,
+    .dashboard-tasks-panel{
+      padding-left:16px!important;
+      padding-right:16px!important;
+    }
+
+    #dayCheckTable .stage-list-filter-count{
+      width:100%!important;
+      margin-left:0!important;
+      padding-bottom:0!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
