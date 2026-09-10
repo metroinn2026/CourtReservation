@@ -81,6 +81,18 @@
     .modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999}.modal-card{background:#fff;border-radius:18px;padding:22px;max-width:430px;width:92%;box-shadow:0 24px 70px rgba(0,0,0,.2)}.modal-card h3{margin:0 0 10px;color:#0f172a}.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
     @media(max-width:1100px){.login-page{grid-template-columns:1fr}.hero{display:none}.app{grid-template-columns:1fr}.sidebar{position:static}.nav{display:grid;grid-template-columns:repeat(3,1fr)}.cards{grid-template-columns:repeat(2,1fr)}.toolbar{grid-template-columns:1fr 1fr}.inline-form{grid-template-columns:1fr 1fr}.two-col{grid-template-columns:1fr}}
     @media(max-width:700px){.content{padding:16px}.cards{grid-template-columns:1fr}.nav{grid-template-columns:1fr}.topbar{padding:0 16px}.topbar h2{font-size:18px}}
+  
+  .records-compact-table{width:100%;table-layout:auto}
+  .records-compact-table th,.records-compact-table td{white-space:nowrap;padding:9px 8px;font-size:12.5px;vertical-align:middle}
+  .records-compact-table th{font-size:12px}
+  .records-compact-table .tag{padding:3px 7px;font-size:12px;line-height:1.2}
+  .records-compact-table .status-select-compact{min-width:104px;max-width:104px;font-size:13px}
+  .records-compact-table .row-mini-btn{min-height:34px;padding:6px 10px;font-size:12px;border-radius:10px}
+  .records-compact-table td:nth-child(6) strong{font-size:12.5px;letter-spacing:.1px}
+  .records-compact-table td:nth-child(15), .records-compact-table th:nth-child(15){text-align:center}
+  .records-compact-table td:nth-child(16), .records-compact-table th:nth-child(16){text-align:center}
+  .records-table-wrap{overflow-x:auto}
+
   </style>
 
 <style id="minimal-admin-refresh">
@@ -1228,6 +1240,24 @@ async function publishCurrentVenueAllWeek(published){
     renderRecordsPage();
   }
 }
+
+function shortLocationName(value){
+  const text=String(value||'').trim();
+  if(!text) return '';
+  if(text==='北投會館') return '北投';
+  if(text.endsWith('會館')) return text.replace(/會館$/,'');
+  return text;
+}
+function formatCompactDateTime(value){
+  if(!value) return '';
+  const d=new Date(value);
+  if(Number.isNaN(d.getTime())) return '';
+  const mm=String(d.getMonth()+1).padStart(2,'0');
+  const dd=String(d.getDate()).padStart(2,'0');
+  const hh=String(d.getHours()).padStart(2,'0');
+  const mi=String(d.getMinutes()).padStart(2,'0');
+  return `${mm}/${dd} ${hh}:${mi}`;
+}
 function renderRecordsTable(){
   const filtered=getFilteredRecords();
   const totalPages=Math.max(1,Math.ceil(filtered.length/recordState.perPage));
@@ -1236,11 +1266,11 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>公布</th><th>異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>場地</th><th>${sortHeader('球類','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:116px;">${sortHeader('狀態','lottery_status')}</th><th style="width:72px;">公布</th><th style="width:110px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:126px;">${sortHeader('序號','serial_number')}</th><th style="width:82px;">${sortHeader('姓名','name')}</th><th style="width:102px;">${sortHeader('手機','phone')}</th><th style="width:70px;">${sortHeader('後4碼','id_last4')}</th><th style="width:62px;">場地</th><th style="width:78px;">${sortHeader('球類','venue_type')}</th><th style="width:62px;">${sortHeader('星期','day_of_week')}</th><th style="width:104px;">${sortHeader('時段','time_slot')}</th><th style="width:52px;">時數</th><th style="width:94px;">${sortHeader('登記時間','registered_at')}</th><th style="width:64px;">操作</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>
-      <select class="status-select" data-status-id="${r.id}" data-original="${escapeHtml(r.lottery_status||'')}" style="border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;font-weight:800;">
+      <select class="status-select status-select-compact" data-status-id="${r.id}" data-original="${escapeHtml(r.lottery_status||'')}" style="border:1px solid #d1d5db;border-radius:8px;padding:5px 8px;font-weight:800;">
         <option value="" ${!r.lottery_status?'selected':''}>未抽籤</option>
         <option value="中籤" ${r.lottery_status==='中籤'?'selected':''}>中籤</option>
         <option value="候補1" ${r.lottery_status==='候補1'?'selected':''}>候補1</option>
@@ -1250,7 +1280,7 @@ function renderRecordsTable(){
       </select>
     </td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(recordLocation(r))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
+    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(shortLocationName(recordLocation(r)))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td><td><button class="btn btn-danger row-mini-btn" data-del="${r.id}">刪除</button></td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
