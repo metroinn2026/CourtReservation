@@ -537,6 +537,8 @@ const CAPACITY_TABLE = 'lottery_capacity_settings';
 const SETTINGS_TABLE = 'system_settings';
 const LOG_TABLE = 'admin_operation_logs';
 
+const DEFAULT_LOCATION = '北投會館';
+
 let currentAdmin = null;
 let allRecords = [];
 let allLogs = [];
@@ -546,8 +548,6 @@ let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', day:'', time:'', 
 let recordsActionTab = 'filter';
 let selectedRecordIds = new Set();
 let currentPage = 'dashboard';
-
-const DEFAULT_LOCATION = '北投會館';
 const venueOrder = ['羽球','籃球','B1桌球','B2桌球'];
 const days = ['周一','周二','周三','周四','周五','周六','周日'];
 const capacityMap = {'羽球':3,'籃球':1,'B1桌球':5,'B2桌球':4};
