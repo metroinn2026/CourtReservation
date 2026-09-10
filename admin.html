@@ -575,6 +575,44 @@
   #batchLotteryStatus{min-width:180px!important;max-width:220px!important;}
 </style>
 
+
+<style id="records-status-dropdown-fix">
+  .records-compact-table th:nth-child(3),
+  .records-compact-table td:nth-child(3){width:92px!important;min-width:92px!important;max-width:92px!important;}
+  .record-status-select{
+    width:88px!important;
+    min-width:88px!important;
+    max-width:88px!important;
+    height:34px!important;
+    padding:4px 24px 4px 8px!important;
+    font-size:12.5px!important;
+    font-weight:800!important;
+    border:1px solid #cfd9e4!important;
+    border-radius:9px!important;
+    background:#fff!important;
+  }
+  .record-status-select:disabled{
+    background:#f3f4f6!important;
+    color:#94a3b8!important;
+    cursor:not-allowed!important;
+  }
+  .record-status-savebar{
+    margin:0 0 10px;
+    padding:10px 12px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    background:#eef6ff;
+    border:1px solid #cfe0f5;
+    border-radius:12px;
+    color:#334155;
+    font-size:13px;
+  }
+  .record-status-savebar.hidden{display:none!important;}
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -650,6 +688,7 @@ let systemSettings = {};
 let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let recordsActionTab = 'filter';
 let selectedRecordIds = new Set();
+let pendingRecordStatusChanges = new Map();
 let currentPage = 'dashboard';
 const venueOrder = ['羽球','籃球','B1桌球','B2桌球'];
 const days = ['周一','周二','周三','周四','周五','周六','周日'];
@@ -1381,6 +1420,76 @@ function recordStatusTag(status){
   if(s==='未中籤') return '<span class="tag gray">未中籤</span>';
   return `<span class="tag gray">${escapeHtml(s)}</span>`;
 }
+
+function recordStatusSelect(record){
+  const current = pendingRecordStatusChanges.has(String(record.id))
+    ? pendingRecordStatusChanges.get(String(record.id))
+    : String(record.lottery_status||'');
+  const disabled = record.result_published ? 'disabled title="已公布資料請先取消公布後再修改"' : '';
+  return `<select class="record-status-select" data-status-id="${record.id}" data-original="${escapeHtml(String(record.lottery_status||''))}" ${disabled}>
+    <option value="" ${current===''?'selected':''}>未抽籤</option>
+    <option value="中籤" ${current==='中籤'?'selected':''}>中籤</option>
+    <option value="候補1" ${current==='候補1'?'selected':''}>候補1</option>
+    <option value="候補2" ${current==='候補2'?'selected':''}>候補2</option>
+    <option value="候補3" ${current==='候補3'?'selected':''}>候補3</option>
+    <option value="未中籤" ${current==='未中籤'?'selected':''}>未中籤</option>
+  </select>`;
+}
+
+async function savePendingRecordStatusChanges(){
+  const changes=[...pendingRecordStatusChanges.entries()];
+  if(changes.length===0){ alert('目前沒有尚未儲存的狀態變更'); return; }
+
+  const changedRecords=changes.map(([id,status])=>({
+    id,
+    status,
+    record:allRecords.find(r=>String(r.id)===String(id))
+  })).filter(x=>x.record);
+
+  const published=changedRecords.filter(x=>x.record.result_published);
+  if(published.length){
+    alert(`其中有 ${published.length} 筆資料已公布，請先取消公布後再修改狀態。`);
+    return;
+  }
+
+  showModal('確認儲存狀態變更',`確定一次儲存 ${changedRecords.length} 筆抽籤狀態變更嗎？`,async()=>{
+    let updated=0;
+    for(const item of changedRecords){
+      const payload={
+        lottery_status:item.status || null,
+        lottery_locked:!!item.status,
+        updated_at:new Date().toISOString()
+      };
+      if(!item.status){
+        payload.lottery_batch=null;
+        payload.result_published=false;
+      }
+
+      const {error}=await db.from(RECORD_TABLE).update(payload).eq('id',item.id);
+      if(error){
+        console.error(error);
+        alert(`儲存失敗：${item.record?.name||item.id}`);
+        return;
+      }
+      updated++;
+    }
+
+    await writeOperationLog('批次儲存個別抽籤狀態', {
+      total:updated,
+      changes:changedRecords.map(x=>({
+        id:x.id,
+        serial_number:x.record?.serial_number||'',
+        before_status:x.record?.lottery_status||'未抽籤',
+        after_status:x.status||'未抽籤'
+      }))
+    }, changedRecords.map(x=>x.id));
+
+    pendingRecordStatusChanges.clear();
+    await loadAllData();
+    renderRecordsPage();
+    alert(`已儲存 ${updated} 筆狀態變更。`);
+  });
+}
 function renderRecordsTable(){
   const filtered=getFilteredRecords();
   const totalPages=Math.max(1,Math.ceil(filtered.length/recordState.perPage));
@@ -1389,10 +1498,15 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('手機','phone')}</th><th style="width:72px;line-height:1.25;">${sortHeader('身分證<br>末四碼','id_last4')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div>
+  <div class="record-status-savebar ${pendingRecordStatusChanges.size?'':'hidden'}" id="recordStatusSavebar">
+    <span>已修改 <strong id="pendingStatusCount">${pendingRecordStatusChanges.size}</strong> 筆狀態，尚未儲存</span>
+    <button id="savePendingRecordStatusBtn" class="btn btn-primary">儲存狀態變更</button>
+  </div>
+  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('手機','phone')}</th><th style="width:72px;line-height:1.25;">${sortHeader('末4碼','id_last4')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
-    <td>${recordStatusTag(r.lottery_status)}</td>
+    <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
     <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(shortLocationName(recordLocation(r)))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
   });
@@ -1407,6 +1521,20 @@ function renderRecordsTable(){
   const selectPage=document.getElementById('selectPageRecords');
   if(selectPage){ selectPage.onchange=()=>{ pageIds.forEach(id=>{ if(selectPage.checked) selectedRecordIds.add(id); else selectedRecordIds.delete(id); }); renderRecordsTable(); }; }
   document.querySelectorAll('.record-check').forEach(chk=>{ chk.onchange=()=>{ if(chk.checked) selectedRecordIds.add(chk.dataset.id); else selectedRecordIds.delete(chk.dataset.id); renderRecordsTable(); }; });
+
+  document.querySelectorAll('.record-status-select').forEach(sel=>{
+    sel.onchange=()=>{
+      const id=String(sel.dataset.statusId);
+      const original=String(sel.dataset.original||'');
+      const next=String(sel.value||'');
+      if(next===original) pendingRecordStatusChanges.delete(id);
+      else pendingRecordStatusChanges.set(id,next);
+      renderRecordsTable();
+    };
+  });
+
+  const saveStatusBtn=document.getElementById('savePendingRecordStatusBtn');
+  if(saveStatusBtn) saveStatusBtn.onclick=savePendingRecordStatusChanges;
 }
 function confirmDelete(id){
   const r=allRecords.find(x=>x.id===id);
