@@ -1647,32 +1647,29 @@
 </style>
 
 
-<style id="section-title-unify-style">
-  .section-title-unified{
-    display:flex!important;
-    align-items:center!important;
-    gap:10px!important;
-    margin:0 0 10px 8px!important;
-    padding:0!important;
-    color:#0f172a!important;
-    font-size:18px!important;
-    font-weight:900!important;
-    line-height:1.2!important;
+<style id="safe-section-title-style">
+  .section-title-outside{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin:4px 8px 10px 8px;
+    padding:0;
+    color:#0f172a;
+    font-size:18px;
+    font-weight:900;
+    line-height:1.25;
   }
-  .section-title-unified .section-title-bar{
-    width:4px!important;
-    height:22px!important;
-    border-radius:999px!important;
-    background:#2563eb!important;
-    flex:0 0 auto!important;
+  .section-title-outside::before{
+    content:"";
+    display:block;
+    width:4px;
+    height:22px;
+    flex:0 0 4px;
+    border-radius:999px;
+    background:#2563eb;
   }
-  .panel.unified-section-panel{
+  .panel.section-title-moved{
     margin-top:0!important;
-  }
-  .panel.unified-section-panel > h3,
-  .panel.unified-section-panel > .anomaly-center-head,
-  .panel.unified-section-panel > .dashboard-panel-heading{
-    display:none!important;
   }
 </style>
 
@@ -2149,65 +2146,6 @@ function setActiveNav(page){
   const title={dashboard:'作業總覽',records:'登記資料',capacity:'抽籤名額設定',lottery:'抽籤作業',settings:'文字設定中心',logs:'操作紀錄',accounts:'帳號權限管理'}[page] || '';
   document.getElementById('pageTitle').textContent=title;
 }
-
-<script id="section-title-unify-script">
-function cleanUnifiedSectionTitleText(text){
-  if(!text) return '';
-  return text
-    .replace(/^[\s\u{1F000}-\u{1FAFF}\u2600-\u27BF\uFE0F]+/gu,'')
-    .replace(/\s+/g,' ')
-    .trim();
-}
-
-function normalizeSectionTitles(root=document.getElementById('content')){
-  if(!root) return;
-  const headings = [...root.querySelectorAll('.panel > h3:first-child, .panel > .anomaly-center-head:first-child > h3:first-child, .panel > .dashboard-panel-heading:first-child > h3:first-child')];
-  headings.forEach((heading)=>{
-    if(!heading) return;
-    if(heading.closest('.modal-card')) return;
-    const panel = heading.closest('.panel');
-    if(!panel || panel.dataset.sectionTitleNormalized === '1') return;
-
-    const titleText = cleanUnifiedSectionTitleText(heading.textContent || '');
-    if(!titleText) return;
-
-    const titleWrap = document.createElement('div');
-    titleWrap.className = 'section-title-unified';
-
-    const bar = document.createElement('span');
-    bar.className = 'section-title-bar';
-
-    const label = document.createElement('span');
-    label.className = 'section-title-label';
-    label.textContent = titleText;
-
-    titleWrap.appendChild(bar);
-    titleWrap.appendChild(label);
-
-    panel.parentNode.insertBefore(titleWrap, panel);
-    panel.classList.add('unified-section-panel');
-    panel.dataset.sectionTitleNormalized = '1';
-
-    const firstChild = panel.firstElementChild;
-    if(firstChild && (firstChild.classList.contains('anomaly-center-head') || firstChild.classList.contains('dashboard-panel-heading'))){
-      firstChild.remove();
-    }else{
-      heading.remove();
-    }
-  });
-}
-
-function setupSectionTitleObserver(){
-  const root = document.getElementById('content');
-  if(!root || root.dataset.sectionTitleObserverBound === '1') return;
-  const observer = new MutationObserver(()=>{
-    normalizeSectionTitles(root);
-  });
-  observer.observe(root, {childList:true, subtree:true});
-  root.dataset.sectionTitleObserverBound = '1';
-}
-</script>
-
 function renderPage(page){
   if(page==='accounts' && currentAdmin.role!=='super_admin'){ alert('此功能限超級管理員使用'); return; }
   currentPage=page; setActiveNav(page);
@@ -2218,8 +2156,6 @@ function renderPage(page){
   if(page==='settings') renderSettingsPage();
   if(page==='logs') renderLogsPage();
   if(page==='accounts') renderAccountsPage();
-  setupSectionTitleObserver();
-  setTimeout(()=>normalizeSectionTitles(document.getElementById('content')), 0);
 }
 function renderDashboard(){
   const stageMap={};
@@ -5021,5 +4957,72 @@ document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage
   await checkBootstrap();
 })();
 </script>
+
+<script id="safe-section-title-script">
+(function(){
+  function cleanTitle(text){
+    return (text || '')
+      .replace(/^[\s🎯📊📋⚠️➕🔐]+/g,'')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+
+  function movePanelTitles(){
+    const root=document.getElementById('content');
+    if(!root) return;
+
+    const headings=root.querySelectorAll(
+      '.panel > h3:first-child,' +
+      '.panel > .anomaly-center-head:first-child > h3:first-child,' +
+      '.panel > .dashboard-panel-heading:first-child > h3:first-child'
+    );
+
+    headings.forEach(function(h){
+      const panel=h.closest('.panel');
+      if(!panel || panel.dataset.titleOutside==='1') return;
+
+      const title=cleanTitle(h.textContent);
+      if(!title) return;
+
+      const outside=document.createElement('div');
+      outside.className='section-title-outside';
+      outside.textContent=title;
+      panel.parentNode.insertBefore(outside,panel);
+
+      panel.dataset.titleOutside='1';
+      panel.classList.add('section-title-moved');
+
+      const wrapper=h.parentElement;
+      h.remove();
+
+      if(wrapper && wrapper!==panel &&
+         (wrapper.classList.contains('anomaly-center-head') ||
+          wrapper.classList.contains('dashboard-panel-heading')) &&
+         wrapper.children.length===0){
+        wrapper.remove();
+      }
+    });
+  }
+
+  function bindObserver(){
+    const root=document.getElementById('content');
+    if(!root || root.dataset.titleObserver==='1') return;
+
+    const observer=new MutationObserver(function(){
+      movePanelTitles();
+    });
+    observer.observe(root,{childList:true,subtree:true});
+    root.dataset.titleObserver='1';
+    movePanelTitles();
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',bindObserver);
+  }else{
+    bindObserver();
+  }
+})();
+</script>
+
 </body>
 </html>
