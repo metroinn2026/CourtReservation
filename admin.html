@@ -545,6 +545,25 @@
   }
 </style>
 
+
+<style id="records-filter-export-layout-fix">
+  #recordsPanelFilter .toolbar{
+    grid-template-columns:minmax(220px,1.5fr) repeat(5,minmax(115px,1fr)) auto auto!important;
+    align-items:end!important;
+  }
+  #recordsPanelFilter #applyFilterBtn,
+  #recordsPanelFilter #exportBtn{
+    white-space:nowrap!important;
+    min-width:132px!important;
+  }
+  @media(max-width:1400px){
+    #recordsPanelFilter .toolbar{grid-template-columns:repeat(4,minmax(150px,1fr))!important;}
+  }
+  @media(max-width:900px){
+    #recordsPanelFilter .toolbar{grid-template-columns:repeat(2,minmax(140px,1fr))!important;}
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1207,10 +1226,7 @@ function renderRecordsPage(){
           </select>
           <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
           <button id="applyFilterBtn" class="btn btn-primary">套用篩選</button>
-        </div>
-        <div class="section-note">可依姓名、手機末四碼、登記序號、場地、球類、星期、時段及異常狀態快速查找資料。</div>
-        <div class="records-action-row" style="margin-top:12px;">
-          <button id="exportBtn" class="btn btn-gray">匯出目前篩選名單</button>
+          <button id="exportBtn" class="btn btn-primary">匯出目前篩選名單</button>
         </div>
       </div>
 
