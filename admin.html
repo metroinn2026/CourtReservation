@@ -1839,6 +1839,197 @@
   }
 </style>
 
+
+<style id="ui_spacing_consistency_refresh">
+  /* 全站版面間距統一 */
+  .content{
+    padding:24px 24px 36px!important;
+    max-width:1600px;
+  }
+  .section-title-outside,
+  .section-title-outside.section-title-manual{
+    margin:0 0 10px 8px!important;
+    line-height:1.25!important;
+  }
+  .panel.section-title-moved,
+  .accounts-page .panel{
+    background:#fff!important;
+    border:1px solid #dde6f0!important;
+    border-radius:18px!important;
+    box-shadow:0 6px 20px rgba(15,23,42,.04)!important;
+    padding:18px 20px!important;
+    margin:0 0 18px!important;
+  }
+  .panel.section-title-moved > *:first-child,
+  .accounts-page .panel > *:first-child{margin-top:0!important;}
+  .panel.section-title-moved > *:last-child,
+  .accounts-page .panel > *:last-child{margin-bottom:0!important;}
+  .alert,
+  .msg{
+    padding:14px 16px!important;
+    border-radius:12px!important;
+    margin:0 0 14px!important;
+    line-height:1.7!important;
+  }
+  .small{
+    line-height:1.7!important;
+  }
+  .field label{
+    display:block;
+    margin:0 0 8px!important;
+    font-weight:800;
+    color:#334155;
+  }
+  .field input,
+  .field select,
+  .field textarea{
+    margin:0!important;
+  }
+  .table-wrap{
+    margin-top:12px!important;
+    border-radius:14px!important;
+    background:#fff;
+  }
+  .table-wrap table{
+    margin:0!important;
+  }
+  th{padding:12px 14px!important;}
+  td{padding:12px 14px!important;}
+
+  /* 主要工作區減少內層色框並保留留白 */
+  .records-main-panel > .records-fixed-filter,
+  .lottery-main-panel > .lottery-context,
+  .capacity-main-panel > .capacity-toolbar{
+    background:#fff!important;
+    border:1px solid #dde6f0!important;
+    box-shadow:none!important;
+    border-radius:16px!important;
+    padding:18px 20px!important;
+  }
+  #recordsWorkspace,
+  .lottery-main-panel > #dayCheckPanel,
+  .capacity-main-panel > #bulkCapTable{
+    background:#fff!important;
+    border:1px solid #dde6f0!important;
+    box-shadow:0 4px 16px rgba(15,23,42,.04)!important;
+    border-radius:16px!important;
+    padding:0 0 14px!important;
+  }
+  .records-inline-scope,
+  .publish-workspace-card,
+  .records-list-actionbar,
+  .lottery-action-card,
+  .lottery-advanced,
+  .settings-preview-box,
+  .settings-save-actions{
+    margin-left:20px!important;
+    margin-right:20px!important;
+  }
+  .records-inline-scope,
+  .publish-workspace-card{
+    padding-left:0!important;
+    padding-right:0!important;
+  }
+  .records-list-actionbar,
+  .lottery-advanced,
+  .lottery-action-card{
+    background:#f8fafc!important;
+    border:1px solid #e2e8f0!important;
+    border-radius:12px!important;
+    padding:12px 14px!important;
+  }
+  .publish-workspace-card{
+    background:transparent!important;
+    border:none!important;
+    border-bottom:1px solid #e5e7eb!important;
+    border-radius:0!important;
+    padding-bottom:12px!important;
+  }
+  .settings-editor,
+  .settings-editor-template{
+    min-height:300px!important;
+    padding:16px!important;
+    line-height:1.8!important;
+  }
+  .settings-save-actions{
+    margin-top:14px!important;
+    display:flex!important;
+    justify-content:flex-start!important;
+  }
+
+  /* 帳號權限管理專頁 */
+  .accounts-page{display:block;}
+  .accounts-grid{
+    display:grid;
+    grid-template-columns:minmax(0,1.35fr) minmax(320px,.85fr);
+    gap:18px;
+    align-items:start;
+  }
+  .accounts-form-card,
+  .accounts-security-card,
+  .accounts-note-card,
+  .accounts-list-card{padding:18px 20px!important;}
+  .accounts-form-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:14px 16px;
+  }
+  .accounts-actions{
+    display:flex;
+    justify-content:flex-end;
+    margin-top:14px;
+  }
+  .accounts-actions .btn{min-width:148px;}
+  .accounts-role-note{margin-top:10px!important;}
+  .accounts-list-card #accountList{margin-top:0!important;}
+  .account-row{
+    padding:14px 16px!important;
+    border-radius:12px!important;
+    align-items:center!important;
+    background:#fff!important;
+  }
+  .account-row > div:last-child{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+
+  /* 首頁與其他頁面說明、統計、表格對齊 */
+  .pending-stage-info-row,
+  .anomaly-info-row,
+  .dashboard-panel-heading,
+  .records-table-meta,
+  .lottery-section-meta{
+    padding-left:20px!important;
+    padding-right:20px!important;
+  }
+  .dashboard-panel-heading{margin-bottom:8px!important;}
+  .pending-stage-info-row,
+  .anomaly-info-row{margin-bottom:12px!important;}
+  .dashboard-status-cards{margin-bottom:18px!important;}
+
+  @media (max-width: 1100px){
+    .accounts-grid{grid-template-columns:1fr!important;}
+    .accounts-form-grid{grid-template-columns:1fr!important;}
+  }
+  @media (max-width: 960px){
+    .content{padding:16px!important;}
+    .records-main-panel > .records-fixed-filter,
+    .lottery-main-panel > .lottery-context,
+    .capacity-main-panel > .capacity-toolbar,
+    .panel.section-title-moved,
+    .accounts-page .panel{padding:16px!important;}
+    .records-inline-scope,
+    .publish-workspace-card,
+    .records-list-actionbar,
+    .lottery-action-card,
+    .lottery-advanced,
+    .settings-preview-box,
+    .settings-save-actions,
+    .pending-stage-info-row,
+    .anomaly-info-row,
+    .dashboard-panel-heading,
+    .records-table-meta,
+    .lottery-section-meta{margin-left:16px!important;margin-right:16px!important;padding-left:0!important;padding-right:0!important;}
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5041,7 +5232,45 @@ function renderSettingsPage(){
 
 function renderAccountsPage(){
   if(currentAdmin.role!=='super_admin') return;
-  document.getElementById('content').innerHTML=`<div class="panel"><h3>⚠️ 帳號重設說明</h3><div class="alert">若需重設登入帳號，可於 Supabase SQL Editor 執行 <strong>DELETE FROM public.admin_users;</strong> 後重新整理後台，系統會出現建立第一位超級管理員。此操作會清空所有後台帳號，請謹慎使用。</div></div><div class="two-col"><div class="panel"><h3>➕ 新增後台帳號</h3><div class="field"><label>帳號</label><input id="newUser" placeholder="例如 staff01"></div><div class="field"><label>顯示名稱</label><input id="newName" placeholder="例如 王小明"></div><div class="field"><label>密碼</label><input id="newPass" type="password"></div><div class="field"><label>角色</label><select id="newRole"><option value="staff">一般管理員</option><option value="super_admin">超級管理員</option></select></div><button id="addAccountBtn" class="btn btn-primary" style="width:100%">建立帳號</button><div class="small" style="margin-top:12px">一般管理員：可看資料、匯出、設定名額、抽籤。超級管理員：可管理帳號。</div></div><div class="panel"><h3>🔐 帳號安全說明</h3><div class="alert">密碼以加鹽雜湊儲存。正式營運如需更高資安，建議升級 Supabase Auth。</div></div></div><div class="panel"><h3>管理員清單</h3><div id="accountList">讀取中...</div></div>`;
+  document.getElementById('content').innerHTML=`
+    <div class="accounts-page">
+      <div class="section-title-outside section-title-manual">帳號重設說明</div>
+      <div class="panel accounts-note-card" data-titleOutside="1">
+        <div class="alert" style="margin:0;">若需重設登入帳號，可於 Supabase SQL Editor 執行 <strong>DELETE FROM public.admin_users;</strong> 後重新整理後台，系統會出現第一位超級管理員。此操作會清空所有後台帳號，請謹慎使用。</div>
+      </div>
+
+      <div class="accounts-grid">
+        <div class="accounts-col-main">
+          <div class="section-title-outside section-title-manual">新增後台帳號</div>
+          <div class="panel accounts-form-card" data-titleOutside="1">
+            <div class="accounts-form-grid">
+              <div class="field"><label>帳號</label><input id="newUser" placeholder="例如 staff01"></div>
+              <div class="field"><label>顯示名稱</label><input id="newName" placeholder="例如 王小明"></div>
+              <div class="field"><label>密碼</label><input id="newPass" type="password"></div>
+              <div class="field"><label>角色</label><select id="newRole"><option value="staff">一般管理員</option><option value="super_admin">超級管理員</option></select></div>
+            </div>
+            <div class="accounts-actions">
+              <button id="addAccountBtn" class="btn btn-primary">建立帳號</button>
+            </div>
+            <div class="small accounts-role-note">一般管理員：可查看資料、匯出名單、設定名額及抽籤。超級管理員：可另外管理後台帳號與權限。</div>
+          </div>
+        </div>
+
+        <div class="accounts-col-side">
+          <div class="section-title-outside section-title-manual">帳號安全說明</div>
+          <div class="panel accounts-security-card" data-titleOutside="1">
+            <div class="alert" style="margin:0 0 12px;">密碼目前以加鹽雜湊方式儲存。</div>
+            <div class="small">若日後正式營運或需更高資安控管，建議改採 Supabase Auth 或其他正式身份驗證機制。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title-outside section-title-manual">管理員清單</div>
+      <div class="panel accounts-list-card" data-titleOutside="1">
+        <div id="accountList">讀取中...</div>
+      </div>
+    </div>`;
+
   document.getElementById('addAccountBtn').onclick=async()=>{
     const username=document.getElementById('newUser').value.trim(), display_name=document.getElementById('newName').value.trim(), password=document.getElementById('newPass').value, role=document.getElementById('newRole').value;
     if(!username||!display_name||!password){alert('請填完整');return;}
