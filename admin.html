@@ -1546,6 +1546,41 @@
   }
 </style>
 
+
+<style id="dashboard-info-exact-align-final">
+  .anomaly-info-row,
+  .pending-stage-info-row{
+    width:auto!important;
+    margin:0 20px 10px!important;
+    padding:0!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:16px!important;
+    box-sizing:border-box!important;
+  }
+
+  .anomaly-info-row .small,
+  .pending-stage-info-row .small{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+  }
+
+  .anomaly-total-line,
+  .pending-stage-total{
+    margin:0!important;
+    padding:0!important;
+    line-height:1.5!important;
+    text-align:right!important;
+    white-space:nowrap!important;
+  }
+
+  .pending-stage-total{
+    color:var(--blue)!important;
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -2082,10 +2117,11 @@ function renderDashboard(){
 
     <div class="panel dashboard-tasks-panel">
       <div class="dashboard-panel-heading">
-        <div>
-          <h3>待處理場次</h3>
-          <div class="pending-stage-info-row"><div class="small">只列出尚待抽籤或尚待公告的場次，完成後會自動移除。</div>
-        </div><div class="pending-stage-total">共 ${pendingLotteryStages.length+pendingPublishStages.length} 個待辦場次</div></div>
+        <h3>待處理場次</h3>
+      </div>
+      <div class="pending-stage-info-row">
+        <div class="small">只列出尚待抽籤或尚待公告的場次，完成後會自動移除。</div>
+        <div class="pending-stage-total">共 ${pendingLotteryStages.length+pendingPublishStages.length} 個待辦場次</div>
       </div>
       ${taskHtml}
     </div>
