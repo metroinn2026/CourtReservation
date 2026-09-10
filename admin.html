@@ -2211,37 +2211,91 @@ function renderLotteryPage(){
       table.innerHTML='';
       return;
     }
-    const people=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
-    const resultCount=records.filter(r=>r.lottery_status).length;
-    const publishedCount=records.filter(r=>r.result_published).length;
-    const byTime={};
+
+    // 以「場地＋球類＋星期＋時段」視為一個完整抽籤場次
+    const stageMap={};
     records.forEach(r=>{
-      const t=r.time_slot || '未填時段';
-      if(!byTime[t]) byTime[t]={count:0,people:new Set(),winner:0,wait:0,lose:0,notYet:0,published:0};
-      byTime[t].count++;
-      byTime[t].people.add(`${normalizePhone(r.phone)}|${r.id_last4||''}`);
-      if(r.result_published) byTime[t].published++;
-      const s=String(r.lottery_status||'');
-      if(s==='中籤') byTime[t].winner++;
-      else if(s.startsWith('候補')) byTime[t].wait++;
-      else if(s==='未中籤') byTime[t].lose++;
-      else byTime[t].notYet++;
+      const loc=recordLocation(r);
+      const key=`${loc}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
+      if(!stageMap[key]) stageMap[key]={location:loc,venue:r.venue_type||'',day:r.day_of_week||'',time:r.time_slot||'',records:[]};
+      stageMap[key].records.push(r);
     });
-    const contextLabel=[location,venue,day,time].filter(Boolean).map(escapeHtml).join('｜') || '全部資料';
-    box.innerHTML=`<div class="cards"><div class="stat"><div class="label">${contextLabel}</div><div class="num">${records.length}</div><div class="small">登記筆數</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${people}</div></div><div class="stat"><div class="label">已設定抽籤狀態</div><div class="num" style="color:var(--orange)">${resultCount}</div></div><div class="stat"><div class="label">已公布</div><div class="num" style="color:#166534">${publishedCount}</div></div></div>`;
-    const timeRows=Object.entries(byTime).sort((a,b)=>timeSortValue(a[0])-timeSortValue(b[0]));
-    const rows=[...records].sort((a,b)=>timeSortValue(a.time_slot)-timeSortValue(b.time_slot) || statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status) || String(a.registered_at||'').localeCompare(String(b.registered_at||'')));
+
+    const stages=Object.values(stageMap).map(s=>{
+      const people=new Set(s.records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+      const withResult=s.records.filter(r=>String(r.lottery_status||'').trim()).length;
+      const published=s.records.filter(r=>r.result_published).length;
+      const winnerCount=s.records.filter(r=>r.lottery_status==='中籤').length;
+      const configuredCapacity=Number(capacitySettings[settingKey(s.venue,s.day,s.time)] ?? capacityMap[s.venue] ?? 0);
+      const anomalyTypes=[...new Set(s.records.flatMap(r=>getRecordAnomalyTypes(r)))];
+      let status='待抽籤';
+      if(withResult>0 && withResult<s.records.length) status='處理中';
+      if(withResult===s.records.length && withResult>0) status=published===s.records.length?'已公布':'已完成';
+      return {...s,people,withResult,published,winnerCount,capacity:configuredCapacity,anomalyTypes,status};
+    }).sort((a,b)=>{
+      const locCmp=String(a.location).localeCompare(String(b.location),'zh-Hant');
+      if(locCmp!==0) return locCmp;
+      return venueSortValue(a.venue)-venueSortValue(b.venue) || daySortValue(a.day)-daySortValue(b.day) || timeSortValue(a.time)-timeSortValue(b.time);
+    });
+
+    const pendingStages=stages.filter(s=>s.status==='待抽籤'||s.status==='處理中').length;
+    const completedStages=stages.filter(s=>s.status==='已完成'||s.status==='已公布').length;
+    const anomalyStages=stages.filter(s=>s.anomalyTypes.length>0).length;
+    const contextLabel=[location,venue,day,time].filter(Boolean).map(v=>escapeHtml(v===DEFAULT_LOCATION?locationLabel(v):v)).join('｜') || '全部資料';
+
+    box.innerHTML=`
+      <div class="panel" style="background:#f8fafc;margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+          <div>
+            <h3 style="margin:0 0 5px;">抽籤作業摘要</h3>
+            <div class="small">目前篩選：${contextLabel}。摘要依完整場次統計，協助快速判斷哪些場次尚待處理。</div>
+          </div>
+        </div>
+        <div class="cards" style="margin-bottom:0;">
+          <div class="stat"><div class="label">符合條件場次</div><div class="num">${stages.length}</div><div class="small">目前條件下的完整場次數</div></div>
+          <div class="stat"><div class="label">待處理場次</div><div class="num">${pendingStages}</div><div class="small">尚未完成抽籤結果</div></div>
+          <div class="stat"><div class="label">已完成結果</div><div class="num">${completedStages}</div><div class="small">結果已完整設定</div></div>
+          <div class="stat"><div class="label">異常待確認</div><div class="num">${anomalyStages}</div><div class="small">有資料或結果異常的場次</div></div>
+        </div>
+      </div>`;
+
+    const statusTag=(s)=>{
+      if(s==='已公布') return '<span class="tag green">已公布</span>';
+      if(s==='已完成') return '<span class="tag blue">已完成</span>';
+      if(s==='處理中') return '<span class="tag warn">處理中</span>';
+      return '<span class="tag gray">待抽籤</span>';
+    };
+    const anomalyText=(types)=>types.length
+      ? types.map(t=>`<span class="tag warn" style="margin:2px 4px 2px 0;display:inline-block;">${escapeHtml(t)}</span>`).join('')
+      : '<span class="tag gray">正常</span>';
+
+    const rows=[...records].sort((a,b)=>{
+      const locCmp=recordLocation(a).localeCompare(recordLocation(b),'zh-Hant');
+      if(locCmp!==0) return locCmp;
+      return venueSortValue(a.venue_type)-venueSortValue(b.venue_type) || daySortValue(a.day_of_week)-daySortValue(b.day_of_week) || timeSortValue(a.time_slot)-timeSortValue(b.time_slot) || statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status) || String(a.registered_at||'').localeCompare(String(b.registered_at||''));
+    });
+
     table.innerHTML=`
       <div class="panel" style="background:#f8fafc;">
-        <h3>各時段摘要</h3>
-        <div class="table-wrap"><table><thead><tr><th>時段</th><th>筆數</th><th>人數</th><th>中籤</th><th>候補</th><th>未中籤</th><th>未抽籤</th><th>已公布</th></tr></thead><tbody>
-          ${timeRows.map(([t,v])=>`<tr><td><strong>${escapeHtml(t)}</strong></td><td>${v.count}</td><td>${v.people.size}</td><td>${v.winner}</td><td>${v.wait}</td><td>${v.lose}</td><td>${v.notYet}</td><td>${v.published}</td></tr>`).join('')}
+        <h3>場次處理清單</h3>
+        <div class="small" style="margin-bottom:10px;">以場地、球類、星期及時段彙整，直接查看登記人數、正取名額與目前抽籤狀態。</div>
+        <div class="table-wrap"><table><thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記人數</th><th>正取名額</th><th>抽籤狀態</th><th>異常</th></tr></thead><tbody>
+          ${stages.map(s=>`<tr>
+            <td>${escapeHtml(locationLabel(s.location))}</td>
+            <td><strong>${escapeHtml(s.venue)}</strong></td>
+            <td>${escapeHtml(s.day)}</td>
+            <td>${escapeHtml(s.time)}</td>
+            <td>${s.people}</td>
+            <td>${s.capacity}</td>
+            <td>${statusTag(s.status)}</td>
+            <td>${anomalyText(s.anomalyTypes)}</td>
+          </tr>`).join('')}
         </tbody></table></div>
       </div>
       <div class="panel">
         <h3>篩選結果清單</h3>
         <div class="table-wrap"><table><thead><tr><th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>後4碼</th><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記時間</th></tr></thead><tbody>
-          ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(recordLocation(r))}</td><td>${escapeHtml(r.venue_type||'')}</td><td>${escapeHtml(r.day_of_week||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
+          ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(locationLabel(recordLocation(r)))}</td><td>${escapeHtml(r.venue_type||'')}</td><td>${escapeHtml(r.day_of_week||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
         </tbody></table></div>
       </div>`;
   }
