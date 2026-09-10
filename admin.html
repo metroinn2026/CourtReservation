@@ -1240,6 +1240,130 @@
   }
 </style>
 
+
+<style id="anomaly-center-clean-style">
+  .anomaly-center-clean{
+    background:#fff!important;
+  }
+
+  .anomaly-center-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+    margin-bottom:14px;
+  }
+
+  .anomaly-center-head h3{
+    margin:0 0 5px!important;
+  }
+
+  .anomaly-total-badge{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-height:32px;
+    padding:6px 11px;
+    border-radius:999px;
+    background:#fff1f2;
+    border:1px solid #fecdd3;
+    color:#b42318;
+    font-size:12px;
+    font-weight:900;
+    white-space:nowrap;
+  }
+
+  .anomaly-list{
+    display:grid;
+    gap:8px;
+  }
+
+  .anomaly-row{
+    display:grid;
+    grid-template-columns:minmax(145px,190px) 1fr 72px;
+    align-items:center;
+    gap:16px;
+    padding:12px 14px;
+    background:#f8fafc;
+    border:1px solid #dce4ec;
+    border-left:4px solid #dc2626;
+    border-radius:10px;
+  }
+
+  .anomaly-row-main{
+    min-width:0;
+  }
+
+  .anomaly-type{
+    color:#991b1b;
+    font-size:14px;
+    font-weight:900;
+    line-height:1.35;
+  }
+
+  .anomaly-count{
+    margin-top:4px;
+    color:#64748b;
+    font-size:12px;
+    font-weight:700;
+  }
+
+  .anomaly-detail{
+    min-width:0;
+    color:#475569;
+    font-size:12.5px;
+    line-height:1.55;
+  }
+
+  .anomaly-example{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  .anomaly-more{
+    margin-top:2px;
+    color:#94a3b8;
+    font-size:12px;
+  }
+
+  .anomaly-row .anomaly-go{
+    width:72px!important;
+    min-width:72px!important;
+    height:38px!important;
+    min-height:38px!important;
+    padding:0 10px!important;
+    display:inline-flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    justify-self:end;
+  }
+
+  .anomaly-empty{
+    padding:16px;
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    color:#64748b;
+    font-size:13px;
+  }
+
+  @media(max-width:900px){
+    .anomaly-row{
+      grid-template-columns:1fr auto;
+    }
+    .anomaly-detail{
+      grid-column:1 / -1;
+      grid-row:2;
+    }
+    .anomaly-row .anomaly-go{
+      grid-column:2;
+      grid-row:1;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1490,22 +1614,66 @@ function buildDataAnomalies(){
   return issues;
 }
 function renderAnomalyCenter(issues){
-  if(!issues.length) return `<div class="panel" id="anomalyCenter"><h3 style="margin-bottom:6px;">🛡️ 異常檢核中心</h3><div class="msg ok">目前未發現需人工確認的資料異常。</div></div>`;
-  const grouped={}; issues.forEach(x=>{ if(!grouped[x.type]) grouped[x.type]=[]; grouped[x.type].push(x); });
-  const rows=Object.entries(grouped).map(([type,list])=>{
-    const error=list.some(x=>x.severity==='error'); const total=list.reduce((s,x)=>s+(x.count||1),0);
-    const examples=list.slice(0,3).map(x=>`<div class="small" style="margin-top:4px;">• ${escapeHtml(x.detail)}</div>`).join('');
-    const more=list.length>3?`<div class="small" style="margin-top:4px;color:#64748b;">另有 ${list.length-3} 項，請進入相關功能確認。</div>`:'';
-    const target=list[0].target||'records';
-    return `<div style="border:1px solid ${error?'#fecaca':'#fde68a'};background:${error?'#fff7f7':'#fffbeb'};border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:minmax(160px,220px) 1fr auto;gap:14px;align-items:start;">
-      <div><div style="font-weight:900;color:${error?'#b91c1c':'#92400e'};">${error?'⚠️':'🔎'} ${escapeHtml(type)}</div><div class="small" style="margin-top:4px;">${list.length} 項異常／${total} 筆（或人次）</div></div>
-      <div>${examples}${more}</div>
-      <button class="btn btn-gray anomaly-go" data-target="records" data-anomaly="${escapeHtml(type)}">前往查看</button>
-    </div>`;
-  }).join('');
-  return `<div class="panel" id="anomalyCenter"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;"><div><h3 style="margin:0 0 6px;">🛡️ 異常檢核中心</h3><div class="small">系統自動檢查可能的人工作業錯誤；僅提供提醒，不會自動刪除或修改資料。</div></div><span class="tag warn">${issues.length} 項待確認</span></div><div style="display:grid;gap:10px;">${rows}</div></div>`;
-}
+  if(!issues.length){
+    return `
+      <div class="panel anomaly-center-clean" id="anomalyCenter">
+        <div class="anomaly-center-head">
+          <div>
+            <h3>異常檢核中心</h3>
+            <div class="small">系統自動檢查可能需要人工確認的資料。</div>
+          </div>
+          <span class="anomaly-total-badge">0 項待確認</span>
+        </div>
+        <div class="anomaly-empty">目前未發現需人工確認的資料異常。</div>
+      </div>`;
+  }
 
+  const grouped={};
+  issues.forEach(x=>{
+    if(!grouped[x.type]) grouped[x.type]=[];
+    grouped[x.type].push(x);
+  });
+
+  const rows=Object.entries(grouped).map(([type,list])=>{
+    const total=list.reduce((s,x)=>s+(x.count||1),0);
+    const examples=list.slice(0,2).map(x=>`
+      <div class="anomaly-example">${escapeHtml(x.detail)}</div>
+    `).join('');
+    const more=list.length>2
+      ? `<div class="anomaly-more">另有 ${list.length-2} 項</div>`
+      : '';
+
+    return `
+      <div class="anomaly-row">
+        <div class="anomaly-row-main">
+          <div class="anomaly-type">${escapeHtml(type)}</div>
+          <div class="anomaly-count">${list.length} 項／${total} 筆</div>
+        </div>
+
+        <div class="anomaly-detail">
+          ${examples}
+          ${more}
+        </div>
+
+        <button class="btn btn-gray anomaly-go" data-target="records" data-anomaly="${escapeHtml(type)}">查看</button>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="panel anomaly-center-clean" id="anomalyCenter">
+      <div class="anomaly-center-head">
+        <div>
+          <h3>異常檢核中心</h3>
+          <div class="small">系統自動檢查可能需要人工確認的資料，僅提醒，不會自動修改。</div>
+        </div>
+        <span class="anomaly-total-badge">${issues.length} 項待確認</span>
+      </div>
+
+      <div class="anomaly-list">
+        ${rows}
+      </div>
+    </div>`;
+}
 
 async function sha256(text){ const enc=new TextEncoder(); const buf=await crypto.subtle.digest('SHA-256', enc.encode(text)); return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
 function randomSalt(){ return crypto.getRandomValues(new Uint8Array(16)).reduce((s,b)=>s+b.toString(16).padStart(2,'0'),''); }
