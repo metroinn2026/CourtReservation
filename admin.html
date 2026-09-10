@@ -2030,6 +2030,416 @@
   }
 </style>
 
+
+<style id="backend-flat-workbench-v1">
+  :root{
+    --ui-bg:#eef3f8;
+    --ui-surface:#ffffff;
+    --ui-soft:#f5f8fc;
+    --ui-soft-blue:#eef5ff;
+    --ui-line:#dfe7f0;
+    --ui-line-strong:#cfdbe8;
+    --ui-text:#10233f;
+    --ui-muted:#6b7c93;
+    --ui-blue:#2563eb;
+    --ui-red:#b42318;
+  }
+
+  body{background:var(--ui-bg)!important;}
+  .content{
+    padding:24px 28px 40px!important;
+    max-width:1600px!important;
+  }
+
+  /* ---------- 標題：固定在內容區上方，不再包在卡片內 ---------- */
+  .section-title-outside,
+  .section-title-outside.section-title-manual{
+    margin:0 0 10px 8px!important;
+    font-size:18px!important;
+    font-weight:900!important;
+    color:var(--ui-text)!important;
+  }
+  .section-title-outside::before{
+    background:var(--ui-blue)!important;
+  }
+
+  /* ---------- 核心原則：panel 不再自帶白卡框 ---------- */
+  #content .panel,
+  #content .panel.section-title-moved,
+  #content .panel.unified-section-panel{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    border-radius:0!important;
+    padding:0!important;
+    margin:0 0 24px!important;
+  }
+
+  /* 需要承載內容時，用「單一面」而不是卡片套卡片 */
+  .records-fixed-filter,
+  .lottery-context,
+  .capacity-toolbar,
+  .accounts-form-card,
+  .accounts-security-card,
+  .accounts-note-card,
+  .accounts-list-card{
+    background:var(--ui-surface)!important;
+    border:0!important;
+    border-radius:14px!important;
+    box-shadow:none!important;
+    padding:18px 20px!important;
+  }
+
+  /* 工具列用淡色帶，不畫外框 */
+  .records-fixed-filter,
+  .lottery-context,
+  .capacity-toolbar{
+    background:var(--ui-soft-blue)!important;
+  }
+
+  /* ---------- 所有文字與色塊保留一致內距 ---------- */
+  .small,
+  .section-note,
+  .records-table-meta,
+  .anomaly-info-row,
+  .pending-stage-info-row{
+    line-height:1.7!important;
+  }
+  .alert,
+  .msg{
+    margin:0 0 14px!important;
+    padding:12px 16px!important;
+    background:var(--ui-soft)!important;
+    border:0!important;
+    border-radius:10px!important;
+    color:#53657a!important;
+    line-height:1.7!important;
+  }
+  .field{margin-bottom:14px!important;}
+  .field label{
+    display:block!important;
+    margin:0 0 7px!important;
+    font-weight:800!important;
+    color:#334155!important;
+  }
+
+  /* ---------- 頁籤：只靠文字與底線，不再有色塊 ---------- */
+  .admin-tabs,
+  .records-function-tabs{
+    background:transparent!important;
+    border-bottom:1px solid var(--ui-line)!important;
+    margin:0 0 14px!important;
+    padding:0 4px!important;
+    gap:28px!important;
+  }
+  .admin-tab,
+  .records-function-tab{
+    background:transparent!important;
+    border-radius:0!important;
+    padding:10px 0 9px!important;
+    color:#64748b!important;
+  }
+  .admin-tab:hover,
+  .records-function-tab:hover{
+    background:transparent!important;
+    color:var(--ui-blue)!important;
+  }
+  .admin-tab.active,
+  .records-function-tab.active{
+    background:transparent!important;
+    color:var(--ui-blue)!important;
+    border-bottom-color:var(--ui-blue)!important;
+  }
+
+  /* ---------- 表格：作為主要資料面，外面只留一層 ---------- */
+  .table-wrap,
+  .records-table-wrap,
+  .dashboard-task-table-wrap{
+    background:var(--ui-surface)!important;
+    border:0!important;
+    border-radius:12px!important;
+    box-shadow:none!important;
+    overflow:auto!important;
+  }
+  table{background:var(--ui-surface)!important;}
+  th{
+    background:#f1f5f9!important;
+    padding:12px 14px!important;
+    border-bottom:1px solid var(--ui-line-strong)!important;
+  }
+  td{
+    padding:12px 14px!important;
+    border-bottom:1px solid #edf1f5!important;
+  }
+
+  /* ---------- 登記資料 ---------- */
+  .records-main-panel{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+  }
+  .records-main-panel > .records-fixed-filter{
+    margin:0 0 16px!important;
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) auto!important;
+    gap:12px 16px!important;
+  }
+  .records-fixed-filter-title{
+    grid-column:1 / -1!important;
+    margin:0!important;
+  }
+  .records-shared-toolbar{
+    display:grid!important;
+    grid-template-columns:minmax(210px,1.45fr) repeat(5,minmax(110px,1fr))!important;
+    gap:12px!important;
+    margin:0!important;
+  }
+  .records-filter-actions{
+    display:flex!important;
+    align-items:flex-end!important;
+    gap:10px!important;
+    margin:0!important;
+  }
+  #recordsWorkspace{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+  }
+  .records-inline-scope{
+    margin:0 4px 12px!important;
+    padding:0 0 10px!important;
+    border-bottom:1px solid var(--ui-line)!important;
+  }
+  .records-table-meta{
+    margin:0 4px 10px!important;
+  }
+  .records-list-actionbar{
+    margin:0 0 12px!important;
+    padding:10px 12px!important;
+    background:var(--ui-soft)!important;
+    border:0!important;
+    border-radius:10px!important;
+  }
+  .publish-workspace-card{
+    margin:0 0 14px!important;
+    padding:14px 16px!important;
+    background:var(--ui-soft)!important;
+    border:0!important;
+    border-radius:10px!important;
+  }
+
+  /* ---------- 首頁：統計用底色，不用每張厚卡 ---------- */
+  .dashboard-status-cards{
+    gap:12px!important;
+    margin-bottom:24px!important;
+  }
+  .dashboard-status-card{
+    background:var(--ui-surface)!important;
+    border:0!important;
+    box-shadow:none!important;
+    border-radius:12px!important;
+    padding:16px 18px!important;
+  }
+  .dashboard-status-card:hover{
+    transform:none!important;
+    box-shadow:none!important;
+  }
+
+  /* 異常中心：單一清單，不再大框包小框 */
+  .anomaly-center-clean{
+    margin-bottom:26px!important;
+  }
+  .anomaly-info-row{
+    margin:0 8px 8px!important;
+    padding:0!important;
+  }
+  .anomaly-flat-list{
+    background:var(--ui-surface);
+    border-radius:12px;
+    overflow:hidden;
+  }
+  .anomaly-flat-row{
+    display:grid;
+    grid-template-columns:150px 110px minmax(0,1fr) 64px;
+    align-items:center;
+    gap:14px;
+    padding:14px 16px;
+    border-bottom:1px solid #edf1f5;
+  }
+  .anomaly-flat-row:last-child{border-bottom:0;}
+  .anomaly-flat-type{
+    color:var(--ui-red);
+    font-weight:900;
+  }
+  .anomaly-flat-count{
+    color:#64748b;
+    font-size:12.5px;
+    font-weight:700;
+  }
+  .anomaly-flat-detail{
+    color:#475569;
+    font-size:12.5px;
+    line-height:1.55;
+  }
+  .anomaly-text-action{
+    border:0;
+    background:transparent;
+    color:var(--ui-blue);
+    font-weight:900;
+    cursor:pointer;
+    padding:6px 4px;
+  }
+  .anomaly-text-action:hover{text-decoration:underline;}
+  .flat-empty{
+    background:var(--ui-surface);
+    border-radius:12px;
+    padding:16px;
+    color:#64748b;
+  }
+
+  .dashboard-tasks-panel .pending-stage-info-row{
+    margin:0 8px 10px!important;
+  }
+
+  /* ---------- 抽籤 ---------- */
+  .lottery-main-panel{
+    background:transparent!important;
+    padding:0!important;
+  }
+  .lottery-main-panel > .lottery-context{
+    margin:0 0 16px!important;
+  }
+  .lottery-main-panel .lottery-context-grid{
+    grid-template-columns:120px 150px 140px 160px auto!important;
+    gap:12px!important;
+  }
+  .lottery-main-panel > #dayCheckPanel{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+  }
+  .lottery-main-panel #dayCheckPanel > .panel{
+    margin-bottom:18px!important;
+  }
+  .stage-list-filters{
+    background:var(--ui-soft)!important;
+    border:0!important;
+    border-radius:10px!important;
+    padding:12px!important;
+  }
+  .lottery-advanced{
+    margin:18px 0 0!important;
+    padding:14px 16px!important;
+    border:0!important;
+    border-top:1px solid var(--ui-line)!important;
+    border-radius:0!important;
+    background:transparent!important;
+  }
+
+  /* ---------- 名額設定 ---------- */
+  .capacity-main-panel > .capacity-toolbar{
+    margin:0 0 16px!important;
+  }
+  .capacity-main-panel > #bulkCapTable{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+  }
+  #bulkCapTable .stat{
+    background:var(--ui-surface)!important;
+    border:0!important;
+    box-shadow:none!important;
+    border-radius:10px!important;
+  }
+
+  /* ---------- 文字設定 ---------- */
+  #settingsTabContent{
+    margin:0!important;
+    padding:0!important;
+  }
+  #settingsTabContent .alert,
+  #settingsTabContent .msg{
+    margin-bottom:12px!important;
+  }
+  #settingsTabContent .settings-editor{
+    margin-top:8px!important;
+    border:1px solid var(--ui-line-strong)!important;
+    border-radius:10px!important;
+    padding:16px!important;
+    background:#fff!important;
+  }
+  .settings-save-actions{
+    margin:14px 0 0!important;
+    justify-content:flex-start!important;
+  }
+
+  /* ---------- 操作紀錄 ---------- */
+  #content .section-title-outside + .panel .alert{
+    margin-bottom:14px!important;
+  }
+
+  /* ---------- 帳號權限：簡潔雙欄，取消大片框感 ---------- */
+  .accounts-grid{
+    gap:22px!important;
+  }
+  .accounts-note-card,
+  .accounts-form-card,
+  .accounts-security-card,
+  .accounts-list-card{
+    margin-bottom:22px!important;
+  }
+  .accounts-note-card{
+    background:var(--ui-soft)!important;
+  }
+  .accounts-form-card,
+  .accounts-security-card,
+  .accounts-list-card{
+    background:var(--ui-surface)!important;
+  }
+  .accounts-form-grid{
+    gap:14px 16px!important;
+  }
+
+  /* ---------- 按鈕：統一高度 ---------- */
+  .btn{
+    min-height:40px!important;
+    border-radius:10px!important;
+    box-shadow:none!important;
+  }
+
+  @media(max-width:1350px){
+    .records-main-panel > .records-fixed-filter{
+      grid-template-columns:1fr!important;
+    }
+    .records-filter-actions{
+      justify-content:flex-start!important;
+    }
+    .records-shared-toolbar{
+      grid-template-columns:repeat(4,minmax(150px,1fr))!important;
+    }
+    .lottery-main-panel .lottery-context-grid{
+      grid-template-columns:repeat(3,minmax(150px,1fr))!important;
+    }
+  }
+  @media(max-width:900px){
+    .content{padding:16px!important;}
+    .records-shared-toolbar,
+    .lottery-main-panel .lottery-context-grid{
+      grid-template-columns:repeat(2,minmax(140px,1fr))!important;
+    }
+    .anomaly-flat-row{
+      grid-template-columns:1fr auto;
+    }
+    .anomaly-flat-detail{
+      grid-column:1 / -1;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -2318,15 +2728,13 @@ function buildDataAnomalies(){
 function renderAnomalyCenter(issues){
   if(!issues.length){
     return `
-      <div class="panel anomaly-center-clean" id="anomalyCenter">
-        <div class="anomaly-center-head">
-          <h3>異常檢核中心</h3>
-        </div>
+      <div class="panel anomaly-center-clean flat-section" id="anomalyCenter">
+        <div class="anomaly-center-head"><h3>異常檢核中心</h3></div>
         <div class="anomaly-info-row">
-          <div class="small">系統自動檢查可能需要人工確認的資料。</div>
+          <div class="small">系統自動檢查可能需要人工確認的資料，僅提醒，不會自動修改。</div>
           <div class="anomaly-total-line">0 項待確認</div>
         </div>
-        <div class="anomaly-empty">目前未發現需人工確認的資料異常。</div>
+        <div class="flat-empty">目前未發現需人工確認的資料異常。</div>
       </div>`;
   }
 
@@ -2338,43 +2746,25 @@ function renderAnomalyCenter(issues){
 
   const rows=Object.entries(grouped).map(([type,list])=>{
     const total=list.reduce((s,x)=>s+(x.count||1),0);
-    const examples=list.slice(0,2).map(x=>`
-      <div class="anomaly-example">${escapeHtml(x.detail)}</div>
-    `).join('');
-    const more=list.length>2
-      ? `<div class="anomaly-more">另有 ${list.length-2} 項</div>`
-      : '';
-
+    const examples=list.slice(0,2).map(x=>escapeHtml(x.detail)).join('<br>');
+    const more=list.length>2 ? `<div class="anomaly-more">另有 ${list.length-2} 項</div>` : '';
     return `
-      <div class="anomaly-row">
-        <div class="anomaly-row-main">
-          <div class="anomaly-type">${escapeHtml(type)}</div>
-          <div class="anomaly-count">${list.length} 項／${total} 筆</div>
-        </div>
-
-        <div class="anomaly-detail">
-          ${examples}
-          ${more}
-        </div>
-
-        <button class="btn btn-gray anomaly-go" data-target="records" data-anomaly="${escapeHtml(type)}">查看</button>
+      <div class="anomaly-flat-row">
+        <div class="anomaly-flat-type">${escapeHtml(type)}</div>
+        <div class="anomaly-flat-count">${list.length} 項 / ${total} 筆</div>
+        <div class="anomaly-flat-detail">${examples}${more}</div>
+        <button class="anomaly-text-action" data-target="records" data-anomaly="${escapeHtml(type)}">查看</button>
       </div>`;
   }).join('');
 
   return `
-    <div class="panel anomaly-center-clean" id="anomalyCenter">
-      <div class="anomaly-center-head">
-        <h3>異常檢核中心</h3>
-      </div>
-
+    <div class="panel anomaly-center-clean flat-section" id="anomalyCenter">
+      <div class="anomaly-center-head"><h3>異常檢核中心</h3></div>
       <div class="anomaly-info-row">
         <div class="small">系統自動檢查可能需要人工確認的資料，僅提醒，不會自動修改。</div>
         <div class="anomaly-total-line">${issues.length} 項待確認</div>
       </div>
-
-      <div class="anomaly-list">
-        ${rows}
-      </div>
+      <div class="anomaly-flat-list">${rows}</div>
     </div>`;
 }
 
