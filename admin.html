@@ -999,52 +999,57 @@
 </style>
 
 
-<style id="stage-list-day-tabs">
-  .stage-day-tabs{
+
+
+<style id="stage-list-dropdown-filters">
+  .stage-list-filters{
     display:flex;
     align-items:flex-end;
-    gap:22px;
+    gap:10px;
     flex-wrap:wrap;
-    margin:4px 0 10px;
-    padding:0 2px;
-    border-bottom:1px solid #d7e1eb;
+    margin:4px 0 12px;
+    padding:12px 14px;
+    background:#fff;
+    border:1px solid #dbe4ee;
+    border-radius:12px;
   }
-  .stage-day-tab{
-    appearance:none!important;
-    border:0!important;
-    border-bottom:3px solid transparent!important;
-    border-radius:0!important;
-    background:transparent!important;
-    box-shadow:none!important;
-    min-height:auto!important;
-    padding:10px 0 9px!important;
-    margin:0 0 -1px!important;
-    color:#64748b!important;
-    font-size:13.5px!important;
-    font-weight:800!important;
-    cursor:pointer!important;
+  .stage-list-filter-field{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
   }
-  .stage-day-tab:hover{
-    color:var(--blue)!important;
-    background:transparent!important;
-  }
-  .stage-day-tab.active{
-    color:var(--blue)!important;
-    border-bottom-color:var(--blue)!important;
-    background:transparent!important;
-  }
-  .stage-day-tab span{
-    margin-left:3px;
-    font-size:11px;
-    font-weight:800;
-    color:#94a3b8;
-  }
-  .stage-day-tab.active span{color:var(--blue)!important;}
-  .stage-tab-summary{
-    margin:0 0 10px;
-    font-size:12px;
-    font-weight:800;
+  .stage-list-filter-field label{
+    font-size:11.5px;
+    font-weight:900;
     color:#64748b;
+  }
+  .stage-list-filter-field select{
+    width:150px!important;
+    min-width:150px!important;
+    height:38px!important;
+    font-size:13px!important;
+  }
+  .stage-list-filters .btn{
+    min-height:38px!important;
+    height:38px!important;
+    padding:7px 13px!important;
+    font-size:13px!important;
+  }
+  .stage-list-filter-count{
+    margin-left:auto;
+    align-self:center;
+    color:#64748b;
+    font-size:12.5px;
+    white-space:nowrap;
+  }
+  .stage-list-filter-count strong{
+    color:#0f172a;
+  }
+  @media(max-width:800px){
+    .stage-list-filter-count{
+      margin-left:0;
+      width:100%;
+    }
   }
 </style>
 
@@ -3101,32 +3106,63 @@ function renderLotteryPage(){
       return venueSortValue(a.venue_type)-venueSortValue(b.venue_type) || daySortValue(a.day_of_week)-daySortValue(b.day_of_week) || timeSortValue(a.time_slot)-timeSortValue(b.time_slot) || statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status) || String(a.registered_at||'').localeCompare(String(b.registered_at||''));
     });
 
+    const stageLocations=[...new Set(stages.map(s=>s.location).filter(Boolean))]
+      .sort((a,b)=>String(a).localeCompare(String(b),'zh-Hant'));
+    const stageVenues=[...new Set(stages.map(s=>s.venue).filter(Boolean))]
+      .sort((a,b)=>venueSortValue(a)-venueSortValue(b));
     const stageDays=[...new Set(stages.map(s=>s.day).filter(Boolean))]
       .sort((a,b)=>daySortValue(a)-daySortValue(b));
 
-    if(day && stageDays.includes(day)){
-      window.stageListDayTab=day;
-    }else if(!window.stageListDayTab || !stageDays.includes(window.stageListDayTab)){
-      window.stageListDayTab=stageDays[0] || '';
-    }
+    if(window.stageListLocationFilter===undefined) window.stageListLocationFilter='';
+    if(window.stageListVenueFilter===undefined) window.stageListVenueFilter='';
+    if(window.stageListDayFilter===undefined) window.stageListDayFilter='';
 
-    const activeStageDay=window.stageListDayTab || '';
-    const visibleStages=activeStageDay ? stages.filter(s=>s.day===activeStageDay) : stages;
+    if(window.stageListLocationFilter && !stageLocations.includes(window.stageListLocationFilter)) window.stageListLocationFilter='';
+    if(window.stageListVenueFilter && !stageVenues.includes(window.stageListVenueFilter)) window.stageListVenueFilter='';
+    if(window.stageListDayFilter && !stageDays.includes(window.stageListDayFilter)) window.stageListDayFilter='';
+
+    const visibleStages=stages.filter(s=>
+      (!window.stageListLocationFilter || s.location===window.stageListLocationFilter) &&
+      (!window.stageListVenueFilter || s.venue===window.stageListVenueFilter) &&
+      (!window.stageListDayFilter || s.day===window.stageListDayFilter)
+    );
 
     table.innerHTML=`
       <div class="panel" style="background:#f8fafc;">
         <h3>場次處理清單</h3>
-        ${stageDays.length?`
-          <div class="stage-day-tabs" role="tablist" aria-label="場次星期">
-            ${stageDays.map(d=>{
-              const count=stages.filter(s=>s.day===d).length;
-              return `<button type="button" class="stage-day-tab ${activeStageDay===d?'active':''}" data-stage-day="${escapeHtml(d)}">${escapeHtml(d)} <span>${count}</span></button>`;
-            }).join('')}
+
+        <div class="stage-list-filters">
+          <div class="stage-list-filter-field">
+            <label>場地</label>
+            <select id="stageListLocationFilter">
+              <option value="">全部場地</option>
+              ${stageLocations.map(v=>`<option value="${escapeHtml(v)}" ${window.stageListLocationFilter===v?'selected':''}>${escapeHtml(locationLabel(v))}</option>`).join('')}
+            </select>
           </div>
-        `:''}
-        <div class="stage-tab-summary">${escapeHtml(activeStageDay || '目前條件')}｜${visibleStages.length} 個場次</div>
+
+          <div class="stage-list-filter-field">
+            <label>球類</label>
+            <select id="stageListVenueFilter">
+              <option value="">全部球類</option>
+              ${stageVenues.map(v=>`<option value="${escapeHtml(v)}" ${window.stageListVenueFilter===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="stage-list-filter-field">
+            <label>星期</label>
+            <select id="stageListDayFilter">
+              <option value="">全部星期</option>
+              ${stageDays.map(v=>`<option value="${escapeHtml(v)}" ${window.stageListDayFilter===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}
+            </select>
+          </div>
+
+          <button type="button" id="clearStageListFilters" class="btn btn-gray">全部顯示</button>
+
+          <div class="stage-list-filter-count">顯示 <strong>${visibleStages.length}</strong> / ${stages.length} 個場次</div>
+        </div>
+
         <div class="table-wrap"><table><thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記人數</th><th>正取名額</th><th>抽籤狀態</th><th>異常</th></tr></thead><tbody>
-          ${visibleStages.map(s=>`<tr>
+          ${visibleStages.length ? visibleStages.map(s=>`<tr>
             <td>${escapeHtml(locationLabel(s.location))}</td>
             <td><strong>${escapeHtml(s.venue)}</strong></td>
             <td>${escapeHtml(s.day)}</td>
@@ -3135,7 +3171,7 @@ function renderLotteryPage(){
             <td>${s.capacity}</td>
             <td>${statusTag(s.status)}</td>
             <td>${anomalyText(s.anomalyTypes)}</td>
-          </tr>`).join('')}
+          </tr>`).join('') : `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">目前選擇條件沒有場次</td></tr>`}
         </tbody></table></div>
       </div>
       <div class="panel">
@@ -3145,12 +3181,29 @@ function renderLotteryPage(){
         </tbody></table></div>
       </div>`;
 
-    document.querySelectorAll('.stage-day-tab').forEach(btn=>{
-      btn.onclick=()=>{
-        window.stageListDayTab=btn.dataset.stageDay || '';
-        renderDayCheck();
-      };
-    });
+    const stageLocationSelect=document.getElementById('stageListLocationFilter');
+    const stageVenueSelect=document.getElementById('stageListVenueFilter');
+    const stageDaySelect=document.getElementById('stageListDayFilter');
+    const clearStageFilters=document.getElementById('clearStageListFilters');
+
+    if(stageLocationSelect) stageLocationSelect.onchange=()=>{
+      window.stageListLocationFilter=stageLocationSelect.value || '';
+      renderDayCheck();
+    };
+    if(stageVenueSelect) stageVenueSelect.onchange=()=>{
+      window.stageListVenueFilter=stageVenueSelect.value || '';
+      renderDayCheck();
+    };
+    if(stageDaySelect) stageDaySelect.onchange=()=>{
+      window.stageListDayFilter=stageDaySelect.value || '';
+      renderDayCheck();
+    };
+    if(clearStageFilters) clearStageFilters.onclick=()=>{
+      window.stageListLocationFilter='';
+      window.stageListVenueFilter='';
+      window.stageListDayFilter='';
+      renderDayCheck();
+    };
   }
 
   function getSelectedRecords(){
