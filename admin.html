@@ -564,6 +564,17 @@
   }
 </style>
 
+
+<style id="records-batch-cleanup-fix">
+  .records-compact-table th:nth-child(3),
+  .records-compact-table td:nth-child(3){width:76px!important;min-width:76px!important;max-width:76px!important;text-align:center!important;}
+  .records-compact-table th:nth-child(9){white-space:normal!important;text-align:center!important;}
+  .records-compact-table td:nth-child(9){text-align:center!important;}
+  .records-compact-table .tag{white-space:nowrap!important;}
+  #recordsPanelBatch .records-action-row{align-items:center!important;}
+  #batchLotteryStatus{min-width:180px!important;max-width:220px!important;}
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1227,10 +1238,10 @@ function renderRecordsPage(){
           <select id="batchLotteryStatus" title="先勾選資料，再選擇要統一變更的抽籤狀態">
             <option value="">選擇抽籤狀態</option><option value="中籤">中籤</option><option value="候補1">候補1</option><option value="候補2">候補2</option><option value="候補3">候補3</option><option value="未中籤">未中籤</option><option value="__clear__">未抽籤</option>
           </select>
-          <button id="batchLotteryStatusBtn" class="btn btn-primary">套用至勾選</button>
-          <button id="batchDeleteBtn" class="btn btn-gray">刪除勾選</button>
+          <button id="batchLotteryStatusBtn" class="btn btn-primary">儲存批次變更</button>
+          <button id="batchDeleteBtn" class="btn btn-gray">刪除勾選資料</button>
         </div>
-        <div class="section-note">勾選下方登記資料後，可統一變更抽籤狀態或刪除。</div>
+        <div class="section-note">先勾選清單資料，再一次變更狀態或刪除。</div>
       </div>
 
       <div id="recordsPanelPublish" class="records-function-panel ${recordsActionTab==='publish'?'':'hidden'}">
@@ -1362,6 +1373,14 @@ function formatCompactDateTime(value){
   const mi=String(d.getMinutes()).padStart(2,'0');
   return `${mm}/${dd} ${hh}:${mi}`;
 }
+function recordStatusTag(status){
+  const s=String(status||'').trim();
+  if(!s) return '<span class="tag gray">未抽籤</span>';
+  if(s==='中籤') return '<span class="tag green">中籤</span>';
+  if(s.startsWith('候補')) return `<span class="tag warn">${escapeHtml(s)}</span>`;
+  if(s==='未中籤') return '<span class="tag gray">未中籤</span>';
+  return `<span class="tag gray">${escapeHtml(s)}</span>`;
+}
 function renderRecordsTable(){
   const filtered=getFilteredRecords();
   const totalPages=Math.max(1,Math.ceil(filtered.length/recordState.perPage));
@@ -1370,21 +1389,12 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:116px;">${sortHeader('狀態','lottery_status')}</th><th style="width:72px;">公布</th><th style="width:110px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:126px;">${sortHeader('序號','serial_number')}</th><th style="width:82px;">${sortHeader('姓名','name')}</th><th style="width:102px;">${sortHeader('手機','phone')}</th><th style="width:70px;">${sortHeader('後4碼','id_last4')}</th><th style="width:62px;">場地</th><th style="width:78px;">${sortHeader('球類','venue_type')}</th><th style="width:62px;">${sortHeader('星期','day_of_week')}</th><th style="width:104px;">${sortHeader('時段','time_slot')}</th><th style="width:52px;">時數</th><th style="width:94px;">${sortHeader('登記時間','registered_at')}</th><th style="width:64px;">操作</th></tr></thead><tbody>`;
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('手機','phone')}</th><th style="width:72px;line-height:1.25;">${sortHeader('身分證<br>末四碼','id_last4')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
-    <td>
-      <select class="status-select status-select-compact" data-status-id="${r.id}" data-original="${escapeHtml(r.lottery_status||'')}" style="border:1px solid #d1d5db;border-radius:8px;padding:5px 8px;font-weight:800;">
-        <option value="" ${!r.lottery_status?'selected':''}>未抽籤</option>
-        <option value="中籤" ${r.lottery_status==='中籤'?'selected':''}>中籤</option>
-        <option value="候補1" ${r.lottery_status==='候補1'?'selected':''}>候補1</option>
-        <option value="候補2" ${r.lottery_status==='候補2'?'selected':''}>候補2</option>
-        <option value="候補3" ${r.lottery_status==='候補3'?'selected':''}>候補3</option>
-        <option value="未中籤" ${r.lottery_status==='未中籤'?'selected':''}>未中籤</option>
-      </select>
-    </td>
+    <td>${recordStatusTag(r.lottery_status)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(shortLocationName(recordLocation(r)))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td><td><button class="btn btn-danger row-mini-btn" data-del="${r.id}">刪除</button></td></tr>`;
+    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(shortLocationName(recordLocation(r)))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
@@ -1397,25 +1407,6 @@ function renderRecordsTable(){
   const selectPage=document.getElementById('selectPageRecords');
   if(selectPage){ selectPage.onchange=()=>{ pageIds.forEach(id=>{ if(selectPage.checked) selectedRecordIds.add(id); else selectedRecordIds.delete(id); }); renderRecordsTable(); }; }
   document.querySelectorAll('.record-check').forEach(chk=>{ chk.onchange=()=>{ if(chk.checked) selectedRecordIds.add(chk.dataset.id); else selectedRecordIds.delete(chk.dataset.id); renderRecordsTable(); }; });
-  document.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>confirmDelete(btn.dataset.del));
-  document.querySelectorAll('.status-select').forEach(sel=>{
-    sel.onchange=()=>{
-      const oldValue=sel.dataset.original || '';
-      const newValue=sel.value || '';
-      const r=allRecords.find(x=>String(x.id)===String(sel.dataset.statusId));
-      showModal('確認變更抽籤狀態',`確定要將 ${escapeHtml(r?.name||'此筆資料')} 的狀態由「${escapeHtml(oldValue||'未抽籤')}」改為「${escapeHtml(newValue||'未抽籤')}」嗎？`,async()=>{
-        const ok=await updateRecordLotteryStatus(sel.dataset.statusId, newValue);
-        if(ok){
-          await loadAllData();
-          renderRecordsTable();
-        }else{
-          sel.value=oldValue;
-        }
-      },false,()=>{
-        sel.value=oldValue;
-      });
-    };
-  });
 }
 function confirmDelete(id){
   const r=allRecords.find(x=>x.id===id);
@@ -1446,7 +1437,7 @@ async function batchUpdateSelectedLotteryStatus(){
   }
 
   const displayStatus=status || '未抽籤';
-  showModal('確認批次變更抽籤狀態',`確定要將已勾選的 ${ids.length} 筆資料，統一變更為「${escapeHtml(displayStatus)}」嗎？`,async()=>{
+  showModal('確認儲存批次變更',`確定要將已勾選的 ${ids.length} 筆資料，統一變更為「${escapeHtml(displayStatus)}」嗎？`,async()=>{
     const payload={
       lottery_status: status || null,
       lottery_locked: !!status,
@@ -1475,7 +1466,7 @@ async function batchUpdateSelectedLotteryStatus(){
     if(select) select.value='';
     await loadAllData();
     renderRecordsPage();
-    alert(`已將 ${updatedCount} 筆資料統一變更為「${displayStatus}」。`);
+    alert(`已儲存 ${updatedCount} 筆資料，狀態統一變更為「${displayStatus}」。`);
   });
 }
 
