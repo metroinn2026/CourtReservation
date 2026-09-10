@@ -167,6 +167,119 @@ function isSuspiciousPhone(record){
 }
 function suspiciousTag(record){ return isSuspiciousPhone(record) ? '<span class="tag warn">同手機多身分</span>' : '<span class="tag gray">正常</span>'; }
 
+function getStageStartTime(timeSlot){
+  const m=String(timeSlot||'').match(/(\d{2}:\d{2})/);
+  return m ? m[1] : String(timeSlot||'');
+}
+function personKey(r){ return `${normalizePhone(r.phone)}|${String(r.id_last4||'').trim()}`; }
+function buildDataAnomalies(){
+  const issues=[];
+  const records=allRecords||[];
+
+  // 1. 同手機對應多個身分
+  const phoneGroups={};
+  records.forEach(r=>{
+    const phone=normalizePhone(r.phone); if(!phone) return;
+    if(!phoneGroups[phone]) phoneGroups[phone]=[];
+    phoneGroups[phone].push(r);
+  });
+  Object.entries(phoneGroups).forEach(([phone,rows])=>{
+    const ids=[...new Set(rows.map(r=>String(r.id_last4||'').trim()).filter(Boolean))];
+    if(ids.length>1) issues.push({
+      type:'同手機多身分', severity:'warn', count:rows.length,
+      detail:`手機 ${phone} 對應 ${ids.length} 組身分證後4碼，請確認是否為代填或資料異常。`,
+      target:'records'
+    });
+  });
+
+  // 2. 同一人重複登記相同場次
+  const exactGroups={};
+  records.forEach(r=>{
+    const pk=personKey(r); if(pk==='|') return;
+    const k=`${pk}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
+    if(!exactGroups[k]) exactGroups[k]=[]; exactGroups[k].push(r);
+  });
+  Object.values(exactGroups).forEach(rows=>{
+    if(rows.length>1){ const r=rows[0]; issues.push({
+      type:'重複場次登記', severity:'error', count:rows.length,
+      detail:`${r.name||'申請人'}於 ${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'} 出現 ${rows.length} 筆相同場次登記。`,
+      target:'records'
+    }); }
+  });
+
+  // 3. 羽球／籃球同一人超過1個時段（依目前登記規則）
+  const limitedGroups={};
+  records.filter(r=>['羽球','籃球'].includes(r.venue_type)).forEach(r=>{
+    const pk=personKey(r); if(pk==='|') return;
+    const k=`${pk}|${r.venue_type}`;
+    if(!limitedGroups[k]) limitedGroups[k]=[]; limitedGroups[k].push(r);
+  });
+  Object.values(limitedGroups).forEach(rows=>{
+    const slots=new Set(rows.map(r=>`${r.day_of_week||''}|${r.time_slot||''}`));
+    if(slots.size>1){ const r=rows[0]; issues.push({
+      type:'超過申請上限', severity:'error', count:slots.size,
+      detail:`${r.name||'申請人'}於${r.venue_type}登記 ${slots.size} 個時段，超過目前每人限1時段規則。`,
+      target:'records'
+    }); }
+  });
+
+  // 4. 中籤數超過該場次設定名額
+  const stageGroups={};
+  records.forEach(r=>{
+    const k=`${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
+    if(!stageGroups[k]) stageGroups[k]=[]; stageGroups[k].push(r);
+  });
+  Object.values(stageGroups).forEach(rows=>{
+    const r=rows[0]; const winners=rows.filter(x=>x.lottery_status==='中籤').length;
+    const start=getStageStartTime(r.time_slot);
+    const cap=Number(capacitySettings[settingKey(r.venue_type,r.day_of_week,start)] ?? capacityMap[r.venue_type] ?? 0);
+    if(cap>=0 && winners>cap) issues.push({
+      type:'中籤人數超過名額', severity:'error', count:winners-cap,
+      detail:`${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'} 中籤 ${winners} 人，超過設定名額 ${cap} 人。`,
+      target:'lottery'
+    });
+
+    // 5. 已有部分公告，但仍存在未抽籤資料
+    const published=rows.filter(x=>x.result_published).length;
+    const noResult=rows.filter(x=>!String(x.lottery_status||'').trim()).length;
+    if(published>0 && noResult>0) issues.push({
+      type:'公布資料不完整', severity:'error', count:noResult,
+      detail:`${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'} 已有結果公布，但仍有 ${noResult} 筆未設定抽籤結果。`,
+      target:'records'
+    });
+
+    // 6. 候補順位重複或跳號
+    const nums=rows.map(x=>String(x.lottery_status||'').match(/^候補(\d+)$/)).filter(Boolean).map(m=>Number(m[1])).sort((a,b)=>a-b);
+    if(nums.length){
+      const dup=nums.some((n,i)=>i>0 && n===nums[i-1]);
+      const gap=nums.some((n,i)=>n!==i+1);
+      if(dup||gap) issues.push({
+        type:'候補順位異常', severity:'warn', count:nums.length,
+        detail:`${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'} 候補順位${dup?'有重複':''}${dup&&gap?'且':''}${gap?'不連續':''}，請確認。`,
+        target:'lottery'
+      });
+    }
+  });
+  return issues;
+}
+function renderAnomalyCenter(issues){
+  if(!issues.length) return `<div class="panel" id="anomalyCenter"><h3 style="margin-bottom:6px;">🛡️ 異常檢核中心</h3><div class="msg ok">目前未發現需人工確認的資料異常。</div></div>`;
+  const grouped={}; issues.forEach(x=>{ if(!grouped[x.type]) grouped[x.type]=[]; grouped[x.type].push(x); });
+  const rows=Object.entries(grouped).map(([type,list])=>{
+    const error=list.some(x=>x.severity==='error'); const total=list.reduce((s,x)=>s+(x.count||1),0);
+    const examples=list.slice(0,3).map(x=>`<div class="small" style="margin-top:4px;">• ${escapeHtml(x.detail)}</div>`).join('');
+    const more=list.length>3?`<div class="small" style="margin-top:4px;color:#64748b;">另有 ${list.length-3} 項，請進入相關功能確認。</div>`:'';
+    const target=list[0].target||'records';
+    return `<div style="border:1px solid ${error?'#fecaca':'#fde68a'};background:${error?'#fff7f7':'#fffbeb'};border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:minmax(160px,220px) 1fr auto;gap:14px;align-items:start;">
+      <div><div style="font-weight:900;color:${error?'#b91c1c':'#92400e'};">${error?'⚠️':'🔎'} ${escapeHtml(type)}</div><div class="small" style="margin-top:4px;">${list.length} 項異常／${total} 筆（或人次）</div></div>
+      <div>${examples}${more}</div>
+      <button class="btn btn-gray anomaly-go" data-target="${target}">前往查看</button>
+    </div>`;
+  }).join('');
+  return `<div class="panel" id="anomalyCenter"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;"><div><h3 style="margin:0 0 6px;">🛡️ 異常檢核中心</h3><div class="small">系統自動檢查可能的人工作業錯誤；僅提供提醒，不會自動刪除或修改資料。</div></div><span class="tag warn">${issues.length} 項待確認</span></div><div style="display:grid;gap:10px;">${rows}</div></div>`;
+}
+
+
 async function sha256(text){ const enc=new TextEncoder(); const buf=await crypto.subtle.digest('SHA-256', enc.encode(text)); return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
 function randomSalt(){ return crypto.getRandomValues(new Uint8Array(16)).reduce((s,b)=>s+b.toString(16).padStart(2,'0'),''); }
 async function makeHash(password, salt){ return sha256(`${salt}:${password}`); }
@@ -320,7 +433,8 @@ function renderDashboard(){
   const pendingLotteryStages=stages.filter(x=>x.pendingLottery>0);
   const pendingPublishStages=stages.filter(x=>x.pendingLottery===0 && x.published<x.total);
   const waitlistStages=stages.filter(x=>x.waitlist>0);
-  const suspicious=countSuspiciousPhones();
+  const anomalyIssues=buildDataAnomalies();
+  const suspicious=anomalyIssues.length;
 
   const priority={ '待處理抽籤':1, '待公布':2, '已公布／含候補':3, '完成':4 };
   const taskRows=stages
@@ -376,8 +490,10 @@ function renderDashboard(){
       <div class="stat"><div class="label">待處理抽籤場次</div><div class="num" style="color:#d97706">${pendingLotteryStages.length}</div><div class="small">尚有登記資料未設定抽籤結果</div></div>
       <div class="stat"><div class="label">待公布場次</div><div class="num" style="color:#2563eb">${pendingPublishStages.length}</div><div class="small">結果已完成、尚未對民眾公布</div></div>
       <div class="stat"><div class="label">含候補場次</div><div class="num" style="color:#7c3aed">${waitlistStages.length}</div><div class="small">已有候補順位，便於後續遞補管理</div></div>
-      <div class="stat"><div class="label">資料異常提醒</div><div class="num" style="color:#b45309">${suspicious}</div><div class="small">同手機對應多身分，建議人工確認</div></div>
+      <div class="stat" id="anomalySummaryCard" style="cursor:pointer;"><div class="label">資料異常檢核</div><div class="num" style="color:#b45309">${suspicious}</div><div class="small">重複登記、身分異常、名額及結果檢核</div></div>
     </div>
+
+    ${renderAnomalyCenter(anomalyIssues)}
 
     <div class="panel">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
@@ -404,6 +520,8 @@ function renderDashboard(){
   go('dashCapacityBtn','capacity'); go('dashRecordsBtn','records'); go('dashLotteryBtn','lottery');
   go('quickCapacity','capacity'); go('quickRecords','records'); go('quickLottery','lottery');
   const qp=document.getElementById('quickPublish'); if(qp) qp.onclick=()=>{ recordsActionTab='publish'; renderPage('records'); };
+  const anomalyCard=document.getElementById('anomalySummaryCard'); if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
+  document.querySelectorAll('.anomaly-go').forEach(b=>b.onclick=()=>{ const target=b.dataset.target||'records'; renderPage(target); });
   document.querySelectorAll('.dash-go-lottery').forEach(b=>b.onclick=()=>renderPage('lottery'));
   document.querySelectorAll('.dash-go-records').forEach(b=>b.onclick=()=>renderPage('records'));
 }
