@@ -175,6 +175,94 @@
   }
 </style>
 
+
+<style id="layered-admin-refresh">
+  :root{
+    --blue:#0b78ad;
+    --blue2:#075f8a;
+    --bg:#edf2f7;
+    --surface:#ffffff;
+    --surface-2:#f7f9fc;
+    --surface-3:#eef5f9;
+    --text:#172033;
+    --muted:#667085;
+    --border:#dbe3ea;
+    --softBlue:#eaf4f9;
+  }
+  body{background:var(--bg)!important;color:var(--text)!important}
+  .app{background:var(--bg)!important}
+  .sidebar{background:#f7f9fc!important;border-right:1px solid var(--border)!important;color:var(--text)!important}
+  .brand{background:transparent!important}
+  .nav button{background:transparent!important;border-radius:8px!important;border-left:3px solid transparent!important;color:#475569!important;padding:11px 12px!important}
+  .nav button:hover{background:#eef4f8!important;color:var(--blue)!important}
+  .nav button.active{background:#e7f1f7!important;color:var(--blue)!important;border-left-color:var(--blue)!important}
+  .topbar{background:#fff!important;border-bottom:1px solid var(--border)!important}
+  .content{background:var(--bg)!important}
+
+  /* Layered surfaces */
+  .panel{background:#fff!important;border:1px solid var(--border)!important;border-radius:14px!important;padding:18px!important}
+  .panel h3{color:var(--text)!important;display:flex!important;align-items:center!important;gap:10px!important;font-size:17px!important}
+  .panel h3:before{content:"";width:4px;height:18px;border-radius:4px;background:var(--blue);display:inline-block}
+  .stat{background:#fff!important;border:1px solid var(--border)!important;border-radius:14px!important;border-top:3px solid #cbd8e3!important;padding:16px 18px!important}
+  .stat .num{color:#0f172a!important}
+  .stat .label{color:#64748b!important}
+
+  /* Records: true tab navigation, not pill buttons */
+  .records-function-tabs{display:flex!important;gap:26px!important;align-items:flex-end!important;flex-wrap:wrap!important;margin:10px 0 0!important;padding:0 4px!important;border-bottom:1px solid #cfd9e2!important;background:transparent!important}
+  .records-function-tab{background:transparent!important;border:0!important;border-radius:0!important;color:#64748b!important;font-size:14px!important;font-weight:800!important;padding:11px 2px 10px!important;border-bottom:3px solid transparent!important;min-height:auto!important;box-shadow:none!important}
+  .records-function-tab:hover{background:transparent!important;color:var(--blue)!important}
+  .records-function-tab.active{background:transparent!important;color:var(--blue)!important;border-bottom-color:var(--blue)!important}
+  .records-function-panel{background:#f8fafc!important;border:1px solid var(--border)!important;border-top:0!important;border-radius:0 0 12px 12px!important;padding:16px!important}
+
+  /* Lottery: same tab language for consistency */
+  .lottery-workflow{display:flex!important;gap:26px!important;align-items:flex-end!important;margin:0 0 16px!important;padding:0 4px!important;border-bottom:1px solid #cfd9e2!important}
+  .lottery-workflow-tab{background:transparent!important;border:0!important;border-radius:0!important;color:#64748b!important;font-weight:800!important;padding:11px 2px 10px!important;border-bottom:3px solid transparent!important;min-height:auto!important;box-shadow:none!important}
+  .lottery-workflow-tab:hover{background:transparent!important;color:var(--blue)!important}
+  .lottery-workflow-tab.active{background:transparent!important;color:var(--blue)!important;border-bottom-color:var(--blue)!important}
+
+  /* Functional grouping */
+  .lottery-context{background:#eef5f9!important;border:1px solid #d7e5ed!important;border-radius:12px!important;padding:16px!important}
+  .lottery-action-card{background:#f8fafc!important;border:1px solid var(--border)!important;border-radius:12px!important;padding:16px!important}
+  .records-action-title,.lottery-step-title{color:#334155!important}
+  .records-action-row,.records-publish-main{gap:10px!important}
+
+  /* Controls */
+  input,select,textarea{background:#fff!important;border-color:#cfd8e3!important;border-radius:9px!important}
+  input:focus,select:focus,textarea:focus{border-color:var(--blue)!important;box-shadow:0 0 0 3px rgba(11,120,173,.10)!important}
+  .btn{border-radius:9px!important;font-weight:800!important}
+  .btn-primary,.btn-green,.btn-orange,.btn-danger{background:var(--blue)!important;border-color:var(--blue)!important;color:#fff!important}
+  .btn-primary:hover,.btn-green:hover,.btn-orange:hover,.btn-danger:hover{background:var(--blue2)!important;border-color:var(--blue2)!important}
+  .btn-gray{background:#fff!important;color:#334155!important;border:1px solid #cbd5e1!important}
+  .btn-gray:hover{background:#f4f7fa!important;color:#0f172a!important}
+
+  /* Messages and emphasis: quiet, not color blocks */
+  .msg.info,.alert{background:#f5f8fa!important;color:#475569!important;border:1px solid #dbe3ea!important;border-left:3px solid #94a3b8!important}
+  .msg.ok{background:#f5faf7!important;color:#166534!important;border:1px solid #d9eadf!important}
+  .msg.error{background:#fff7f7!important;color:#991b1b!important;border:1px solid #f2d2d2!important}
+
+  /* Tables */
+  .table-wrap{background:#fff!important;border:1px solid var(--border)!important;border-radius:12px!important}
+  th{background:#eef3f7!important;color:#475569!important;font-weight:800!important}
+  td{background:#fff!important}
+  tr:hover td{background:#f8fafc!important}
+
+  /* Tags retain meaning but stay muted */
+  .tag.blue{background:#eaf4f9!important;color:#075f8a!important}
+  .tag.green{background:#eef7f0!important;color:#2f6d45!important}
+  .tag.warn{background:#fbf4e8!important;color:#8a5b18!important}
+  .tag.gray{background:#eef1f4!important;color:#53606e!important}
+
+  /* Modal / cards */
+  .modal-card,.account-row{border-radius:12px!important}
+  .modal-card{background:#fff!important}
+  .cards{gap:14px!important}
+  .pager{color:#64748b!important}
+
+  @media (max-width:900px){
+    .records-function-tabs,.lottery-workflow{gap:16px!important}
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
