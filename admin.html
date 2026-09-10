@@ -998,6 +998,56 @@
   }
 </style>
 
+
+<style id="stage-list-day-tabs">
+  .stage-day-tabs{
+    display:flex;
+    align-items:flex-end;
+    gap:22px;
+    flex-wrap:wrap;
+    margin:4px 0 10px;
+    padding:0 2px;
+    border-bottom:1px solid #d7e1eb;
+  }
+  .stage-day-tab{
+    appearance:none!important;
+    border:0!important;
+    border-bottom:3px solid transparent!important;
+    border-radius:0!important;
+    background:transparent!important;
+    box-shadow:none!important;
+    min-height:auto!important;
+    padding:10px 0 9px!important;
+    margin:0 0 -1px!important;
+    color:#64748b!important;
+    font-size:13.5px!important;
+    font-weight:800!important;
+    cursor:pointer!important;
+  }
+  .stage-day-tab:hover{
+    color:var(--blue)!important;
+    background:transparent!important;
+  }
+  .stage-day-tab.active{
+    color:var(--blue)!important;
+    border-bottom-color:var(--blue)!important;
+    background:transparent!important;
+  }
+  .stage-day-tab span{
+    margin-left:3px;
+    font-size:11px;
+    font-weight:800;
+    color:#94a3b8;
+  }
+  .stage-day-tab.active span{color:var(--blue)!important;}
+  .stage-tab-summary{
+    margin:0 0 10px;
+    font-size:12px;
+    font-weight:800;
+    color:#64748b;
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -3051,12 +3101,32 @@ function renderLotteryPage(){
       return venueSortValue(a.venue_type)-venueSortValue(b.venue_type) || daySortValue(a.day_of_week)-daySortValue(b.day_of_week) || timeSortValue(a.time_slot)-timeSortValue(b.time_slot) || statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status) || String(a.registered_at||'').localeCompare(String(b.registered_at||''));
     });
 
+    const stageDays=[...new Set(stages.map(s=>s.day).filter(Boolean))]
+      .sort((a,b)=>daySortValue(a)-daySortValue(b));
+
+    if(day && stageDays.includes(day)){
+      window.stageListDayTab=day;
+    }else if(!window.stageListDayTab || !stageDays.includes(window.stageListDayTab)){
+      window.stageListDayTab=stageDays[0] || '';
+    }
+
+    const activeStageDay=window.stageListDayTab || '';
+    const visibleStages=activeStageDay ? stages.filter(s=>s.day===activeStageDay) : stages;
+
     table.innerHTML=`
       <div class="panel" style="background:#f8fafc;">
         <h3>場次處理清單</h3>
-        <div class="small" style="margin-bottom:10px;">以場地、球類、星期及時段彙整，直接查看登記人數、正取名額與目前抽籤狀態。</div>
+        ${stageDays.length?`
+          <div class="stage-day-tabs" role="tablist" aria-label="場次星期">
+            ${stageDays.map(d=>{
+              const count=stages.filter(s=>s.day===d).length;
+              return `<button type="button" class="stage-day-tab ${activeStageDay===d?'active':''}" data-stage-day="${escapeHtml(d)}">${escapeHtml(d)} <span>${count}</span></button>`;
+            }).join('')}
+          </div>
+        `:''}
+        <div class="stage-tab-summary">${escapeHtml(activeStageDay || '目前條件')}｜${visibleStages.length} 個場次</div>
         <div class="table-wrap"><table><thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記人數</th><th>正取名額</th><th>抽籤狀態</th><th>異常</th></tr></thead><tbody>
-          ${stages.map(s=>`<tr>
+          ${visibleStages.map(s=>`<tr>
             <td>${escapeHtml(locationLabel(s.location))}</td>
             <td><strong>${escapeHtml(s.venue)}</strong></td>
             <td>${escapeHtml(s.day)}</td>
@@ -3074,6 +3144,13 @@ function renderLotteryPage(){
           ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(locationLabel(recordLocation(r)))}</td><td>${escapeHtml(r.venue_type||'')}</td><td>${escapeHtml(r.day_of_week||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
         </tbody></table></div>
       </div>`;
+
+    document.querySelectorAll('.stage-day-tab').forEach(btn=>{
+      btn.onclick=()=>{
+        window.stageListDayTab=btn.dataset.stageDay || '';
+        renderDayCheck();
+      };
+    });
   }
 
   function getSelectedRecords(){
