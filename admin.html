@@ -451,6 +451,10 @@
   }
 </style>
 
+<style id="location-filter-layout-fix">
+.toolbar{grid-template-columns:minmax(230px,1.4fr) repeat(5,minmax(130px,1fr)) auto!important;}
+@media(max-width:1250px){.toolbar{grid-template-columns:repeat(3,minmax(180px,1fr))!important;}}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -521,7 +525,7 @@ let allRecords = [];
 let allLogs = [];
 let capacitySettings = {};
 let systemSettings = {};
-let recordState = { q:'', venue:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
+let recordState = { q:'', location:'', venue:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let recordsActionTab = 'filter';
 let selectedRecordIds = new Set();
 let currentPage = 'dashboard';
@@ -533,6 +537,7 @@ const capacityMap = {'羽球':3,'籃球':1,'B1桌球':5,'B2桌球':4};
 function showMsg(el, text, type='error'){ document.getElementById(el).innerHTML = `<div class="msg ${type}">${text}</div>`; }
 function roleName(role){ return role === 'super_admin' ? '超級管理員' : '一般管理員'; }
 function normalizePhone(v){ return String(v||'').replace(/\D/g,'').replace(/^886/,'0'); }
+function recordLocation(r){ return String(r?.location_name||'').trim() || '北投會館'; }
 function getTimeOptionsForVenue(venue){ return venue && venue.includes('桌球') ? ['09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00'] : ['06:00','08:00','10:00','12:00','14:00','16:00','18:00','20:00']; }
 function formatTimeSlotDisplay(startTime, isTableTennis){ const h=parseInt(startTime.split(':')[0],10); return `${startTime}-${String(h+1).padStart(2,'0')}:59`; }
 function settingKey(venue, day, timeSlot){ return `${venue}|${day}|${timeSlot}`; }
@@ -1052,12 +1057,13 @@ function bindSortHeaders(){
 function getFilteredRecords(){
   const q=recordState.q.trim().toLowerCase();
   const filteredRecords = allRecords.filter(r=>{
+    if(recordState.location && recordLocation(r)!==recordState.location) return false;
     if(recordState.venue && r.venue_type!==recordState.venue) return false;
     if(recordState.day && r.day_of_week!==recordState.day) return false;
     if(recordState.time && r.time_slot!==recordState.time) return false;
     if(recordState.anomaly && !getRecordAnomalyTypes(r).includes(recordState.anomaly)) return false;
     if(q){
-      const hay=`${r.name||''} ${r.phone||''} ${r.id_last4||''} ${r.serial_number||''} ${r.venue_type||''} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
+      const hay=`${r.name||''} ${r.phone||''} ${r.id_last4||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -1066,6 +1072,8 @@ function getFilteredRecords(){
 }
 function renderRecordsPage(){
   selectedRecordIds.clear();
+  const locations=[...new Set(allRecords.map(recordLocation).filter(Boolean))];
+  if(!locations.includes('北投會館')) locations.unshift('北投會館');
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
   document.getElementById('content').innerHTML=`${renderCards(stats())}
@@ -1082,7 +1090,8 @@ function renderRecordsPage(){
         <div class="records-action-title">資料篩選</div>
         <div class="toolbar" style="margin-bottom:0">
           <input id="searchQ" placeholder="搜尋姓名／手機／後4碼／序號" value="${escapeHtml(recordState.q)}">
-          <select id="filterVenue"><option value="">全部類型</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
+          <select id="filterLocation"><option value="">全部場地</option>${locations.map(v=>`<option ${recordState.location===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
+          <select id="filterVenue"><option value="">全部球類</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
           <select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
           <select id="filterAnomaly">
@@ -1092,7 +1101,7 @@ function renderRecordsPage(){
           <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
           <button id="applyFilterBtn" class="btn btn-primary">套用篩選</button>
         </div>
-        <div class="section-note">可依姓名、手機末四碼、登記序號、球場、星期、時段及異常狀態快速查找資料。</div>
+        <div class="section-note">可依姓名、手機末四碼、登記序號、場地、球類、星期、時段及異常狀態快速查找資料。</div>
       </div>
 
       <div id="recordsPanelBatch" class="records-function-panel ${recordsActionTab==='batch'?'':'hidden'}">
@@ -1141,6 +1150,7 @@ function renderRecordsPage(){
   document.getElementById('perPage').value=String(recordState.perPage);
   const applyRecordFilters=()=>{
     recordState.q=document.getElementById('searchQ').value;
+    recordState.location=document.getElementById('filterLocation').value;
     recordState.venue=document.getElementById('filterVenue').value;
     recordState.day=document.getElementById('filterDay').value;
     recordState.time=document.getElementById('filterTime').value;
@@ -1178,7 +1188,7 @@ function renderRecordsStageHint(){
   }
   const published=filtered.filter(r=>r.result_published).length;
   const hasResult=filtered.filter(r=>r.lottery_status).length;
-  box.innerHTML=`<div class="msg info"><strong>目前場次：</strong>${escapeHtml(recordState.venue)}｜${escapeHtml(recordState.day)}｜${escapeHtml(recordState.time)}　共 ${filtered.length} 筆，已設定抽籤狀態 ${hasResult} 筆，已公布 ${published} 筆。</div>`;
+  box.innerHTML=`<div class="msg info"><strong>目前場次：</strong>${recordState.location?escapeHtml(recordState.location)+'｜':''}${escapeHtml(recordState.venue)}｜${escapeHtml(recordState.day)}｜${escapeHtml(recordState.time)}　共 ${filtered.length} 筆，已設定抽籤狀態 ${hasResult} 筆，已公布 ${published} 筆。</div>`;
 }
 
 async function publishCurrentFilteredStage(published){
@@ -1226,7 +1236,7 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>公布</th><th>異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>${sortHeader('類型','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div><div class="table-wrap"><table><thead><tr><th style="text-align:center;width:44px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th>項次</th><th>${sortHeader('抽籤狀態','lottery_status')}</th><th>公布</th><th>異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th>${sortHeader('序號','serial_number')}</th><th>${sortHeader('姓名','name')}</th><th>${sortHeader('手機','phone')}</th><th>${sortHeader('身分證後4碼','id_last4')}</th><th>場地</th><th>${sortHeader('球類','venue_type')}</th><th>${sortHeader('星期','day_of_week')}</th><th>${sortHeader('時段','time_slot')}</th><th>時數</th><th>${sortHeader('登記時間','registered_at')}</th><th>操作</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>
@@ -1240,7 +1250,7 @@ function renderRecordsTable(){
       </select>
     </td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
+    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(recordLocation(r))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td><td><button class="btn btn-danger" data-del="${r.id}">刪除</button></td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
@@ -1684,26 +1694,37 @@ async function saveSetting(key, value){
 }
 
 function renderLotteryPage(){
+  const locations=[...new Set(allRecords.map(recordLocation).filter(Boolean))];
+  if(!locations.includes('北投會館')) locations.unshift('北投會館');
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
 
   document.getElementById('content').innerHTML=`
     <div class="panel">
       <h3>抽籤作業中心</h3>
-      <div class="small" style="margin-bottom:14px;">依實際作業分成「名單匯出 → Excel 抽籤 → 結果匯入 → 確認公布」三個階段，請先選擇要處理的球類與星期。</div>
+      <div class="small" style="margin-bottom:14px;">依實際作業分成「名單匯出 → Excel 抽籤 → 結果匯入 → 確認公布」三個階段。可依場地、球類、星期、時段單獨或組合篩選資料。</div>
 
       <div class="lottery-context">
-        <div class="lottery-context-grid">
+        <div class="lottery-context-grid" style="grid-template-columns:repeat(4,minmax(150px,1fr)) auto;">
           <div>
-            <label class="small" style="font-weight:900;color:#334155;">運動類型</label>
-            <select id="dayCheckVenue"><option value="">請選擇類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
+            <label class="small" style="font-weight:900;color:#334155;">場地</label>
+            <select id="dayCheckLocation">${locations.map(v=>`<option value="${escapeHtml(v)}" ${v==='北投會館'?'selected':''}>${escapeHtml(v)}</option>`).join('')}</select>
+          </div>
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">球類</label>
+            <select id="dayCheckVenue"><option value="">全部球類</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
           </div>
           <div>
             <label class="small" style="font-weight:900;color:#334155;">星期</label>
-            <select id="dayCheckDay"><option value="">請選擇星期</option>${days.map(d=>`<option>${d}</option>`).join('')}</select>
+            <select id="dayCheckDay"><option value="">全部星期</option>${days.map(d=>`<option>${d}</option>`).join('')}</select>
           </div>
-          <div><button id="refreshLotteryContext" class="btn btn-gray">更新場次資料</button></div>
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">時段</label>
+            <select id="dayCheckTime"><option value="">全部時段</option>${times.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
+          </div>
+          <div><button id="refreshLotteryContext" class="btn btn-gray">套用條件</button></div>
         </div>
+        <div class="small" style="margin-top:10px;">未選擇的條件視為全部；例如只選「球類」即可匯出該球類全部登記資料。</div>
       </div>
 
       <div class="lottery-workflow">
@@ -1715,7 +1736,7 @@ function renderLotteryPage(){
       <div id="dayCheckPanel">
         <div class="lottery-action-card">
           <div class="lottery-step-title">抽籤名單</div>
-          <div class="lottery-step-desc">確認各時段登記情形後，匯出目前所選球類與星期的登記清單，於 Excel 完成電子化抽籤。</div>
+          <div class="lottery-step-desc">依目前篩選條件叫出登記清單並匯出，於 Excel 完成電子化抽籤；可只選一項條件，也可組合多項條件。</div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button id="exportDayCheckBtn" class="btn btn-green">匯出抽籤名單</button>
           </div>
@@ -1883,17 +1904,18 @@ function renderLotteryPage(){
 
   function renderImportSummary(){
     const box=document.getElementById('importResultSummary'); if(!box) return;
-    const {venue,day,records}=getDayCheckRecords();
-    if(!venue || !day){ box.innerHTML='<div class="msg info">請先在上方選擇「運動類型」與「星期」。</div>'; return; }
+    const {location,venue,day,time,records}=getDayCheckRecords();
+    if(!records.length){ box.innerHTML='<div class="msg info">目前條件沒有登記資料，請調整上方篩選條件。</div>'; return; }
     const withResult=records.filter(r=>String(r.lottery_status||'').trim()).length;
     const locked=records.filter(r=>r.lottery_locked).length;
-    box.innerHTML=`<div class="msg info">目前 ${escapeHtml(venue)}｜${escapeHtml(day)} 共 ${records.length} 筆登記；已有 ${withResult} 筆結果、${locked} 筆已鎖定。</div>`;
+    const label=[location,venue,day,time].filter(Boolean).map(escapeHtml).join('｜') || '全部資料';
+    box.innerHTML=`<div class="msg info">目前 ${label} 共 ${records.length} 筆登記；已有 ${withResult} 筆結果、${locked} 筆已鎖定。</div>`;
   }
 
   function renderPublishSummary(){
     const box=document.getElementById('publishResultSummary'); if(!box) return;
-    const {venue,day,records}=getDayCheckRecords();
-    if(!venue || !day){ box.innerHTML='<div class="msg info">請先在上方選擇「運動類型」與「星期」。</div>'; return; }
+    const {location,venue,day,time,records}=getDayCheckRecords();
+    if(!records.length){ box.innerHTML='<div class="msg info">目前條件沒有登記資料，請調整上方篩選條件。</div>'; return; }
     const counts={winner:0,wait:0,lose:0,notYet:0,published:0};
     records.forEach(r=>{ const s=String(r.lottery_status||''); if(s==='中籤') counts.winner++; else if(s.startsWith('候補')) counts.wait++; else if(s==='未中籤') counts.lose++; else counts.notYet++; if(r.result_published) counts.published++; });
     box.innerHTML=`<div class="cards"><div class="stat"><div class="label">中籤</div><div class="num" style="color:#16a34a">${counts.winner}</div></div><div class="stat"><div class="label">候補</div><div class="num" style="color:#d97706">${counts.wait}</div></div><div class="stat"><div class="label">未中籤</div><div class="num" style="color:#64748b">${counts.lose}</div></div><div class="stat"><div class="label">未抽籤／已公布</div><div class="num">${counts.notYet} / ${counts.published}</div></div></div>`;
@@ -1905,10 +1927,9 @@ function renderLotteryPage(){
   document.getElementById('singleLotteryTab').onclick=()=>switchLotteryTab('single');
   document.getElementById('batchLotteryTab').onclick=()=>switchLotteryTab('batch');
   document.getElementById('refreshLotteryContext').onclick=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); };
-  document.getElementById('goPublishRecordsBtn').onclick=()=>{ const {venue,day}=getDayCheckRecords(); recordState.venue=venue||''; recordState.day=day||''; recordState.time=''; recordState.page=1; recordsActionTab='publish'; renderPage('records'); };
-  document.getElementById('goRecordsCheckBtn').onclick=()=>{ const {venue,day}=getDayCheckRecords(); recordState.venue=venue||''; recordState.day=day||''; recordState.time=''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); };
-  document.getElementById('dayCheckVenue').onchange=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); };
-  document.getElementById('dayCheckDay').onchange=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); };
+  document.getElementById('goPublishRecordsBtn').onclick=()=>{ const {location,venue,day,time}=getDayCheckRecords(); recordState.location=location||''; recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='publish'; renderPage('records'); };
+  document.getElementById('goRecordsCheckBtn').onclick=()=>{ const {location,venue,day,time}=getDayCheckRecords(); recordState.location=location||''; recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); };
+  ['dayCheckLocation','dayCheckVenue','dayCheckDay','dayCheckTime'].forEach(id=>{ const el=document.getElementById(id); if(el) el.onchange=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); }; });
   document.getElementById('exportDayCheckBtn').onclick=()=>{
     const {records}=getDayCheckRecords();
     if(records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
@@ -2083,19 +2104,27 @@ function renderLotteryPage(){
 
 
   function getDayCheckRecords(){
+    const location=document.getElementById('dayCheckLocation')?.value || '';
     const venue=document.getElementById('dayCheckVenue')?.value || '';
     const day=document.getElementById('dayCheckDay')?.value || '';
-    const records=(venue && day) ? allRecords.filter(r=>r.venue_type===venue && r.day_of_week===day) : [];
-    return {venue,day,records};
+    const time=document.getElementById('dayCheckTime')?.value || '';
+    const records=allRecords.filter(r=>{
+      if(location && recordLocation(r)!==location) return false;
+      if(venue && r.venue_type!==venue) return false;
+      if(day && r.day_of_week!==day) return false;
+      if(time && r.time_slot!==time) return false;
+      return true;
+    });
+    return {location,venue,day,time,records};
   }
 
   function renderDayCheck(){
     const box=document.getElementById('dayCheckSummary');
     const table=document.getElementById('dayCheckTable');
     if(!box || !table) return;
-    const {venue,day,records}=getDayCheckRecords();
-    if(!venue || !day){
-      box.innerHTML='<div class="msg info">請選擇「運動類型」與「星期」，即可一次檢查該日所有時段。</div>';
+    const {location,venue,day,time,records}=getDayCheckRecords();
+    if(!records.length){
+      box.innerHTML='<div class="msg info">目前條件沒有登記資料；可調整場地、球類、星期或時段後再試。</div>';
       table.innerHTML='';
       return;
     }
@@ -2115,7 +2144,8 @@ function renderLotteryPage(){
       else if(s==='未中籤') byTime[t].lose++;
       else byTime[t].notYet++;
     });
-    box.innerHTML=`<div class="cards"><div class="stat"><div class="label">${escapeHtml(venue)}｜${escapeHtml(day)}</div><div class="num">${records.length}</div><div class="small">登記筆數</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${people}</div></div><div class="stat"><div class="label">已設定抽籤狀態</div><div class="num" style="color:var(--orange)">${resultCount}</div></div><div class="stat"><div class="label">已公布</div><div class="num" style="color:#166534">${publishedCount}</div></div></div>`;
+    const contextLabel=[location,venue,day,time].filter(Boolean).map(escapeHtml).join('｜') || '全部資料';
+    box.innerHTML=`<div class="cards"><div class="stat"><div class="label">${contextLabel}</div><div class="num">${records.length}</div><div class="small">登記筆數</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${people}</div></div><div class="stat"><div class="label">已設定抽籤狀態</div><div class="num" style="color:var(--orange)">${resultCount}</div></div><div class="stat"><div class="label">已公布</div><div class="num" style="color:#166534">${publishedCount}</div></div></div>`;
     const timeRows=Object.entries(byTime).sort((a,b)=>timeSortValue(a[0])-timeSortValue(b[0]));
     const rows=[...records].sort((a,b)=>timeSortValue(a.time_slot)-timeSortValue(b.time_slot) || statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status) || String(a.registered_at||'').localeCompare(String(b.registered_at||'')));
     table.innerHTML=`
@@ -2126,9 +2156,9 @@ function renderLotteryPage(){
         </tbody></table></div>
       </div>
       <div class="panel">
-        <h3>本日登記清單</h3>
-        <div class="table-wrap"><table><thead><tr><th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>後4碼</th><th>時段</th><th>登記時間</th></tr></thead><tbody>
-          ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
+        <h3>篩選結果清單</h3>
+        <div class="table-wrap"><table><thead><tr><th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>後4碼</th><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記時間</th></tr></thead><tbody>
+          ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(recordLocation(r))}</td><td>${escapeHtml(r.venue_type||'')}</td><td>${escapeHtml(r.day_of_week||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
         </tbody></table></div>
       </div>`;
   }
