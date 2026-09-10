@@ -613,6 +613,48 @@
   .record-status-savebar.hidden{display:none!important;}
 </style>
 
+
+<style id="records-unified-actionbar">
+  .records-list-actionbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    margin:0 0 12px;
+    padding:10px 12px;
+    background:#f5f8fc;
+    border:1px solid #d8e2ec;
+    border-radius:12px;
+  }
+  .records-list-action-left{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  #listBatchStatus{
+    width:150px!important;
+    min-width:150px!important;
+    height:38px!important;
+    padding:5px 28px 5px 10px!important;
+    font-size:13px!important;
+    border:1px solid #cfd9e4!important;
+    border-radius:10px!important;
+    background:#fff!important;
+  }
+  .records-list-actionbar .btn{
+    min-height:38px!important;
+    padding:8px 13px!important;
+    font-size:13px!important;
+  }
+  .records-list-actionbar button:disabled,
+  .records-list-actionbar select:disabled{
+    opacity:.45!important;
+    cursor:not-allowed!important;
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1273,14 +1315,7 @@ function renderRecordsPage(){
 
       <div id="recordsPanelBatch" class="records-function-panel ${recordsActionTab==='batch'?'':'hidden'}">
         <div class="records-action-title">批次處理</div>
-        <div class="records-action-row">
-          <select id="batchLotteryStatus" title="先勾選資料，再選擇要統一變更的抽籤狀態">
-            <option value="">選擇抽籤狀態</option><option value="中籤">中籤</option><option value="候補1">候補1</option><option value="候補2">候補2</option><option value="候補3">候補3</option><option value="未中籤">未中籤</option><option value="__clear__">未抽籤</option>
-          </select>
-          <button id="batchLotteryStatusBtn" class="btn btn-primary">儲存批次變更</button>
-          <button id="batchDeleteBtn" class="btn btn-gray">刪除勾選資料</button>
-        </div>
-        <div class="section-note">先勾選清單資料，再一次變更狀態或刪除。</div>
+        <div class="section-note" style="margin-top:0;">批次操作已固定在登記清單上方。先勾選資料，即可一次變更狀態、刪除，最後統一儲存狀態變更。</div>
       </div>
 
       <div id="recordsPanelPublish" class="records-function-panel ${recordsActionTab==='publish'?'':'hidden'}">
@@ -1327,13 +1362,11 @@ function renderRecordsPage(){
   document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
   document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
   document.getElementById('perPage').addEventListener('change',applyRecordFilters);
-  document.getElementById('batchLotteryStatusBtn').onclick=batchUpdateSelectedLotteryStatus;
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
   document.getElementById('publishCurrentStageBtn').onclick=()=>publishCurrentFilteredStage(true);
   document.getElementById('unpublishCurrentStageBtn').onclick=()=>publishCurrentFilteredStage(false);
   document.getElementById('publishVenueAllWeekBtn').onclick=()=>publishCurrentVenueAllWeek(true);
   document.getElementById('unpublishVenueAllWeekBtn').onclick=()=>publishCurrentVenueAllWeek(false);
-  document.getElementById('batchDeleteBtn').onclick=batchDeleteSelectedRecords;
   const moreBtn=document.getElementById('morePublishActionsBtn');
   const moreMenu=document.getElementById('morePublishActionsMenu');
   moreBtn.onclick=(e)=>{e.stopPropagation();moreMenu.classList.toggle('hidden');};
@@ -1436,6 +1469,34 @@ function recordStatusSelect(record){
   </select>`;
 }
 
+function stageSelectedRecordStatus(){
+  const ids=[...selectedRecordIds].map(String);
+  if(ids.length===0){ alert('請先勾選要變更狀態的資料'); return; }
+
+  const select=document.getElementById('listBatchStatus');
+  const status=select?.value ?? '';
+  if(status==='__none__' || !select){ alert('請先選擇要套用的抽籤狀態'); return; }
+
+  const selectedRecords=allRecords.filter(r=>ids.includes(String(r.id)));
+  const published=selectedRecords.filter(r=>r.result_published);
+  if(published.length){
+    alert(`已勾選資料中有 ${published.length} 筆已公布，請先取消公布後再修改狀態。`);
+    return;
+  }
+
+  ids.forEach(id=>{
+    const record=allRecords.find(r=>String(r.id)===id);
+    if(!record) return;
+    const original=String(record.lottery_status||'');
+    const next=status==='__clear__' ? '' : status;
+    if(next===original) pendingRecordStatusChanges.delete(id);
+    else pendingRecordStatusChanges.set(id,next);
+  });
+
+  if(select) select.value='__none__';
+  renderRecordsTable();
+}
+
 async function savePendingRecordStatusChanges(){
   const changes=[...pendingRecordStatusChanges.entries()];
   if(changes.length===0){ alert('目前沒有尚未儲存的狀態變更'); return; }
@@ -1498,10 +1559,24 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span style="color:#991b1b;font-weight:800;">已勾選 ${selectedRecordIds.size} 筆</span></div>
-  <div class="record-status-savebar ${pendingRecordStatusChanges.size?'':'hidden'}" id="recordStatusSavebar">
-    <span>已修改 <strong id="pendingStatusCount">${pendingRecordStatusChanges.size}</strong> 筆狀態，尚未儲存</span>
-    <button id="savePendingRecordStatusBtn" class="btn btn-primary">儲存狀態變更</button>
+  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span>已勾選 <strong>${selectedRecordIds.size}</strong> 筆｜已修改 <strong>${pendingRecordStatusChanges.size}</strong> 筆</span></div>
+  <div class="records-list-actionbar">
+    <div class="records-list-action-left">
+      <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
+        <option value="__none__">批次變更狀態</option>
+        <option value="中籤">中籤</option>
+        <option value="候補1">候補1</option>
+        <option value="候補2">候補2</option>
+        <option value="候補3">候補3</option>
+        <option value="未中籤">未中籤</option>
+        <option value="__clear__">未抽籤</option>
+      </select>
+      <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>套用至勾選</button>
+      <button id="deleteSelectedFromListBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>刪除勾選資料</button>
+    </div>
+    <button id="savePendingRecordStatusBtn" class="btn btn-primary" ${pendingRecordStatusChanges.size?'':'disabled'}>
+      儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
+    </button>
   </div>
   <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('手機','phone')}</th><th style="width:72px;line-height:1.25;">${sortHeader('末4碼','id_last4')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
@@ -1532,6 +1607,12 @@ function renderRecordsTable(){
       renderRecordsTable();
     };
   });
+
+  const applySelectedStatusBtn=document.getElementById('applySelectedStatusBtn');
+  if(applySelectedStatusBtn) applySelectedStatusBtn.onclick=stageSelectedRecordStatus;
+
+  const deleteSelectedFromListBtn=document.getElementById('deleteSelectedFromListBtn');
+  if(deleteSelectedFromListBtn) deleteSelectedFromListBtn.onclick=batchDeleteSelectedRecords;
 
   const saveStatusBtn=document.getElementById('savePendingRecordStatusBtn');
   if(saveStatusBtn) saveStatusBtn.onclick=savePendingRecordStatusChanges;
