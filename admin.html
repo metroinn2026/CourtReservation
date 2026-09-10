@@ -542,11 +542,12 @@ let allRecords = [];
 let allLogs = [];
 let capacitySettings = {};
 let systemSettings = {};
-let recordState = { q:'', location:'', venue:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
+let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let recordsActionTab = 'filter';
 let selectedRecordIds = new Set();
 let currentPage = 'dashboard';
 
+const DEFAULT_LOCATION = '北投會館';
 const venueOrder = ['羽球','籃球','B1桌球','B2桌球'];
 const days = ['周一','周二','周三','周四','周五','周六','周日'];
 const capacityMap = {'羽球':3,'籃球':1,'B1桌球':5,'B2桌球':4};
@@ -554,13 +555,28 @@ const capacityMap = {'羽球':3,'籃球':1,'B1桌球':5,'B2桌球':4};
 function showMsg(el, text, type='error'){ document.getElementById(el).innerHTML = `<div class="msg ${type}">${text}</div>`; }
 function roleName(role){ return role === 'super_admin' ? '超級管理員' : '一般管理員'; }
 function normalizePhone(v){ return String(v||'').replace(/\D/g,'').replace(/^886/,'0'); }
-function recordLocation(r){ return String(r?.location_name||'').trim() || '北投會館'; }
+function recordLocation(r){ return String(r?.location_name||'').trim() || DEFAULT_LOCATION; }
 function getTimeOptionsForVenue(venue){ return venue && venue.includes('桌球') ? ['09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00'] : ['06:00','08:00','10:00','12:00','14:00','16:00','18:00','20:00']; }
 function formatTimeSlotDisplay(startTime, isTableTennis){ const h=parseInt(startTime.split(':')[0],10); return `${startTime}-${String(h+1).padStart(2,'0')}:59`; }
 function settingKey(venue, day, timeSlot){ return `${venue}|${day}|${timeSlot}`; }
-function countSlot(venue,day,startTime){ return allRecords.filter(r=>r.venue_type===venue && r.day_of_week===day && String(r.time_slot||'').includes(startTime)).length; }
+function countSlot(venue,day,startTime,location=DEFAULT_LOCATION){ return allRecords.filter(r=>recordLocation(r)===location && r.venue_type===venue && r.day_of_week===day && String(r.time_slot||'').includes(startTime)).length; }
 function recordHours(r){ const t=String(r.time_slot||''); const parts=t.split('-'); const sh=parseInt(parts[0],10); const eh=parseInt((parts[1]||'').split(':')[0],10); if(!isNaN(sh)&&!isNaN(eh)) return Math.max(1,eh-sh+1); return String(r.venue_type||'').includes('桌球') ? 1 : 2; }
 function escapeHtml(s){ return String(s??'').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+function getAdminLocations(){
+  const locations=[...new Set(allRecords.map(recordLocation).filter(Boolean))];
+  if(!locations.includes(DEFAULT_LOCATION)) locations.unshift(DEFAULT_LOCATION);
+  return locations;
+}
+function locationLabel(v){ return v===DEFAULT_LOCATION ? '北投' : String(v||''); }
+function renderLocationOptions(selected='', includeAll=false, allLabel='全部場地'){
+  const options=[];
+  if(includeAll) options.push(`<option value="">${escapeHtml(allLabel)}</option>`);
+  getAdminLocations().forEach(v=>{
+    options.push(`<option ${selected===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(locationLabel(v))}</option>`);
+  });
+  return options.join('');
+}
+function shouldLockLocationFilter(){ return getAdminLocations().length<=1; }
 function isSuspiciousPhone(record){
   const phone = normalizePhone(record.phone);
   if(!phone) return false;
@@ -582,7 +598,7 @@ function getRecordAnomalyTypes(record){
   // 重複場次登記
   const pk=personKey(record);
   if(pk!=='|'){
-    const same=records.filter(r=>personKey(r)===pk && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
+    const same=records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
     if(same.length>1) types.push('重複場次登記');
   }
 
@@ -592,7 +608,7 @@ function getRecordAnomalyTypes(record){
     if(slots.size>1) types.push('超過申請上限');
   }
 
-  const stage=records.filter(r=>r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
+  const stage=records.filter(r=>recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
   if(stage.length){
     const start=getStageStartTime(record.time_slot);
     const cap=Number(capacitySettings[settingKey(record.venue_type,record.day_of_week,start)] ?? capacityMap[record.venue_type] ?? 0);
@@ -647,7 +663,7 @@ function buildDataAnomalies(){
   const exactGroups={};
   records.forEach(r=>{
     const pk=personKey(r); if(pk==='|') return;
-    const k=`${pk}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
+    const k=`${pk}|${recordLocation(r)}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
     if(!exactGroups[k]) exactGroups[k]=[]; exactGroups[k].push(r);
   });
   Object.values(exactGroups).forEach(rows=>{
@@ -870,8 +886,9 @@ function renderPage(page){
 function renderDashboard(){
   const stageMap = {};
   allRecords.forEach(r=>{
-    const key = `${r.venue_type||'未分類'}|${r.day_of_week||'-'}|${r.time_slot||'-'}`;
-    if(!stageMap[key]) stageMap[key] = {key, venue:r.venue_type||'未分類', day:r.day_of_week||'-', time:r.time_slot||'-', records:[]};
+    const location=recordLocation(r);
+    const key = `${location}|${r.venue_type||'未分類'}|${r.day_of_week||'-'}|${r.time_slot||'-'}`;
+    if(!stageMap[key]) stageMap[key] = {key, location, venue:r.venue_type||'未分類', day:r.day_of_week||'-', time:r.time_slot||'-', records:[]};
     stageMap[key].records.push(r);
   });
 
@@ -979,7 +996,7 @@ function renderDashboard(){
   go('quickCapacity','capacity'); go('quickRecords','records'); go('quickLottery','lottery');
   const qp=document.getElementById('quickPublish'); if(qp) qp.onclick=()=>{ recordsActionTab='publish'; renderPage('records'); };
   const anomalyCard=document.getElementById('anomalySummaryCard'); if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
-  document.querySelectorAll('.anomaly-go').forEach(b=>b.onclick=()=>{ recordState.anomaly=b.dataset.anomaly||''; recordState.q=''; recordState.venue=''; recordState.day=''; recordState.time=''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); });
+  document.querySelectorAll('.anomaly-go').forEach(b=>b.onclick=()=>{ recordState.anomaly=b.dataset.anomaly||''; recordState.q=''; recordState.location=DEFAULT_LOCATION; recordState.venue=''; recordState.day=''; recordState.time=''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); });
   document.querySelectorAll('.dash-go-lottery').forEach(b=>b.onclick=()=>renderPage('lottery'));
   document.querySelectorAll('.dash-go-records').forEach(b=>b.onclick=()=>renderPage('records'));
 }
@@ -1089,8 +1106,8 @@ function getFilteredRecords(){
 }
 function renderRecordsPage(){
   selectedRecordIds.clear();
-  const locations=[...new Set(allRecords.map(recordLocation).filter(Boolean))];
-  if(!locations.includes('北投會館')) locations.unshift('北投會館');
+  const locations=getAdminLocations();
+  if(!recordState.location) recordState.location=DEFAULT_LOCATION;
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
   document.getElementById('content').innerHTML=`${renderCards(stats())}
@@ -1107,7 +1124,7 @@ function renderRecordsPage(){
         <div class="records-action-title">資料篩選</div>
         <div class="toolbar" style="margin-bottom:0">
           <input id="searchQ" placeholder="搜尋姓名／手機／後4碼／序號" value="${escapeHtml(recordState.q)}">
-          <select id="filterLocation"><option value="">全部場地</option>${locations.map(v=>`<option ${recordState.location===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
+          <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
           <select id="filterVenue"><option value="">全部球類</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
           <select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
@@ -1167,7 +1184,7 @@ function renderRecordsPage(){
   document.getElementById('perPage').value=String(recordState.perPage);
   const applyRecordFilters=()=>{
     recordState.q=document.getElementById('searchQ').value;
-    recordState.location=document.getElementById('filterLocation').value;
+    recordState.location=document.getElementById('filterLocation').value || DEFAULT_LOCATION;
     recordState.venue=document.getElementById('filterVenue').value;
     recordState.day=document.getElementById('filterDay').value;
     recordState.time=document.getElementById('filterTime').value;
@@ -1394,13 +1411,20 @@ function batchDeleteSelectedRecords(){
 
 function renderCapacityPage(){
   if(!window.currentCapacityVenue) window.currentCapacityVenue='羽球';
+  if(!window.currentCapacityLocation) window.currentCapacityLocation=DEFAULT_LOCATION;
   document.getElementById('content').innerHTML=`
     <div class="panel">
       <h3>🎯 抽籤名額設定</h3>
       <div class="alert">為避免畫面太複雜，改為一次編輯一種運動類型。請先選擇上方類型，輸入各星期與時段名額後，按「儲存目前類型」。</div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-        <div id="capTabs" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+          <div>
+            <div class="small" style="font-weight:900;color:#334155;margin-bottom:6px;">場地</div>
+            <select id="capacityLocation" ${shouldLockLocationFilter()?'disabled':''} style="min-width:140px;border:1px solid #d1d5db;border-radius:10px;padding:9px 12px;background:#fff;">${renderLocationOptions(window.currentCapacityLocation || DEFAULT_LOCATION, false)}</select>
+          </div>
+          <div id="capTabs" style="display:flex;gap:8px;flex-wrap:wrap;">
           ${venueOrder.map(v=>`<button class="btn ${window.currentCapacityVenue===v?'btn-primary':'btn-gray'} cap-tab" data-venue="${v}">${v}</button>`).join('')}
+        </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <input id="defaultCapValue" type="number" min="0" value="1"
@@ -1421,6 +1445,7 @@ function renderCapacityPage(){
     };
   });
   renderBulkCapacityTable();
+  const capLoc=document.getElementById('capacityLocation'); if(capLoc) capLoc.onchange=()=>{ window.currentCapacityLocation=capLoc.value || DEFAULT_LOCATION; renderCapacityPage(); };
   document.getElementById('fillDefaultCapBtn').onclick=()=>fillDefaultCapacity();
   document.getElementById('clearAllCapBtn').onclick=()=>clearAllCapacity();
   document.getElementById('saveAllCapBtn').onclick=()=>saveAllCapacity();
@@ -1429,6 +1454,7 @@ function renderCapacityPage(){
 function renderBulkCapacityTable(){
   const container=document.getElementById('bulkCapTable');
   const venue=window.currentCapacityVenue || '羽球';
+  const location=window.currentCapacityLocation || DEFAULT_LOCATION;
   const times=getTimeOptionsForVenue(venue);
 
   const totalSettings = days.length * times.length;
@@ -1445,7 +1471,8 @@ function renderBulkCapacityTable(){
   });
 
   let html=`
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
+      <div class="stat" style="padding:14px;"><div class="label">目前場地</div><div class="num" style="font-size:22px;">${escapeHtml(locationLabel(location))}</div></div>
       <div class="stat" style="padding:14px;"><div class="label">目前類型</div><div class="num" style="font-size:22px;">${venue}</div></div>
       <div class="stat" style="padding:14px;"><div class="label">已設定格數</div><div class="num" style="font-size:22px;color:var(--green);">${filledCount}/${totalSettings}</div></div>
       <div class="stat" style="padding:14px;"><div class="label">總可用名額</div><div class="num" style="font-size:22px;color:var(--orange);">${totalCapacity}</div></div>
@@ -1466,7 +1493,7 @@ function renderBulkCapacityTable(){
                 const slot=formatTimeSlotDisplay(st,venue.includes('桌球'));
                 const key=settingKey(venue,day,slot);
                 const val=capacitySettings[key] ?? capacityMap[venue] ?? 0;
-                const registered=countSlot(venue,day,st);
+                const registered=countSlot(venue,day,st,location);
                 return `
                   <td style="text-align:center;vertical-align:top;background:${registered>0?'#f8fafc':'white'};">
                     <input class="cap-input"
@@ -1729,8 +1756,8 @@ async function saveSetting(key, value){
 }
 
 function renderLotteryPage(){
-  const locations=[...new Set(allRecords.map(recordLocation).filter(Boolean))];
-  if(!locations.includes('北投會館')) locations.unshift('北投會館');
+  const locations=getAdminLocations();
+  window.currentLotteryLocation = window.currentLotteryLocation || DEFAULT_LOCATION;
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
 
@@ -1743,7 +1770,7 @@ function renderLotteryPage(){
         <div class="lottery-context-grid" style="grid-template-columns:repeat(4,minmax(150px,1fr)) auto;">
           <div>
             <label class="small" style="font-weight:900;color:#334155;">場地</label>
-            <select id="dayCheckLocation">${locations.map(v=>`<option value="${escapeHtml(v)}" ${v==='北投會館'?'selected':''}>${escapeHtml(v)}</option>`).join('')}</select>
+            <select id="dayCheckLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(window.currentLotteryLocation || DEFAULT_LOCATION, false)}</select>
           </div>
           <div>
             <label class="small" style="font-weight:900;color:#334155;">球類</label>
@@ -1759,7 +1786,7 @@ function renderLotteryPage(){
           </div>
           <div><button id="refreshLotteryContext" class="btn btn-gray">套用條件</button></div>
         </div>
-        <div class="small" style="margin-top:10px;">未選擇的條件視為全部；例如只選「球類」即可匯出該球類全部登記資料。</div>
+        <div class="small" style="margin-top:10px;">場地預設帶入北投；未選擇的其他條件視為全部，例如只選「球類」即可匯出該球類全部登記資料。</div>
       </div>
 
       <div class="lottery-workflow">
@@ -1818,7 +1845,7 @@ function renderLotteryPage(){
         <div style="display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;align-items:end;margin-bottom:14px;">
           <div>
             <label class="small" style="font-weight:900;color:#334155;">場地</label>
-            <select id="lotLocation">${locations.map(v=>`<option value="${escapeHtml(v)}" ${v==='北投會館'?'selected':''}>${escapeHtml(v)}</option>`).join('')}</select>
+            <select id="lotLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(window.currentLotteryLocation || DEFAULT_LOCATION, false)}</select>
           </div>
           <div>
             <label class="small" style="font-weight:900;color:#334155;">球類</label>
@@ -1868,7 +1895,12 @@ function renderLotteryPage(){
           批次抽籤適合一次處理多個場次。系統會依「運動類型＋星期＋時段」分場次，並依你輸入的正取人數抽出中籤者，其餘自動依序列為備取。
         </div>
 
-        <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr 1fr 1fr auto auto;gap:12px;align-items:end;margin-bottom:14px;">
+        <div style="display:grid;grid-template-columns:1.1fr 1.1fr 1fr 1fr 1fr 1fr 1fr auto auto;gap:12px;align-items:end;margin-bottom:14px;">
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">場地</label>
+            <select id="batchLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(window.currentLotteryLocation || DEFAULT_LOCATION, false)}</select>
+          </div>
+
           <div>
             <label class="small" style="font-weight:900;color:#334155;">抽籤類型</label>
             <select id="batchVenue">
@@ -1977,10 +2009,10 @@ function renderLotteryPage(){
   document.getElementById('publishResultTab').onclick=()=>switchLotteryTab('publish');
   document.getElementById('singleLotteryTab').onclick=()=>switchLotteryTab('single');
   document.getElementById('batchLotteryTab').onclick=()=>switchLotteryTab('batch');
-  document.getElementById('refreshLotteryContext').onclick=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); };
-  document.getElementById('goPublishRecordsBtn').onclick=()=>{ const {location,venue,day,time}=getDayCheckRecords(); recordState.location=location||''; recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='publish'; renderPage('records'); };
-  document.getElementById('goRecordsCheckBtn').onclick=()=>{ const {location,venue,day,time}=getDayCheckRecords(); recordState.location=location||''; recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); };
-  ['dayCheckLocation','dayCheckVenue','dayCheckDay','dayCheckTime'].forEach(id=>{ const el=document.getElementById(id); if(el) el.onchange=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); }; });
+  document.getElementById('refreshLotteryContext').onclick=()=>{ window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION; const lotLoc=document.getElementById('lotLocation'); if(lotLoc) lotLoc.value=window.currentLotteryLocation; const batchLoc=document.getElementById('batchLocation'); if(batchLoc) batchLoc.value=window.currentLotteryLocation; renderDayCheck(); renderImportSummary(); renderPublishSummary(); previewBatch(); };
+  document.getElementById('goPublishRecordsBtn').onclick=()=>{ const {location,venue,day,time}=getDayCheckRecords(); recordState.location=location||DEFAULT_LOCATION; recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='publish'; renderPage('records'); };
+  document.getElementById('goRecordsCheckBtn').onclick=()=>{ const {location,venue,day,time}=getDayCheckRecords(); recordState.location=location||DEFAULT_LOCATION; recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); };
+  ['dayCheckLocation','dayCheckVenue','dayCheckDay','dayCheckTime'].forEach(id=>{ const el=document.getElementById(id); if(el) el.onchange=()=>{ window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION; const lotLoc=document.getElementById('lotLocation'); if(lotLoc) lotLoc.value=window.currentLotteryLocation; const batchLoc=document.getElementById('batchLocation'); if(batchLoc) batchLoc.value=window.currentLotteryLocation; renderDayCheck(); renderImportSummary(); renderPublishSummary(); }; });
   document.getElementById('exportDayCheckBtn').onclick=()=>{
     const {records}=getDayCheckRecords();
     if(records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
@@ -2155,7 +2187,7 @@ function renderLotteryPage(){
 
 
   function getDayCheckRecords(){
-    const location=document.getElementById('dayCheckLocation')?.value || '';
+    const location=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION;
     const venue=document.getElementById('dayCheckVenue')?.value || '';
     const day=document.getElementById('dayCheckDay')?.value || '';
     const time=document.getElementById('dayCheckTime')?.value || '';
@@ -2215,7 +2247,7 @@ function renderLotteryPage(){
   }
 
   function getSelectedRecords(){
-    const location=document.getElementById('lotLocation')?.value || '北投會館';
+    const location=document.getElementById('lotLocation')?.value || DEFAULT_LOCATION;
     const venue=document.getElementById('lotVenue').value;
     const day=document.getElementById('lotDay').value;
     const time=document.getElementById('lotTime').value;
@@ -2688,6 +2720,7 @@ function renderLotteryPage(){
   }
 
   function batchStages(){
+    const locationFilter=document.getElementById('batchLocation')?.value || DEFAULT_LOCATION;
     const venueFilter=document.getElementById('batchVenue')?.value || '';
     const dayStart=document.getElementById('batchDayStart')?.value || '';
     const dayEnd=document.getElementById('batchDayEnd')?.value || '';
@@ -2707,6 +2740,7 @@ function renderLotteryPage(){
     const map={};
 
     allRecords.forEach(r=>{
+      if(locationFilter && recordLocation(r)!==locationFilter) return;
       if(venueFilter && r.venue_type!==venueFilter) return;
 
       const d=dayOrder[r.day_of_week] || 999;
@@ -2717,10 +2751,11 @@ function renderLotteryPage(){
 
       if(!r.venue_type || !r.day_of_week || !r.time_slot) return;
 
-      const key=`${r.venue_type}|${r.day_of_week}|${r.time_slot}`;
+      const location=recordLocation(r);
+      const key=`${location}|${r.venue_type}|${r.day_of_week}|${r.time_slot}`;
 
       if(!map[key]){
-        map[key]={venue:r.venue_type,day:r.day_of_week,time:r.time_slot,records:[]};
+        map[key]={location,venue:r.venue_type,day:r.day_of_week,time:r.time_slot,records:[]};
       }
 
       map[key].records.push(r);
@@ -2759,14 +2794,15 @@ function renderLotteryPage(){
     const info=document.getElementById('batchLotteryInfo');
     const table=document.getElementById('batchLotteryTable');
     if(!info||!table) return;
-    info.innerHTML=`共 ${stages.length} 個場次｜可批次抽籤 ${drawable.length} 場｜已鎖定 ${locked.length} 場｜每場正取 ${document.getElementById('batchWinnerCount')?.value || 1} 人`;
+    info.innerHTML=`場地：${escapeHtml(locationLabel(document.getElementById('batchLocation')?.value || DEFAULT_LOCATION))}｜共 ${stages.length} 個場次｜可批次抽籤 ${drawable.length} 場｜已鎖定 ${locked.length} 場｜每場正取 ${document.getElementById('batchWinnerCount')?.value || 1} 人`;
     table.innerHTML=stages.length?`
       <div class="table-wrap">
         <table>
-          <thead><tr><th>項次</th><th>類型</th><th>星期</th><th>時段</th><th>筆數</th><th>人數</th><th>正取</th><th>預計備取</th><th>異常註記</th></tr></thead>
+          <thead><tr><th>項次</th><th>場地</th><th>類型</th><th>星期</th><th>時段</th><th>筆數</th><th>人數</th><th>正取</th><th>預計備取</th><th>異常註記</th></tr></thead>
           <tbody>
             ${stages.map((s,i)=>`<tr>
               <td>${i+1}</td>
+              <td>${escapeHtml(locationLabel(s.location))}</td>
               <td><span class="tag blue">${escapeHtml(s.venue)}</span></td>
               <td>${escapeHtml(s.day)}</td>
               <td>${escapeHtml(s.time)}</td>
@@ -2784,14 +2820,15 @@ function renderLotteryPage(){
   async function runBatch(){
     const stages=batchStages().filter(s=>s.canDraw);
     if(stages.length===0){alert('沒有可批次抽籤的場次。請確認範圍、正取人數或是否已鎖定。');return;}
-    const okConfirm=await confirmModal('確認批次抽籤',`確定要批次抽籤並鎖定 ${stages.length} 個場次嗎？`);
+    const okConfirm=await confirmModal('確認批次抽籤',`確定要批次抽籤並鎖定 ${stages.length} 個場次嗎？
+場地：${locationLabel(document.getElementById('batchLocation')?.value || DEFAULT_LOCATION)}`);
     if(!okConfirm) return;
 
     let totalExpected=0, totalUpdated=0;
     for(const s of stages){
       const waitCount=Math.max(0,s.peopleCount-s.winnerCount);
       const result=performLotteryWithWaitlist(s.records,s.winnerCount,waitCount);
-      const batch=`BATCH|${s.venue}|${s.day}|${s.time}|${new Date().toISOString()}`;
+      const batch=`BATCH|${s.location}|${s.venue}|${s.day}|${s.time}|${new Date().toISOString()}`;
       const rows=[];
       result.winners.forEach(r=>rows.push({id:r.id,status:'中籤'}));
       result.waitlist.forEach((r,i)=>rows.push({id:r.id,status:`候補${i+1}`}));
@@ -2814,7 +2851,7 @@ function renderLotteryPage(){
 
   document.getElementById('previewBatchLot').onclick=previewBatch;
   document.getElementById('runBatchLot').onclick=runBatch;
-  ['batchVenue','batchDayStart','batchDayEnd','batchTimeStart','batchTimeEnd','batchWinnerCount'].forEach(id=>{
+  ['batchLocation','batchVenue','batchDayStart','batchDayEnd','batchTimeStart','batchTimeEnd','batchWinnerCount'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){
       el.onchange=previewBatch;
