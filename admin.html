@@ -1080,6 +1080,60 @@
   }
 </style>
 
+
+<style id="settings-editor-layout-fix">
+  /* 文字設定：編輯區改為真正可閱讀的多行文字框 */
+  #settingsTabContent{
+    margin:0 20px!important;
+    padding:16px 0 0!important;
+  }
+  #settingsTabContent .settings-editor{
+    display:block!important;
+    width:100%!important;
+    max-width:100%!important;
+    height:auto!important;
+    box-sizing:border-box!important;
+    padding:14px 16px!important;
+    resize:vertical!important;
+    overflow:auto!important;
+    font-size:14px!important;
+    line-height:1.8!important;
+    border:1px solid #cfd9e4!important;
+    border-radius:12px!important;
+    background:#fff!important;
+  }
+  #settingsTabContent .settings-editor-rules{
+    min-height:420px!important;
+  }
+  #settingsTabContent .settings-editor-short{
+    min-height:240px!important;
+  }
+  #settingsTabContent .settings-editor-template{
+    min-height:300px!important;
+  }
+  #settingsTabContent > label{
+    display:block!important;
+    margin-top:14px!important;
+    margin-bottom:8px!important;
+    color:#334155!important;
+  }
+  #settingsTabContent .alert,
+  #settingsTabContent .msg{
+    margin-left:0!important;
+    margin-right:0!important;
+  }
+  .settings-save-actions{
+    display:flex!important;
+    justify-content:flex-start!important;
+    align-items:center!important;
+    margin:16px 20px 20px!important;
+    padding:0!important;
+  }
+  .settings-save-actions .btn{
+    margin:0!important;
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -3935,9 +3989,9 @@ function renderSettingsPage(){
 
       <div id="settingsTabContent"></div>
 
-      <button id="saveTextSettingsBtn" class="btn btn-primary" style="margin-top:18px;">
-        儲存文字設定
-      </button>
+      <div class="settings-save-actions">
+        <button id="saveTextSettingsBtn" class="btn btn-primary">儲存文字設定</button>
+      </div>
     </div>
   `;
 
@@ -3967,7 +4021,7 @@ function renderSettingsPage(){
         <label style="font-weight:700;">前台登記辦法</label>
 
         <textarea
-          id="rulesContentEditor"
+          id="rulesContentEditor" class="settings-editor settings-editor-rules"
           style="
             width:100%;
             min-height:420px;
@@ -3991,7 +4045,7 @@ function renderSettingsPage(){
         <label style="font-weight:700;">前台提醒文字</label>
 
         <textarea
-          id="registerNoticeEditor"
+          id="registerNoticeEditor" class="settings-editor settings-editor-short"
           style="
             width:100%;
             min-height:220px;
@@ -4019,7 +4073,7 @@ function renderSettingsPage(){
         <label style="font-weight:700;">中籤通知模板</label>
 
         <textarea
-          id="winnerTemplateEditor"
+          id="winnerTemplateEditor" class="settings-editor settings-editor-template"
           style="
             width:100%;
             min-height:260px;
@@ -4047,7 +4101,7 @@ function renderSettingsPage(){
         <label style="font-weight:700;">備取通知模板</label>
 
         <textarea
-          id="waitlistTemplateEditor"
+          id="waitlistTemplateEditor" class="settings-editor settings-editor-template"
           style="
             width:100%;
             min-height:260px;
@@ -4075,7 +4129,7 @@ function renderSettingsPage(){
         <label style="font-weight:700;">未中籤通知模板</label>
 
         <textarea
-          id="loserTemplateEditor"
+          id="loserTemplateEditor" class="settings-editor settings-editor-template"
           style="
             width:100%;
             min-height:260px;
