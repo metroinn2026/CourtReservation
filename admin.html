@@ -82,6 +82,99 @@
     @media(max-width:1100px){.login-page{grid-template-columns:1fr}.hero{display:none}.app{grid-template-columns:1fr}.sidebar{position:static}.nav{display:grid;grid-template-columns:repeat(3,1fr)}.cards{grid-template-columns:repeat(2,1fr)}.toolbar{grid-template-columns:1fr 1fr}.inline-form{grid-template-columns:1fr 1fr}.two-col{grid-template-columns:1fr}}
     @media(max-width:700px){.content{padding:16px}.cards{grid-template-columns:1fr}.nav{grid-template-columns:1fr}.topbar{padding:0 16px}.topbar h2{font-size:18px}}
   </style>
+
+<style id="minimal-admin-refresh">
+  :root{
+    --blue:#2563eb;
+    --blue2:#1d4ed8;
+    --green:#2563eb;
+    --orange:#2563eb;
+    --red:#2563eb;
+    --bg:#f6f7fb;
+    --card:#ffffff;
+    --text:#0f172a;
+    --muted:#667085;
+    --border:#e5e7eb;
+    --softBlue:#eff6ff;
+  }
+  body{background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+  .login-page{background:linear-gradient(180deg,#f8fafc 0%,#f3f6fb 100%)}
+  .hero,.login-panel,.panel,.records-function-panel,.lottery-action-card,.lottery-context,.stat,.modal-card,.account-row{box-shadow:none!important}
+  .sidebar{background:#fff!important;color:var(--text)!important;border-right:1px solid var(--border);padding:20px}
+  .brand{border-bottom:1px solid var(--border)!important;padding-bottom:16px}
+  .brand h1{color:var(--text)!important;font-size:18px;line-height:1.4;margin-bottom:4px}
+  .brand span,.side-footer,.small{color:var(--muted)!important}
+  .nav{gap:6px}
+  .nav button{background:#fff!important;color:#334155!important;border:1px solid transparent!important;border-radius:12px!important;padding:11px 12px!important;font-weight:800}
+  .nav button.active,.nav button:hover{background:#f4f7fb!important;color:var(--blue)!important;border-color:#dbeafe!important}
+  .side-footer{border-top:1px solid var(--border)!important;padding-top:14px}
+  .topbar{height:68px!important;background:#fff!important;border-bottom:1px solid var(--border)!important;box-shadow:none!important;padding:0 24px!important}
+  .topbar h2{font-size:20px!important;color:var(--text)!important;letter-spacing:.2px}
+  .avatar{background:#f8fafc!important;border:1px solid var(--border)!important;color:var(--blue)!important}
+  .content{padding:24px!important;max-width:none!important}
+  .cards{gap:14px!important;margin-bottom:18px!important}
+  .stat{background:#fff!important;border:1px solid var(--border)!important;border-radius:16px!important;padding:16px 18px!important}
+  .stat .label{font-size:12px!important;color:#64748b!important;font-weight:800}
+  .stat .num{font-size:30px!important;line-height:1.1!important;color:var(--text)!important}
+  .panel,.records-function-panel,.lottery-action-card,.lottery-context,.modal-card,.account-row{background:#fff!important;border:1px solid var(--border)!important;border-radius:16px!important}
+  .panel{padding:18px!important;margin-bottom:18px!important}
+  .panel h3,.lottery-step-title{margin:0 0 10px!important;font-size:18px!important;color:var(--text)!important}
+  .lottery-step-desc,.small{line-height:1.6!important}
+  .lottery-context{background:#fcfcfd!important;padding:16px!important;margin-bottom:16px!important}
+  .lottery-context-grid{gap:14px!important;align-items:end!important}
+  .lottery-action-card{padding:18px!important;margin-bottom:16px!important}
+  .lottery-advanced{border-top:1px dashed var(--border)!important;padding-top:14px!important}
+  .records-function-tabs,.lottery-workflow{display:flex!important;gap:10px!important;flex-wrap:wrap!important;margin:12px 0 16px!important;border-bottom:0!important;padding:0!important}
+  .records-function-tab,.lottery-workflow-tab{appearance:none!important;border:1px solid var(--border)!important;background:#fff!important;color:#475569!important;font-weight:800!important;font-size:14px!important;padding:10px 16px!important;border-radius:12px!important;cursor:pointer!important}
+  .records-function-tab.active,.lottery-workflow-tab.active{background:#eff6ff!important;border-color:#bfdbfe!important;color:var(--blue)!important}
+  .records-function-tab:hover,.lottery-workflow-tab:hover{background:#f8fafc!important}
+  input,select,textarea{height:42px!important;border:1px solid var(--border)!important;border-radius:12px!important;background:#fff!important;padding:0 12px!important;color:var(--text)!important;box-shadow:none!important}
+  textarea{min-height:110px;padding:12px!important}
+  input::placeholder{color:#94a3b8}
+  input:focus,select:focus,textarea:focus{outline:none!important;border-color:#bfdbfe!important;box-shadow:0 0 0 3px rgba(37,99,235,.08)!important}
+  .btn,button{border-radius:12px!important;font-weight:800!important;box-shadow:none!important}
+  .btn{padding:10px 16px!important;min-height:42px!important}
+  .btn-primary,.btn-green,.btn-orange,.btn-danger{background:var(--blue)!important;border:1px solid var(--blue)!important;color:#fff!important}
+  .btn-primary:hover,.btn-green:hover,.btn-orange:hover,.btn-danger:hover{background:var(--blue2)!important;border-color:var(--blue2)!important}
+  .btn-gray{background:#fff!important;border:1px solid var(--border)!important;color:#334155!important}
+  .btn-gray:hover{background:#f8fafc!important;border-color:#cbd5e1!important}
+  .msg{border-radius:12px!important;padding:12px 14px!important;font-size:13px!important;margin:12px 0!important}
+  .msg.info{background:#f8fafc!important;color:#334155!important;border:1px solid var(--border)!important}
+  .msg.ok{background:#f6fffb!important;color:#166534!important;border:1px solid #d1fae5!important}
+  .msg.error{background:#fff8f8!important;color:#991b1b!important;border:1px solid #fee2e2!important}
+  .alert{background:#f8fafc!important;color:#475569!important;border:1px solid var(--border)!important;border-left:4px solid #cbd5e1!important;border-radius:14px!important;padding:12px 14px!important}
+  .table-wrap{overflow:auto!important;border:1px solid var(--border)!important;border-radius:14px!important}
+  table{background:#fff!important;font-size:13px!important}
+  th{background:#f8fafc!important;color:#64748b!important;font-size:12px!important;padding:12px!important;border-bottom:1px solid var(--border)!important}
+  td{padding:12px!important;border-bottom:1px solid #f1f5f9!important}
+  tr:hover td{background:#fafafa!important}
+  .tag{display:inline-block!important;padding:4px 8px!important;border-radius:999px!important;font-size:12px!important;font-weight:800!important}
+  .tag.blue{background:#eff6ff!important;color:#1d4ed8!important}
+  .tag.green{background:#eefbf3!important;color:#15803d!important}
+  .tag.warn{background:#fff8eb!important;color:#9a5b00!important}
+  .tag.gray{background:#f3f4f6!important;color:#475569!important}
+  .pager{margin-top:12px!important;color:#64748b!important}
+  .account-row strong{color:var(--text)!important}
+  .modal{background:rgba(15,23,42,.42)!important}
+  .modal-card h3{color:var(--text)!important}
+  .inline-form,.two-col{gap:14px!important}
+  .two-col{grid-template-columns:1fr 1fr!important}
+  .status-select,.anomaly-filter-select{min-width:120px}
+  .lottery-context .small,.records-function-panel .small,.panel .small{font-size:12px!important}
+  .lottery-summary-grid,.summary-grid{gap:14px!important}
+  @media (max-width: 1200px){
+    .app{grid-template-columns:220px 1fr!important}
+    .cards{grid-template-columns:repeat(2,1fr)!important}
+  }
+  @media (max-width: 860px){
+    .app{grid-template-columns:1fr!important}
+    .sidebar{display:none!important}
+    .content{padding:16px!important}
+    .cards,.two-col,.lottery-context-grid,.inline-form{grid-template-columns:1fr!important}
+    .topbar{padding:0 16px!important}
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -121,18 +214,18 @@
     <aside class="sidebar">
       <div class="brand"><h1>北投會館運動場域智慧租借管理系統｜管理後台</h1><span>Admin Console</span></div>
       <nav class="nav">
-        <button data-page="dashboard" class="active">📊 作業總覽</button>
-        <button data-page="records">📋 登記資料</button>
-        <button data-page="capacity">🎯 名額設定</button>
-        <button data-page="lottery">🎲 抽籤作業</button>
-        <button data-page="settings">📝 文字設定</button>
-        <button data-page="logs">🧾 操作紀錄</button>
-        <button data-page="accounts" id="accountsNav">👤 帳號權限</button>
+        <button data-page="dashboard" class="active">作業總覽</button>
+        <button data-page="records">登記資料</button>
+        <button data-page="capacity">名額設定</button>
+        <button data-page="lottery">抽籤作業</button>
+        <button data-page="settings">文字設定</button>
+        <button data-page="logs">操作紀錄</button>
+        <button data-page="accounts" id="accountsNav">帳號權限</button>
       </nav>
       <div class="side-footer"><div id="sideUser">-</div><button id="logoutBtn" class="btn btn-gray" style="width:100%;margin-top:10px;">登出</button></div>
     </aside>
     <main class="app-main">
-      <header class="topbar"><h2 id="pageTitle">總覽儀表板</h2><div class="userbox"><div class="avatar" id="userAvatar">A</div><div><div id="topUser" style="font-weight:900;">-</div><div id="topRole" class="small">-</div></div></div></header>
+      <header class="topbar"><h2 id="pageTitle">作業總覽</h2><div class="userbox"><div class="avatar" id="userAvatar">A</div><div><div id="topUser" style="font-weight:900;">-</div><div id="topRole" class="small">-</div></div></div></header>
       <div class="content" id="content"></div>
     </main>
   </section>
@@ -699,11 +792,9 @@ function renderRecordsPage(){
   selectedRecordIds.clear();
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
-  const locations=[...new Set(allRecords.map(r=>r.location_name).filter(Boolean))];
-  const defaultLocation=locations.includes('北投會館') ? '北投會館' : (locations[0]||'北投會館');
   document.getElementById('content').innerHTML=`${renderCards(stats())}
     <div class="panel">
-      <h3>📋 登記資料</h3>
+      <h3>登記資料</h3>
 
       <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
         <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">資料篩選</button>
@@ -1273,7 +1364,7 @@ function renderLogsPage(){
 
   document.getElementById('content').innerHTML=`
     <div class="panel">
-      <h3>🧾 操作紀錄</h3>
+      <h3>操作紀錄</h3>
       <div class="alert">記錄後台重要操作，例如變更抽籤狀態、公布／取消公布結果。若此頁空白，請先執行我附上的 SQL 建立 admin_operation_logs。</div>
       <div class="table-wrap">
         <table>
@@ -1319,35 +1410,24 @@ async function saveSetting(key, value){
 function renderLotteryPage(){
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const times=[...new Set(allRecords.map(r=>r.time_slot).filter(Boolean))];
-  const locations=[...new Set(allRecords.map(r=>r.location_name).filter(Boolean))];
-  const defaultLocation=locations.includes('北投會館') ? '北投會館' : (locations[0]||'北投會館');
 
   document.getElementById('content').innerHTML=`
     <div class="panel">
-      <h3>🎲 抽籤作業中心</h3>
-      <div class="small" style="margin-bottom:14px;">依實際作業分成「名單匯出 → Excel 抽籤 → 結果匯入 → 確認公布」三個階段。可依需求選擇一項或多項條件篩選，未選擇的條件視為全部。</div>
+      <h3>抽籤作業中心</h3>
+      <div class="small" style="margin-bottom:14px;">依實際作業分成「名單匯出 → Excel 抽籤 → 結果匯入 → 確認公布」三個階段，請先選擇要處理的球類與星期。</div>
 
       <div class="lottery-context">
-        <div class="lottery-context-grid" style="grid-template-columns:repeat(5,minmax(150px,1fr));">
+        <div class="lottery-context-grid">
           <div>
-            <label class="small" style="font-weight:900;color:#334155;">場地</label>
-            <select id="dayCheckLocation"><option value="">全部場地</option>${locations.map(v=>`<option value="${escapeHtml(v)}" ${v===defaultLocation?'selected':''}>${escapeHtml(v)}</option>`).join('')}</select>
+            <label class="small" style="font-weight:900;color:#334155;">運動類型</label>
+            <select id="dayCheckVenue"><option value="">請選擇類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
           </div>
           <div>
-            <label class="small" style="font-weight:900;color:#334155;">球類</label>
-            <select id="dayCheckVenue"><option value="">全部球類</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
+            <label class="small" style="font-weight:900;color:#334155;">星期</label>
+            <select id="dayCheckDay"><option value="">請選擇星期</option>${days.map(d=>`<option>${d}</option>`).join('')}</select>
           </div>
-          <div>
-            <label class="small" style="font-weight:900;color:#334155;">日期</label>
-            <select id="dayCheckDay"><option value="">全部日期</option>${days.map(d=>`<option>${d}</option>`).join('')}</select>
-          </div>
-          <div>
-            <label class="small" style="font-weight:900;color:#334155;">時段</label>
-            <select id="dayCheckTime"><option value="">全部時段</option>${times.map(t=>`<option>${escapeHtml(t)}</option>`).join('')}</select>
-          </div>
-          <div><button id="refreshLotteryContext" class="btn btn-gray" style="width:100%;">套用條件</button></div>
+          <div><button id="refreshLotteryContext" class="btn btn-gray">更新場次資料</button></div>
         </div>
-        <div class="small" style="margin-top:8px;color:#64748b;">例如只選「球類」即可匯出該球類全部登記；只選「日期」即可匯出該日全部球類與時段。場地預設為北投會館。</div>
       </div>
 
       <div class="lottery-workflow">
@@ -1359,9 +1439,9 @@ function renderLotteryPage(){
       <div id="dayCheckPanel">
         <div class="lottery-action-card">
           <div class="lottery-step-title">抽籤名單</div>
-          <div class="lottery-step-desc">依目前篩選條件叫出登記清單後匯出，於 Excel 完成電子化抽籤。可只選一個條件，也可組合多個條件。</div>
+          <div class="lottery-step-desc">確認各時段登記情形後，匯出目前所選球類與星期的登記清單，於 Excel 完成電子化抽籤。</div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button id="exportDayCheckBtn" class="btn btn-green">依條件匯出名單</button>
+            <button id="exportDayCheckBtn" class="btn btn-green">匯出抽籤名單</button>
           </div>
         </div>
         <div id="dayCheckSummary"></div>
@@ -1527,17 +1607,17 @@ function renderLotteryPage(){
 
   function renderImportSummary(){
     const box=document.getElementById('importResultSummary'); if(!box) return;
-    const {location,venue,day,time,records,label}=getDayCheckRecords();
-    if(records.length===0){ box.innerHTML='<div class="msg info">目前條件沒有登記資料，請調整篩選條件。</div>'; return; }
+    const {venue,day,records}=getDayCheckRecords();
+    if(!venue || !day){ box.innerHTML='<div class="msg info">請先在上方選擇「運動類型」與「星期」。</div>'; return; }
     const withResult=records.filter(r=>String(r.lottery_status||'').trim()).length;
     const locked=records.filter(r=>r.lottery_locked).length;
-    box.innerHTML=`<div class="msg info">目前條件：${escapeHtml(label)}｜共 ${records.length} 筆登記；已有 ${withResult} 筆結果、${locked} 筆已鎖定。</div>`;
+    box.innerHTML=`<div class="msg info">目前 ${escapeHtml(venue)}｜${escapeHtml(day)} 共 ${records.length} 筆登記；已有 ${withResult} 筆結果、${locked} 筆已鎖定。</div>`;
   }
 
   function renderPublishSummary(){
     const box=document.getElementById('publishResultSummary'); if(!box) return;
-    const {location,venue,day,time,records,label}=getDayCheckRecords();
-    if(records.length===0){ box.innerHTML='<div class="msg info">目前條件沒有登記資料，請調整篩選條件。</div>'; return; }
+    const {venue,day,records}=getDayCheckRecords();
+    if(!venue || !day){ box.innerHTML='<div class="msg info">請先在上方選擇「運動類型」與「星期」。</div>'; return; }
     const counts={winner:0,wait:0,lose:0,notYet:0,published:0};
     records.forEach(r=>{ const s=String(r.lottery_status||''); if(s==='中籤') counts.winner++; else if(s.startsWith('候補')) counts.wait++; else if(s==='未中籤') counts.lose++; else counts.notYet++; if(r.result_published) counts.published++; });
     box.innerHTML=`<div class="cards"><div class="stat"><div class="label">中籤</div><div class="num" style="color:#16a34a">${counts.winner}</div></div><div class="stat"><div class="label">候補</div><div class="num" style="color:#d97706">${counts.wait}</div></div><div class="stat"><div class="label">未中籤</div><div class="num" style="color:#64748b">${counts.lose}</div></div><div class="stat"><div class="label">未抽籤／已公布</div><div class="num">${counts.notYet} / ${counts.published}</div></div></div>`;
@@ -1549,21 +1629,19 @@ function renderLotteryPage(){
   document.getElementById('singleLotteryTab').onclick=()=>switchLotteryTab('single');
   document.getElementById('batchLotteryTab').onclick=()=>switchLotteryTab('batch');
   document.getElementById('refreshLotteryContext').onclick=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); };
-  document.getElementById('goPublishRecordsBtn').onclick=()=>{ const {venue,day,time}=getDayCheckRecords(); recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='publish'; renderPage('records'); };
-  document.getElementById('goRecordsCheckBtn').onclick=()=>{ const {venue,day,time}=getDayCheckRecords(); recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); };
-  ['dayCheckLocation','dayCheckVenue','dayCheckDay','dayCheckTime'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.onchange=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); };
-  });
+  document.getElementById('goPublishRecordsBtn').onclick=()=>{ const {venue,day}=getDayCheckRecords(); recordState.venue=venue||''; recordState.day=day||''; recordState.time=''; recordState.page=1; recordsActionTab='publish'; renderPage('records'); };
+  document.getElementById('goRecordsCheckBtn').onclick=()=>{ const {venue,day}=getDayCheckRecords(); recordState.venue=venue||''; recordState.day=day||''; recordState.time=''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); };
+  document.getElementById('dayCheckVenue').onchange=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); };
+  document.getElementById('dayCheckDay').onchange=()=>{ renderDayCheck(); renderImportSummary(); renderPublishSummary(); };
   document.getElementById('exportDayCheckBtn').onclick=()=>{
     const {records}=getDayCheckRecords();
-    if(records.length===0){ alert('目前篩選條件沒有可匯出的登記資料。'); return; }
+    if(records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
     exportToCsv(records);
   };
   document.getElementById('importLotteryResultBtn').onclick=()=>{
-    const {records}=getDayCheckRecords();
-    if(records.length===0){
-      alert('目前篩選條件沒有登記資料，請先確認篩選條件。');
+    const {venue,day,records}=getDayCheckRecords();
+    if(!venue || !day || records.length===0){
+      alert('請先選擇「運動類型」與「星期」，再匯入該日抽籤結果。');
       return;
     }
     document.getElementById('importLotteryFile').click();
@@ -1606,7 +1684,7 @@ function renderLotteryPage(){
       return null;
     };
 
-    const {location,venue,day,time,records,label}=getDayCheckRecords();
+    const {venue,day,records}=getDayCheckRecords();
     const recordMap=new Map(records.map(r=>[String(r.serial_number||'').trim(),r]));
     const seen=new Set();
     const valid=[];
@@ -1623,7 +1701,7 @@ function renderLotteryPage(){
       if(seen.has(serial)){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'序號重複'}); return; }
       seen.add(serial);
       const record=recordMap.get(serial);
-      if(!record){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:`找不到目前篩選條件「${label}」的登記資料`}); return; }
+      if(!record){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:`找不到目前「${venue}｜${day}」的登記資料`}); return; }
       if(status===null){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'抽籤狀態格式不符'}); return; }
       if(!status){ skipped.push({row:excelRow,serial,name:record.name,reason:'抽籤狀態空白'}); return; }
       if(record.result_published){ errors.push({row:excelRow,serial,status,reason:'此筆結果已公布，請先取消公布'}); return; }
@@ -1634,7 +1712,7 @@ function renderLotteryPage(){
     });
 
     if(valid.length===0 && errors.length===0) throw new Error('未找到可匯入的抽籤結果。請確認欄位包含「序號」及「抽籤狀態」。');
-    return {valid,errors,skipped,location,venue,day,time,label,totalRows:rows.length};
+    return {valid,errors,skipped,venue,day,totalRows:rows.length};
   }
 
   function renderLotteryImportPreview(parsed,fileName){
@@ -1653,7 +1731,7 @@ function renderLotteryPage(){
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
           <div>
             <h3 style="margin:0 0 4px;">📥 抽籤結果匯入預覽</h3>
-            <div class="small">${escapeHtml(fileName)}｜${escapeHtml(parsed.label||'目前篩選條件')}</div>
+            <div class="small">${escapeHtml(fileName)}｜${escapeHtml(parsed.venue)}｜${escapeHtml(parsed.day)}</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button id="cancelLotteryImportBtn" class="btn btn-gray">取消</button>
@@ -1676,7 +1754,7 @@ function renderLotteryPage(){
 
   async function confirmLotteryImport(parsed){
     if(!parsed || parsed.valid.length===0 || parsed.errors.length>0) return;
-    const ok=await confirmModal('確認匯入抽籤結果',`確定匯入 <strong>${parsed.valid.length}</strong> 筆抽籤結果並鎖定嗎？<br><br>${escapeHtml(parsed.label||'目前篩選條件')}<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
+    const ok=await confirmModal('確認匯入抽籤結果',`確定匯入 <strong>${parsed.valid.length}</strong> 筆抽籤結果並鎖定嗎？<br><br>${escapeHtml(parsed.venue)}｜${escapeHtml(parsed.day)}<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
     if(!ok) return;
     const btn=document.getElementById('confirmLotteryImportBtn');
     if(btn){ btn.disabled=true; btn.textContent='匯入中...'; }
@@ -1703,10 +1781,8 @@ function renderLotteryPage(){
       });
     }
     await writeOperationLog('匯入 Excel 抽籤結果', {
-      location_name:parsed.location||'',
-      venue_type:parsed.venue||'',
-      day_of_week:parsed.day||'',
-      time_slot:parsed.time||'',
+      venue_type:parsed.venue,
+      day_of_week:parsed.day,
       imported_count:successIds.length,
       failed_count:failed.length,
       batch_id:batchId
@@ -1716,51 +1792,34 @@ function renderLotteryPage(){
     }else{
       alert(`已匯入並鎖定 ${successIds.length} 筆抽籤結果。結果尚未公布，請確認後再執行公布。`);
     }
-    const location=parsed.location, venue=parsed.venue, day=parsed.day, time=parsed.time;
+    const venue=parsed.venue, day=parsed.day;
     await loadAllData();
     renderLotteryPage();
     setTimeout(()=>{
-      const l=document.getElementById('dayCheckLocation');
       const v=document.getElementById('dayCheckVenue');
       const d=document.getElementById('dayCheckDay');
-      const t=document.getElementById('dayCheckTime');
-      if(l) l.value=location||'';
-      if(v) v.value=venue||'';
-      if(d) d.value=day||'';
-      if(t) t.value=time||'';
-      if(t) t.dispatchEvent(new Event('change'));
+      if(v) v.value=venue;
+      if(d) d.value=day;
+      if(d) d.dispatchEvent(new Event('change'));
       switchLotteryTab('publish');
     },0);
   }
 
 
   function getDayCheckRecords(){
-    const location=document.getElementById('dayCheckLocation')?.value || '';
     const venue=document.getElementById('dayCheckVenue')?.value || '';
     const day=document.getElementById('dayCheckDay')?.value || '';
-    const time=document.getElementById('dayCheckTime')?.value || '';
-    const records=allRecords.filter(r=>
-      (!location || String(r.location_name||'')===location) &&
-      (!venue || r.venue_type===venue) &&
-      (!day || r.day_of_week===day) &&
-      (!time || r.time_slot===time)
-    );
-    const parts=[];
-    if(location) parts.push(location);
-    if(venue) parts.push(venue);
-    if(day) parts.push(day);
-    if(time) parts.push(time);
-    const label=parts.length ? parts.join('｜') : '全部登記資料';
-    return {location,venue,day,time,records,label};
+    const records=(venue && day) ? allRecords.filter(r=>r.venue_type===venue && r.day_of_week===day) : [];
+    return {venue,day,records};
   }
 
   function renderDayCheck(){
     const box=document.getElementById('dayCheckSummary');
     const table=document.getElementById('dayCheckTable');
     if(!box || !table) return;
-    const {location,venue,day,time,records,label}=getDayCheckRecords();
-    if(records.length===0){
-      box.innerHTML='<div class="msg info">目前條件沒有登記資料，可調整場地、球類、日期或時段後再試。</div>';
+    const {venue,day,records}=getDayCheckRecords();
+    if(!venue || !day){
+      box.innerHTML='<div class="msg info">請選擇「運動類型」與「星期」，即可一次檢查該日所有時段。</div>';
       table.innerHTML='';
       return;
     }
@@ -1780,7 +1839,7 @@ function renderLotteryPage(){
       else if(s==='未中籤') byTime[t].lose++;
       else byTime[t].notYet++;
     });
-    box.innerHTML=`<div class="cards"><div class="stat"><div class="label">${escapeHtml(label)}</div><div class="num">${records.length}</div><div class="small">登記筆數</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${people}</div></div><div class="stat"><div class="label">已設定抽籤狀態</div><div class="num" style="color:var(--orange)">${resultCount}</div></div><div class="stat"><div class="label">已公布</div><div class="num" style="color:#166534">${publishedCount}</div></div></div>`;
+    box.innerHTML=`<div class="cards"><div class="stat"><div class="label">${escapeHtml(venue)}｜${escapeHtml(day)}</div><div class="num">${records.length}</div><div class="small">登記筆數</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${people}</div></div><div class="stat"><div class="label">已設定抽籤狀態</div><div class="num" style="color:var(--orange)">${resultCount}</div></div><div class="stat"><div class="label">已公布</div><div class="num" style="color:#166534">${publishedCount}</div></div></div>`;
     const timeRows=Object.entries(byTime).sort((a,b)=>timeSortValue(a[0])-timeSortValue(b[0]));
     const rows=[...records].sort((a,b)=>timeSortValue(a.time_slot)-timeSortValue(b.time_slot) || statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status) || String(a.registered_at||'').localeCompare(String(b.registered_at||'')));
     table.innerHTML=`
@@ -1791,7 +1850,7 @@ function renderLotteryPage(){
         </tbody></table></div>
       </div>
       <div class="panel">
-        <h3>篩選結果清單</h3>
+        <h3>本日登記清單</h3>
         <div class="table-wrap"><table><thead><tr><th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>後4碼</th><th>時段</th><th>登記時間</th></tr></thead><tbody>
           ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
         </tbody></table></div>
@@ -2438,7 +2497,7 @@ function renderSettingsPage(){
 
   document.getElementById('content').innerHTML=`
     <div class="panel">
-      <h3>📝 文字設定中心</h3>
+      <h3>文字設定中心</h3>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">
         <button id="tabRules" class="btn btn-primary">登記辦法</button>
