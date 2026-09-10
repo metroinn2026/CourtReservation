@@ -1364,6 +1364,30 @@
   }
 </style>
 
+
+<style id="anomaly-total-line-fix">
+  .anomaly-total-badge{
+    display:none!important;
+  }
+
+  .anomaly-total-line{
+    margin:0 0 8px;
+    padding:0;
+    text-align:right;
+    color:#b42318;
+    font-size:12.5px;
+    font-weight:900;
+    line-height:1.4;
+    background:transparent!important;
+    border:0!important;
+    border-radius:0!important;
+  }
+
+  .anomaly-center-head{
+    margin-bottom:8px!important;
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1622,8 +1646,8 @@ function renderAnomalyCenter(issues){
             <h3>異常檢核中心</h3>
             <div class="small">系統自動檢查可能需要人工確認的資料。</div>
           </div>
-          <span class="anomaly-total-badge">0 項待確認</span>
         </div>
+        <div class="anomaly-total-line">0 項待確認</div>
         <div class="anomaly-empty">目前未發現需人工確認的資料異常。</div>
       </div>`;
   }
@@ -1666,9 +1690,9 @@ function renderAnomalyCenter(issues){
           <h3>異常檢核中心</h3>
           <div class="small">系統自動檢查可能需要人工確認的資料，僅提醒，不會自動修改。</div>
         </div>
-        <span class="anomaly-total-badge">${issues.length} 項待確認</span>
       </div>
 
+      <div class="anomaly-total-line">${issues.length} 項待確認</div>
       <div class="anomaly-list">
         ${rows}
       </div>
