@@ -819,6 +819,36 @@
   }
 </style>
 
+
+<style id="records-scope-compact-final">
+  #recordsScopeSummary{display:none!important;}
+  .records-inline-scope{
+    margin:12px 20px 10px;
+    padding:0 2px 9px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    flex-wrap:wrap;
+    border-bottom:1px solid #e2e8f0;
+    color:#64748b;
+    font-size:12.5px;
+  }
+  .records-inline-scope strong{
+    color:#334155;
+    font-weight:900;
+  }
+  .records-inline-scope span:first-child{
+    color:#334155;
+  }
+  .records-inline-scope span:last-child{
+    margin-left:auto;
+  }
+  @media(max-width:900px){
+    .records-inline-scope span:last-child{margin-left:0;}
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1509,8 +1539,6 @@ function renderRecordsPage(){
         </div>
       </div>
 
-      <div id="recordsScopeSummary"></div>
-
       <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
         <button class="records-function-tab ${recordsActionTab!=='publish'?'active':''}" data-action-tab="filter">登記清單</button>
         <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
@@ -1531,7 +1559,6 @@ function renderRecordsPage(){
     recordState.perPage=parseInt(document.getElementById('perPage').value,10);
     recordState.page=1;
     selectedRecordIds.clear();
-    renderRecordsScopeSummary();
     renderRecordsWorkspace();
   };
 
@@ -1552,7 +1579,6 @@ function renderRecordsPage(){
   const anomalySummaryCard=document.getElementById('recordAnomalySummaryCard');
   if(anomalySummaryCard) anomalySummaryCard.onclick=goToAnomalyCenter;
 
-  renderRecordsScopeSummary();
   renderRecordsWorkspace();
 }
 
@@ -1566,12 +1592,12 @@ function renderRecordsWorkspace(){
     return;
   }
 
+  const records=getFilteredRecords();
+  const c=buildPublishSummary(records);
   box.innerHTML=`
-    <div class="records-workspace-head">
-      <div>
-        <strong>登記清單</strong>
-        <div class="small">可直接勾選多筆資料進行狀態變更或刪除；個別狀態也可使用下拉選單調整，最後一次儲存。</div>
-      </div>
+    <div class="records-inline-scope">
+      <span><strong>目前：</strong>${escapeHtml(currentRecordsScopeLabel())}</span>
+      <span>共 ${records.length} 筆｜中籤 ${c.winner}｜候補 ${c.waitlist}｜未抽籤 ${c.noResult}</span>
     </div>
     <div id="recordsTable"></div>`;
   renderRecordsTable();
