@@ -2825,6 +2825,86 @@
   }
 </style>
 
+
+<style id="anomaly-center-tablelike-override-v1">
+  /* 異常檢核中心改為比照待處理場次的底色＋分隔線閱讀方式 */
+  .anomaly-center-clean .anomaly-flat-list{
+    margin-top:10px!important;
+    background:var(--ui-surface)!important;
+    border-radius:12px!important;
+    overflow:hidden!important;
+    border:1px solid #e2e8f0!important;
+  }
+
+  .anomaly-center-clean .anomaly-flat-row{
+    display:grid!important;
+    grid-template-columns:180px 140px minmax(0,1fr) 96px!important;
+    align-items:center!important;
+    gap:16px!important;
+    padding:18px 22px!important;
+    background:var(--ui-surface)!important;
+    border-bottom:1px solid #e6edf5!important;
+  }
+
+  .anomaly-center-clean .anomaly-flat-row:last-child{
+    border-bottom:0!important;
+  }
+
+  .anomaly-center-clean .anomaly-flat-type{
+    color:var(--ui-red)!important;
+    font-weight:900!important;
+    line-height:1.45!important;
+  }
+
+  .anomaly-center-clean .anomaly-flat-count{
+    color:#475569!important;
+    font-size:13px!important;
+    font-weight:800!important;
+    line-height:1.45!important;
+    white-space:nowrap!important;
+  }
+
+  .anomaly-center-clean .anomaly-flat-detail{
+    color:#475569!important;
+    font-size:13px!important;
+    line-height:1.7!important;
+  }
+
+  .anomaly-center-clean .anomaly-more{
+    margin-top:4px!important;
+    color:#64748b!important;
+    font-size:12px!important;
+  }
+
+  .anomaly-center-clean .anomaly-text-action{
+    justify-self:end!important;
+    min-width:76px!important;
+    height:38px!important;
+    padding:0 16px!important;
+    border:1px solid #cbd5e1!important;
+    border-radius:12px!important;
+    background:#fff!important;
+    color:#1e3a5f!important;
+    font-weight:800!important;
+  }
+
+  .anomaly-center-clean .anomaly-text-action:hover{
+    background:#f8fbff!important;
+    text-decoration:none!important;
+  }
+
+  @media (max-width: 900px){
+    .anomaly-center-clean .anomaly-flat-row{
+      grid-template-columns:1fr!important;
+      gap:8px!important;
+      padding:16px!important;
+    }
+    .anomaly-center-clean .anomaly-text-action{
+      justify-self:start!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
