@@ -1134,6 +1134,112 @@
   }
 </style>
 
+
+<style id="dashboard-redesign-final">
+  .dashboard-status-cards{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:14px;
+    margin-bottom:18px;
+  }
+  .dashboard-status-card{
+    appearance:none!important;
+    min-height:122px!important;
+    padding:18px 20px!important;
+    text-align:left!important;
+    background:#fff!important;
+    border:1px solid var(--border)!important;
+    border-top:3px solid #5b8fe6!important;
+    border-radius:16px!important;
+    box-shadow:var(--shadow-soft)!important;
+    color:var(--text)!important;
+    cursor:pointer!important;
+    display:block!important;
+  }
+  .dashboard-status-card:hover{
+    border-color:#b9cae0!important;
+    transform:translateY(-1px);
+  }
+  .dashboard-status-card.static{cursor:default!important;}
+  .dashboard-status-card.static:hover{transform:none;}
+  .dashboard-status-card.anomaly{
+    border-top-color:#d92d20!important;
+  }
+  .dashboard-status-card.anomaly .dashboard-card-num{color:#b42318!important;}
+  .dashboard-card-label{
+    font-size:13px;
+    font-weight:900;
+    color:#536274;
+  }
+  .dashboard-card-num{
+    margin:7px 0 5px;
+    font-size:32px;
+    line-height:1;
+    font-weight:900;
+    color:#163f7a;
+  }
+  .dashboard-card-note{
+    font-size:12px;
+    line-height:1.45;
+    color:#7a8899;
+  }
+  .dashboard-panel-heading{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .dashboard-panel-heading h3{margin:0 0 5px!important;}
+  .dashboard-task-total{
+    font-size:12.5px;
+    font-weight:800;
+    color:#64748b;
+    white-space:nowrap;
+  }
+  .dashboard-task-table{min-width:760px!important;}
+  .dashboard-task-table th:last-child,
+  .dashboard-task-table td:last-child{
+    width:126px!important;
+    min-width:126px!important;
+    text-align:center!important;
+  }
+  .dashboard-action-cell{
+    vertical-align:middle!important;
+    padding-top:8px!important;
+    padding-bottom:8px!important;
+  }
+  .dashboard-action{
+    width:104px!important;
+    min-width:104px!important;
+    height:38px!important;
+    min-height:38px!important;
+    padding:7px 10px!important;
+    margin:0 auto!important;
+    display:inline-flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    white-space:nowrap!important;
+    font-size:13px!important;
+  }
+  #anomalyCenter .anomaly-go{
+    min-width:96px!important;
+    height:38px!important;
+    min-height:38px!important;
+    display:inline-flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    margin:0!important;
+  }
+  @media(max-width:1100px){
+    .dashboard-status-cards{grid-template-columns:repeat(2,minmax(0,1fr));}
+  }
+  @media(max-width:650px){
+    .dashboard-status-cards{grid-template-columns:1fr;}
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1538,121 +1644,159 @@ function renderPage(page){
   if(page==='accounts') renderAccountsPage();
 }
 function renderDashboard(){
-  const stageMap = {};
+  const stageMap={};
   allRecords.forEach(r=>{
     const location=recordLocation(r);
-    const key = `${location}|${r.venue_type||'未分類'}|${r.day_of_week||'-'}|${r.time_slot||'-'}`;
-    if(!stageMap[key]) stageMap[key] = {key, location, venue:r.venue_type||'未分類', day:r.day_of_week||'-', time:r.time_slot||'-', records:[]};
+    const key=`${location}|${r.venue_type||'未分類'}|${r.day_of_week||'-'}|${r.time_slot||'-'}`;
+    if(!stageMap[key]) stageMap[key]={key,location,venue:r.venue_type||'未分類',day:r.day_of_week||'-',time:r.time_slot||'-',records:[]};
     stageMap[key].records.push(r);
   });
 
-  const stages = Object.values(stageMap).map(g=>{
+  const stages=Object.values(stageMap).map(g=>{
     const total=g.records.length;
-    const pendingLottery=g.records.filter(r=>!r.lottery_status).length;
-    const withResult=total-pendingLottery;
+    const pendingLottery=g.records.filter(r=>!String(r.lottery_status||'').trim()).length;
     const published=g.records.filter(r=>r.result_published).length;
-    const waitlist=g.records.filter(r=>String(r.lottery_status||'').startsWith('候補')).length;
-    let state='完成';
-    if(pendingLottery>0) state='待處理抽籤';
-    else if(published<total) state='待公布';
-    else if(waitlist>0) state='已公布／含候補';
-    return {...g,total,pendingLottery,withResult,published,waitlist,state};
+    const withResult=total-pendingLottery;
+    let state='已公告';
+    if(pendingLottery>0) state='待抽籤';
+    else if(published<total) state='待公告';
+    return {...g,total,pendingLottery,withResult,published,state};
   });
 
-  const pendingLotteryStages=stages.filter(x=>x.pendingLottery>0);
-  const pendingPublishStages=stages.filter(x=>x.pendingLottery===0 && x.published<x.total);
-  const waitlistStages=stages.filter(x=>x.waitlist>0);
+  const pendingLotteryStages=stages.filter(x=>x.state==='待抽籤');
+  const pendingPublishStages=stages.filter(x=>x.state==='待公告');
+  const publishedStages=stages.filter(x=>x.state==='已公告');
   const anomalyIssues=buildDataAnomalies();
-  const suspicious=anomalyIssues.length;
 
-  const priority={ '待處理抽籤':1, '待公布':2, '已公布／含候補':3, '完成':4 };
+  const priority={'待抽籤':1,'待公告':2};
   const taskRows=stages
-    .filter(x=>x.state!=='完成')
-    .sort((a,b)=> (priority[a.state]-priority[b.state]) || venueSortValue(a.venue)-venueSortValue(b.venue) || daySortValue(a.day)-daySortValue(b.day) || timeSortValue(a.time)-timeSortValue(b.time))
-    .slice(0,10);
+    .filter(x=>x.state==='待抽籤'||x.state==='待公告')
+    .sort((a,b)=>
+      (priority[a.state]-priority[b.state]) ||
+      String(a.location).localeCompare(String(b.location),'zh-Hant') ||
+      venueSortValue(a.venue)-venueSortValue(b.venue) ||
+      daySortValue(a.day)-daySortValue(b.day) ||
+      timeSortValue(a.time)-timeSortValue(b.time)
+    )
+    .slice(0,12);
 
   const statusTag=(x)=>{
-    if(x.state==='待處理抽籤') return '<span class="tag warn">待處理抽籤</span>';
-    if(x.state==='待公布') return '<span class="tag" style="background:#dbeafe;color:#1d4ed8;">待公布</span>';
-    return '<span class="tag green">已公布／含候補</span>';
-  };
-
-  const nextAction=(x)=>{
-    if(x.state==='待處理抽籤') return '<button class="btn btn-primary dash-go-lottery">前往抽籤作業</button>';
-    if(x.state==='待公布') return '<button class="btn btn-primary dash-go-records">前往結果公告</button>';
-    return '<button class="btn btn-gray dash-go-records">查看候補資料</button>';
+    if(x.state==='待抽籤') return '<span class="tag blue">待抽籤</span>';
+    return '<span class="tag blue">待公告</span>';
   };
 
   const taskHtml=taskRows.length?`
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>球場</th><th>星期</th><th>時段</th><th>登記筆數</th><th>目前狀態</th><th>建議操作</th></tr></thead>
+    <div class="table-wrap dashboard-task-table-wrap">
+      <table class="dashboard-task-table">
+        <thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記筆數</th><th>狀態</th><th>操作</th></tr></thead>
         <tbody>
           ${taskRows.map(x=>`<tr>
+            <td>${escapeHtml(locationLabel(x.location))}</td>
             <td><strong>${escapeHtml(x.venue)}</strong></td>
             <td>${escapeHtml(x.day)}</td>
             <td>${escapeHtml(x.time)}</td>
             <td>${x.total}</td>
             <td>${statusTag(x)}</td>
-            <td>${nextAction(x)}</td>
+            <td class="dashboard-action-cell"><button class="btn btn-primary dashboard-action" data-state="${x.state}" data-location="${escapeHtml(x.location)}" data-venue="${escapeHtml(x.venue)}" data-day="${escapeHtml(x.day)}" data-time="${escapeHtml(x.time)}">前往處理</button></td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>`:`<div class="msg ok">目前沒有待處理場次。</div>`;
 
   document.getElementById('content').innerHTML=`
-    <div class="panel" style="padding-bottom:14px;">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
-        <div>
-          <h3 style="margin-bottom:6px;">📌 作業總覽</h3>
-          <div class="small">聚焦尚待處理的抽籤、公布與候補作業，快速掌握下一步。</div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-gray" id="dashCapacityBtn">名額設定</button>
-          <button class="btn btn-gray" id="dashRecordsBtn">登記資料</button>
-          <button class="btn btn-primary" id="dashLotteryBtn">抽籤作業</button>
-        </div>
+    <div class="dashboard-status-cards">
+      <button type="button" class="dashboard-status-card" id="dashPendingLottery">
+        <div class="dashboard-card-label">待抽籤場次</div>
+        <div class="dashboard-card-num">${pendingLotteryStages.length}</div>
+        <div class="dashboard-card-note">尚有資料未完成抽籤結果</div>
+      </button>
+      <button type="button" class="dashboard-status-card" id="dashPendingPublish">
+        <div class="dashboard-card-label">待公告場次</div>
+        <div class="dashboard-card-num">${pendingPublishStages.length}</div>
+        <div class="dashboard-card-note">抽籤結果已完成、尚未公告</div>
+      </button>
+      <div class="dashboard-status-card static">
+        <div class="dashboard-card-label">已公告場次</div>
+        <div class="dashboard-card-num">${publishedStages.length}</div>
+        <div class="dashboard-card-note">目前已完成結果公告</div>
       </div>
-    </div>
-
-    <div class="cards">
-      <div class="stat"><div class="label">待處理抽籤場次</div><div class="num" style="color:#d97706">${pendingLotteryStages.length}</div><div class="small">尚有登記資料未設定抽籤結果</div></div>
-      <div class="stat"><div class="label">待公布場次</div><div class="num" style="color:#2563eb">${pendingPublishStages.length}</div><div class="small">結果已完成、尚未對民眾公布</div></div>
-      <div class="stat"><div class="label">含候補場次</div><div class="num" style="color:#7c3aed">${waitlistStages.length}</div><div class="small">已有候補順位，便於後續遞補管理</div></div>
-      <div class="stat" id="anomalySummaryCard" style="cursor:pointer;"><div class="label">資料異常檢核</div><div class="num" style="color:#b45309">${suspicious}</div><div class="small">重複登記、身分異常、名額及結果檢核</div></div>
+      <button type="button" class="dashboard-status-card anomaly" id="dashAnomalyCard">
+        <div class="dashboard-card-label">異常待確認</div>
+        <div class="dashboard-card-num">${anomalyIssues.length}</div>
+        <div class="dashboard-card-note">點擊查看系統檢核項目</div>
+      </button>
     </div>
 
     ${renderAnomalyCenter(anomalyIssues)}
 
-    <div class="panel">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+    <div class="panel dashboard-tasks-panel">
+      <div class="dashboard-panel-heading">
         <div>
-          <h3 style="margin:0 0 6px;">🗂 近期待辦</h3>
-          <div class="small">依目前資料狀態列出優先處理場次，完成後會自動從清單移除。</div>
+          <h3>待處理場次</h3>
+          <div class="small">只列出尚待抽籤或尚待公告的場次，完成後會自動移除。</div>
         </div>
+        <div class="dashboard-task-total">共 ${pendingLotteryStages.length+pendingPublishStages.length} 個待辦場次</div>
       </div>
       ${taskHtml}
     </div>
-
-    <div class="panel">
-      <h3>⚡ 快速操作</h3>
-      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;">
-        <button class="btn btn-gray" id="quickCapacity">設定場次名額</button>
-        <button class="btn btn-gray" id="quickRecords">查詢登記資料</button>
-        <button class="btn btn-primary" id="quickLottery">匯出／匯入抽籤結果</button>
-        <button class="btn btn-gray" id="quickPublish">結果公告</button>
-      </div>
-    </div>
   `;
 
-  const go=(id,page)=>{ const el=document.getElementById(id); if(el) el.onclick=()=>renderPage(page); };
-  go('dashCapacityBtn','capacity'); go('dashRecordsBtn','records'); go('dashLotteryBtn','lottery');
-  go('quickCapacity','capacity'); go('quickRecords','records'); go('quickLottery','lottery');
-  const qp=document.getElementById('quickPublish'); if(qp) qp.onclick=()=>{ recordsActionTab='publish'; renderPage('records'); };
-  const anomalyCard=document.getElementById('anomalySummaryCard'); if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
-  document.querySelectorAll('.anomaly-go').forEach(b=>b.onclick=()=>{ recordState.anomaly=b.dataset.anomaly||''; recordState.q=''; recordState.location=DEFAULT_LOCATION; recordState.venue=''; recordState.day=''; recordState.time=''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); });
-  document.querySelectorAll('.dash-go-lottery').forEach(b=>b.onclick=()=>renderPage('lottery'));
-  document.querySelectorAll('.dash-go-records').forEach(b=>b.onclick=()=>renderPage('records'));
+  const pendingLotteryBtn=document.getElementById('dashPendingLottery');
+  if(pendingLotteryBtn) pendingLotteryBtn.onclick=()=>renderPage('lottery');
+
+  const pendingPublishBtn=document.getElementById('dashPendingPublish');
+  if(pendingPublishBtn) pendingPublishBtn.onclick=()=>{ recordsActionTab='publish'; recordState.q=''; recordState.location=DEFAULT_LOCATION; recordState.venue=''; recordState.day=''; recordState.time=''; recordState.anomaly=''; recordState.page=1; renderPage('records'); };
+
+  const anomalyCard=document.getElementById('dashAnomalyCard');
+  if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
+
+  document.querySelectorAll('.anomaly-go').forEach(b=>b.onclick=()=>{
+    recordState.anomaly=b.dataset.anomaly||'';
+    recordState.q='';
+    recordState.location=DEFAULT_LOCATION;
+    recordState.venue='';
+    recordState.day='';
+    recordState.time='';
+    recordState.page=1;
+    recordsActionTab='filter';
+    renderPage('records');
+  });
+
+  document.querySelectorAll('.dashboard-action').forEach(btn=>{
+    btn.onclick=()=>{
+      const state=btn.dataset.state;
+      const location=btn.dataset.location||DEFAULT_LOCATION;
+      const venue=btn.dataset.venue||'';
+      const day=btn.dataset.day||'';
+      const time=btn.dataset.time||'';
+      if(state==='待抽籤'){
+        window.currentLotteryLocation=location;
+        renderPage('lottery');
+        setTimeout(()=>{
+          const loc=document.getElementById('dayCheckLocation');
+          const ven=document.getElementById('dayCheckVenue');
+          const d=document.getElementById('dayCheckDay');
+          const t=document.getElementById('dayCheckTime');
+          if(loc) loc.value=location;
+          if(ven) ven.value=venue;
+          if(d) d.value=day;
+          if(t) t.value=time;
+          const filterBtn=document.getElementById('refreshLotteryContext');
+          if(filterBtn) filterBtn.click();
+        },0);
+      }else{
+        recordState.location=location;
+        recordState.venue=venue;
+        recordState.day=day;
+        recordState.time=time;
+        recordState.q='';
+        recordState.anomaly='';
+        recordState.page=1;
+        recordsActionTab='publish';
+        renderPage('records');
+      }
+    };
+  });
 }
 
 function daySortValue(day){
