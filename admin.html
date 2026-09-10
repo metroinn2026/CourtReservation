@@ -2279,7 +2279,9 @@ function getFilteredRecords(){
     if(recordState.venue && r.venue_type!==recordState.venue) return false;
     if(recordState.day && r.day_of_week!==recordState.day) return false;
     if(recordState.time && r.time_slot!==recordState.time) return false;
-    if(recordState.anomaly && !getRecordAnomalyTypes(r).includes(recordState.anomaly)) return false;
+    const anomalyTypes=getRecordAnomalyTypes(r);
+    if(recordState.anomaly==='__normal__' && anomalyTypes.length>0) return false;
+    if(recordState.anomaly && recordState.anomaly!=='__normal__' && !anomalyTypes.includes(recordState.anomaly)) return false;
     if(q){
       const hay=`${r.name||''} ${r.phone||''} ${r.id_last4||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
       if(!hay.includes(q)) return false;
@@ -2342,8 +2344,9 @@ function renderRecordsPage(){
           <select id="filterVenue"><option value="">全部球類</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
           <select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
-          <select id="filterAnomaly">
-            <option value="">全部異常</option>
+          <select id="filterAnomaly" title="篩選正常或指定異常狀態">
+            <option value="" ${recordState.anomaly===''?'selected':''}>全部</option>
+            <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
             ${['手機重複','超過次數','超過名額','公布未完成','候補異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
           </select>
           <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
