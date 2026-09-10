@@ -93,7 +93,12 @@
   .records-compact-table td:nth-child(16), .records-compact-table th:nth-child(16){text-align:center}
   .records-table-wrap{overflow-x:auto}
 
-  </style>
+  
+  .lottery-advanced{margin:18px 20px 20px!important;border:1px dashed #cbd8e6!important;border-radius:16px!important;background:#fbfcfe!important;padding:12px 14px!important}
+  .lottery-advanced summary{font-weight:800!important;color:#53657a!important;cursor:pointer!important}
+  .lottery-advanced[open]{background:#f8fbff!important}
+
+</style>
 
 <style id="minimal-admin-refresh">
   :root{
@@ -1800,20 +1805,24 @@ function renderLotteryPage(){
 
       <details class="lottery-advanced">
         <summary>備用工具：系統內建抽籤</summary>
-        <div class="small" style="margin:8px 0 12px;">目前主要作業採 Excel 電子化抽籤；以下保留原系統單一場次與批次抽籤功能，供備用測試使用。</div>
+        <div class="small" style="margin:8px 0 12px;">目前主要作業仍可採 Excel 電子化抽籤；此區另保留系統內建抽籤工具，供未來或備用情境使用。</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-          <button id="singleLotteryTab" class="btn btn-gray">單一場次抽籤</button>
-          <button id="batchLotteryTab" class="btn btn-gray">批次抽籤</button>
+          <button id="singleLotteryTab" class="btn btn-gray">單一場次抽籤工具</button>
+          <button id="batchLotteryTab" class="btn btn-gray">批次抽籤工具</button>
         </div>
       <div id="singleLotteryPanel" style="display:none;margin-top:14px;">
         <div class="alert">
-          建議流程：①選場次 → ②按預覽抽籤確認名單 → ③正式抽籤並鎖定 → ④回「登記資料」確認與公布結果。
+          操作流程：①選擇場次並載入名單 → ②輸入正取／備取人數 → ③進行抽籤並確認結果 → ④批次寫入資料庫。寫入後仍維持「未公布」。
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:end;margin-bottom:14px;">
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;align-items:end;margin-bottom:14px;">
           <div>
-            <label class="small" style="font-weight:900;color:#334155;">運動類型</label>
-            <select id="lotVenue"><option value="">請選擇類型</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
+            <label class="small" style="font-weight:900;color:#334155;">場地</label>
+            <select id="lotLocation">${locations.map(v=>`<option value="${escapeHtml(v)}" ${v==='北投會館'?'selected':''}>${escapeHtml(v)}</option>`).join('')}</select>
+          </div>
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">球類</label>
+            <select id="lotVenue"><option value="">請選擇球類</option>${venues.map(v=>`<option>${escapeHtml(v)}</option>`).join('')}</select>
           </div>
           <div>
             <label class="small" style="font-weight:900;color:#334155;">星期</label>
@@ -1828,18 +1837,30 @@ function renderLotteryPage(){
             <input id="lotWinnerCount" type="number" min="1" value="1" placeholder="例如 3">
           </div>
           <div>
-            <label class="small" style="font-weight:900;color:#334155;">候補人數</label>
+            <label class="small" style="font-weight:900;color:#334155;">備取人數</label>
             <input id="lotWaitlistCount" type="number" min="0" value="3" placeholder="例如 3">
           </div>
-          <button id="previewLot" class="btn btn-gray">① 預覽抽籤</button>
-          <button id="lockLot" class="btn btn-orange">② 正式抽籤並鎖定</button>
+          <button id="loadLotStage" class="btn btn-gray">載入場次名單</button>
+          <button id="previewLot" class="btn btn-primary">進行抽籤</button>
         </div>
 
-        <div id="lotteryPreview"></div>
         <div id="lotteryStageSummary"></div>
-        <div id="unlockArea" style="display:none;margin-top:12px;"></div>
         <div id="lotteryList"></div>
-        <div id="lotteryResult"></div><div id="lotteryNotifyPanel"></div>
+        <div id="lotteryResult"></div>
+        <div id="lotteryCommitBar" style="display:none;margin-top:12px;padding:14px;border:1px solid #d7e3f0;border-radius:14px;background:#f8fbff;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div>
+              <strong>抽籤結果尚未寫入資料庫</strong>
+              <div class="small" style="margin-top:4px;">請先核對正取、備取與未中籤名單；確認後再批次更新。</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button id="discardLotResult" class="btn btn-gray">取消本次結果</button>
+              <button id="lockLot" class="btn btn-primary">確認結果並批次寫入</button>
+            </div>
+          </div>
+        </div>
+        <div id="unlockArea" style="display:none;margin-top:12px;"></div>
+        <div id="lotteryPreview"></div><div id="lotteryNotifyPanel"></div>
       </div>
 
       <div id="batchLotteryPanel" style="display:none;">
@@ -2194,16 +2215,18 @@ function renderLotteryPage(){
   }
 
   function getSelectedRecords(){
+    const location=document.getElementById('lotLocation')?.value || '北投會館';
     const venue=document.getElementById('lotVenue').value;
     const day=document.getElementById('lotDay').value;
     const time=document.getElementById('lotTime').value;
-    const selectedComplete=!!venue && !!day && !!time;
+    const selectedComplete=!!location && !!venue && !!day && !!time;
     const records=selectedComplete ? allRecords.filter(r=>
+      recordLocation(r)===location &&
       r.venue_type===venue &&
       r.day_of_week===day &&
       r.time_slot===time
     ) : [];
-    return {venue,day,time,selectedComplete,records};
+    return {location,venue,day,time,selectedComplete,records};
   }
 
   function localStatusValue(status){
@@ -2442,100 +2465,131 @@ function renderLotteryPage(){
     return records;
   };
 
-  function restoreLotterySelection(venue,day,time){
+  let pendingBuiltInLottery=null;
+  function lotterySelectionKey(){
+    const {location,venue,day,time}=getSelectedRecords();
+    return `${location}|${venue}|${day}|${time}`;
+  }
+  function clearPendingBuiltInLottery(){
+    pendingBuiltInLottery=null;
+    const resultBox=document.getElementById('lotteryResult');
+    if(resultBox) resultBox.innerHTML='';
+    const commitBar=document.getElementById('lotteryCommitBar');
+    if(commitBar) commitBar.style.display='none';
+  }
+
+  function restoreLotterySelection(venue,day,time,location='北投會館'){
+    const l=document.getElementById('lotLocation');
     const v=document.getElementById('lotVenue');
     const d=document.getElementById('lotDay');
     const t=document.getElementById('lotTime');
+    if(l) l.value=location;
     if(v) v.value=venue;
     if(d) d.value=day;
     if(t) t.value=time;
     refresh();
   }
 
-  ['lotVenue','lotDay','lotTime','lotWinnerCount','lotWaitlistCount'].forEach(id=>{
-    document.getElementById(id).onchange=refresh;
-    document.getElementById(id).oninput=refresh;
+  ['lotLocation','lotVenue','lotDay','lotTime','lotWinnerCount','lotWaitlistCount'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    const handler=()=>{ clearPendingBuiltInLottery(); refresh(); };
+    el.onchange=handler;
+    el.oninput=handler;
   });
 
+  const loadBtn=document.getElementById('loadLotStage');
+  if(loadBtn) loadBtn.onclick=()=>{
+    clearPendingBuiltInLottery();
+    const {selectedComplete,records}=getSelectedRecords();
+    if(!selectedComplete){ alert('請先選擇完整的「場地＋球類＋星期＋時段」。'); return; }
+    refresh();
+    if(records.length===0) alert('此場次目前沒有登記資料。');
+  };
+
   document.getElementById('previewLot').onclick=()=>{
-    const rec=refresh();
+    const {location,venue,day,time,selectedComplete,records:rec}=getSelectedRecords();
     const n=parseInt(document.getElementById('lotWinnerCount').value,10)||0;
     const w=parseInt(document.getElementById('lotWaitlistCount').value,10)||0;
-    if(n<=0||rec.length===0){alert('請選擇場次並輸入中籤人數');return;}
+    if(!selectedComplete){alert('請先選擇完整的「場地＋球類＋星期＋時段」。');return;}
+    if(n<=0||rec.length===0){alert('請確認場次名單與正取人數');return;}
+    if(w<0){alert('備取人數不可小於 0');return;}
+    if(rec.some(r=>r.lottery_locked === true || r.lottery_locked === 'true' || String(r.lottery_status||'').trim() !== '')){alert('此場次已有抽籤結果或已鎖定，不可直接重新抽籤。');return;}
+    const uniquePeople=new Set(rec.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+    if(n>uniquePeople){alert(`正取人數不可超過本場次登記人數（${uniquePeople} 人）。`);return;}
+    if(n+w>uniquePeople){
+      const ok=confirm(`正取 ${n} 人＋備取 ${w} 人超過登記人數 ${uniquePeople} 人，備取將自動縮減至可用人數。是否繼續？`);
+      if(!ok) return;
+    }
     const result=performLotteryWithWaitlist(rec,n,w);
-    renderLotteryResult(result,'預覽抽籤結果（未鎖定）',false);
+    pendingBuiltInLottery={location,venue,day,time,result,sourceIds:rec.map(r=>r.id),createdAt:new Date().toISOString()};
+    renderLotteryResult(result,'抽籤結果預覽（尚未寫入）',false);
+    const bar=document.getElementById('lotteryCommitBar');
+    if(bar) bar.style.display='block';
+  };
+
+  const discardBtn=document.getElementById('discardLotResult');
+  if(discardBtn) discardBtn.onclick=()=>{
+    if(!pendingBuiltInLottery) return;
+    if(confirm('確定取消這次尚未寫入的抽籤結果嗎？')) clearPendingBuiltInLottery();
   };
 
   document.getElementById('lockLot').onclick=async()=>{
-    const {venue,day,time,records:rec}=getSelectedRecords();
-    const n=parseInt(document.getElementById('lotWinnerCount').value,10)||0;
-    const w=parseInt(document.getElementById('lotWaitlistCount').value,10)||0;
+    const pending=pendingBuiltInLottery;
+    if(!pending){ alert('請先進行抽籤並確認預覽結果。'); return; }
+    if(lotterySelectionKey()!==`${pending.location}|${pending.venue}|${pending.day}|${pending.time}`){
+      alert('目前場次條件已變更，請重新抽籤。'); clearPendingBuiltInLottery(); return;
+    }
+    const currentRecords=allRecords.filter(r=>pending.sourceIds.includes(r.id));
+    if(currentRecords.length!==pending.sourceIds.length){ alert('場次資料已變更，請重新載入後抽籤。'); clearPendingBuiltInLottery(); return; }
+    if(currentRecords.some(r=>r.result_published || r.lottery_locked === true || r.lottery_locked === 'true' || String(r.lottery_status||'').trim() !== '')){
+      alert('其中部分資料已有結果、已鎖定或已公布，請重新載入確認。'); clearPendingBuiltInLottery(); return;
+    }
 
-    if(!venue||!day||!time){alert('正式抽籤前，請先選定「運動類型＋星期＋時段」');return;}
-    if(n<=0||rec.length===0){alert('請確認抽籤人數與篩選資料');return;}
-    if(rec.some(r=>r.lottery_locked === true || r.lottery_locked === 'true' || String(r.lottery_status||'').trim() !== '')){alert('此場次已有抽籤結果，不可重抽');return;}
-    const okConfirm=await confirmModal('確認正式抽籤',`確定要正式抽籤並鎖定此場次嗎？<br>${escapeHtml(venue)}｜${escapeHtml(day)}｜${escapeHtml(time)}<br>中籤 ${n} 人，候補 ${w} 人`);
+    const result=pending.result;
+    const okConfirm=await confirmModal('確認批次寫入抽籤結果',`確定將目前預覽結果批次寫入資料庫並鎖定嗎？<br><br>${escapeHtml(pending.location)}｜${escapeHtml(pending.venue)}｜${escapeHtml(pending.day)}｜${escapeHtml(pending.time)}<br>正取 ${result.winners.length} 人｜備取 ${result.waitlist.length} 人｜未中籤 ${result.losers.length} 人<br><br>寫入後仍維持「未公布」，需另行確認後才會顯示於民眾前台。`);
     if(!okConfirm) return;
 
-    const result=performLotteryWithWaitlist(rec,n,w);
-    const batch=`${venue}|${day}|${time}|${new Date().toISOString()}`;
-
+    const btn=document.getElementById('lockLot');
+    if(btn){btn.disabled=true;btn.textContent='寫入中...';}
+    const batch=`BUILTIN|${pending.location}|${pending.venue}|${pending.day}|${pending.time}|${new Date().toISOString()}`;
     const updateRows=[];
-    result.winners.forEach(r=>updateRows.push({id:r.id, lottery_status:'中籤'}));
-    result.waitlist.forEach((r,idx)=>updateRows.push({id:r.id, lottery_status:`候補${idx+1}`}));
-    result.losers.forEach(r=>updateRows.push({id:r.id, lottery_status:'未中籤'}));
+    result.winners.forEach(r=>updateRows.push({id:r.id,status:'中籤'}));
+    result.waitlist.forEach((r,idx)=>updateRows.push({id:r.id,status:`候補${idx+1}`}));
+    result.losers.forEach(r=>updateRows.push({id:r.id,status:'未中籤'}));
 
     const groups={};
-    updateRows.forEach(row=>{
-      if(!groups[row.lottery_status]) groups[row.lottery_status]=[];
-      groups[row.lottery_status].push(row.id);
-    });
-
+    updateRows.forEach(row=>{ if(!groups[row.status]) groups[row.status]=[]; groups[row.status].push(row.id); });
     let updatedCount=0;
-    for (const [status, ids] of Object.entries(groups)) {
-      const { error, data } = await db
-        .from(RECORD_TABLE)
-        .update({
-          lottery_status: status,
-          lottery_batch: batch,
-          lottery_locked: true,
-          result_published: false
-        })
-        .in('id', ids)
-        .select('id');
-
-      if (error) {
-        alert('寫入抽籤結果失敗：' + (error.message || '未知錯誤'));
-        console.error(error);
+    for(const [status,ids] of Object.entries(groups)){
+      const {error,data}=await db.from(RECORD_TABLE).update({
+        lottery_status:status,
+        lottery_batch:batch,
+        lottery_locked:true,
+        result_published:false,
+        updated_at:new Date().toISOString()
+      }).in('id',ids).select('id');
+      if(error){
+        alert('寫入抽籤結果失敗：'+(error.message||'未知錯誤'));
+        if(btn){btn.disabled=false;btn.textContent='確認結果並批次寫入';}
         return;
       }
-      updatedCount += (data || []).length;
+      updatedCount+=(data||[]).length;
     }
-
-    if(updatedCount !== updateRows.length){
-      alert(`抽籤結果寫入不完整：應更新 ${updateRows.length} 筆，實際更新 ${updatedCount} 筆。請檢查 Supabase 權限。`);
+    if(updatedCount!==updateRows.length){
+      alert(`抽籤結果寫入不完整：應更新 ${updateRows.length} 筆，實際更新 ${updatedCount} 筆。請檢查資料庫權限。`);
+      if(btn){btn.disabled=false;btn.textContent='確認結果並批次寫入';}
       await loadAllData();
-      renderLotteryPage();
-      setTimeout(()=>restoreLotterySelection(venue,day,time),0);
       return;
     }
-
-    await writeOperationLog('正式抽籤並鎖定', {venue_type:venue, day_of_week:day, time_slot:time, winner_count:result.winners.length, waitlist_count:result.waitlist.length, loser_count:result.losers.length, total:updatedCount}, updateRows.map(r=>r.id));
-    alert(`正式抽籤結果已鎖定，共更新 ${updatedCount} 筆`);
+    await writeOperationLog('系統內建抽籤批次寫入', {
+      location:pending.location, venue_type:pending.venue, day_of_week:pending.day, time_slot:pending.time,
+      winner_count:result.winners.length, waitlist_count:result.waitlist.length, loser_count:result.losers.length, total:updatedCount
+    }, updateRows.map(r=>r.id));
+    alert(`抽籤結果已批次寫入並鎖定，共更新 ${updatedCount} 筆；目前尚未公布。`);
+    pendingBuiltInLottery=null;
     await loadAllData();
-
-    const freshRecords=allRecords.filter(r=>r.venue_type===venue && r.day_of_week===day && r.time_slot===time);
-    const freshResult={
-      winners:freshRecords.filter(r=>r.lottery_status==='中籤'),
-      waitlist:freshRecords.filter(r=>String(r.lottery_status||'').startsWith('候補')),
-      losers:freshRecords.filter(r=>r.lottery_status==='未中籤')
-    };
-
     renderLotteryPage();
-    setTimeout(()=>{
-      restoreLotterySelection(venue,day,time);
-      renderLotteryResult(freshResult,'正式抽籤結果（已鎖定）',true);
-    },0);
   };
 
 
@@ -2791,7 +2845,21 @@ function performLotteryWithWaitlist(records,winnerCount,waitlistCount){
   });
 
   const arr=Object.values(groups);
-  const shuffled=[...arr].sort(()=>Math.random()-.5);
+  const shuffled=[...arr];
+  const randomIndex=(max)=>{
+    if(max<=1) return 0;
+    if(globalThis.crypto?.getRandomValues){
+      const limit=Math.floor(0x100000000/max)*max;
+      const buf=new Uint32Array(1);
+      let x; do{ globalThis.crypto.getRandomValues(buf); x=buf[0]; }while(x>=limit);
+      return x%max;
+    }
+    return Math.floor(Math.random()*max);
+  };
+  for(let i=shuffled.length-1;i>0;i--){
+    const j=randomIndex(i+1);
+    [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];
+  }
 
   const winnerGroups=shuffled.slice(0,Math.min(winnerCount,shuffled.length));
   const waitGroups=shuffled.slice(winnerGroups.length,winnerGroups.length+Math.max(0,waitlistCount));
