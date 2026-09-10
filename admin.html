@@ -1209,19 +1209,21 @@ function renderRecordsPage(){
           <button id="applyFilterBtn" class="btn btn-primary">套用篩選</button>
         </div>
         <div class="section-note">可依姓名、手機末四碼、登記序號、場地、球類、星期、時段及異常狀態快速查找資料。</div>
+        <div class="records-action-row" style="margin-top:12px;">
+          <button id="exportBtn" class="btn btn-gray">匯出目前篩選名單</button>
+        </div>
       </div>
 
       <div id="recordsPanelBatch" class="records-function-panel ${recordsActionTab==='batch'?'':'hidden'}">
         <div class="records-action-title">批次處理</div>
         <div class="records-action-row">
-          <button id="exportBtn" class="btn btn-primary">匯出名單</button>
           <select id="batchLotteryStatus" title="先勾選資料，再選擇要統一變更的抽籤狀態">
             <option value="">選擇抽籤狀態</option><option value="中籤">中籤</option><option value="候補1">候補1</option><option value="候補2">候補2</option><option value="候補3">候補3</option><option value="未中籤">未中籤</option><option value="__clear__">未抽籤</option>
           </select>
           <button id="batchLotteryStatusBtn" class="btn btn-primary">套用至勾選</button>
           <button id="batchDeleteBtn" class="btn btn-gray">刪除勾選</button>
         </div>
-        <div class="section-note">勾選下方登記資料後，可統一變更抽籤狀態或刪除；匯出名單會依目前篩選條件產出。</div>
+        <div class="section-note">勾選下方登記資料後，可統一變更抽籤狀態或刪除。</div>
       </div>
 
       <div id="recordsPanelPublish" class="records-function-panel ${recordsActionTab==='publish'?'':'hidden'}">
