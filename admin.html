@@ -955,6 +955,49 @@
   }
 </style>
 
+
+<style id="lottery-main-actions-simplified">
+  .lottery-main-actions{
+    margin:0 20px 14px;
+    padding:14px 16px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+    background:#f7f9fc;
+    border:1px solid #dbe4ee;
+    border-radius:14px;
+  }
+  .lottery-main-actions-title{
+    font-size:14px;
+    font-weight:900;
+    color:#334155;
+  }
+  .lottery-main-actions-buttons{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .lottery-main-actions-buttons .btn{
+    min-width:132px!important;
+  }
+  #importResultSummary{
+    margin:0 20px 12px;
+  }
+  #importLotteryPreview{
+    margin-left:20px;
+    margin-right:20px;
+  }
+  @media(max-width:760px){
+    .lottery-main-actions{
+      align-items:flex-start;
+      flex-direction:column;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -2544,7 +2587,6 @@ function renderLotteryPage(){
   document.getElementById('content').innerHTML=`
     <div class="panel">
       <h3>抽籤作業中心</h3>
-      <div class="small" style="margin-bottom:14px;">依實際作業分成「名單匯出 → Excel 抽籤 → 結果匯入 → 確認公布」三個階段。可依場地、球類、星期、時段單獨或組合篩選資料。</div>
 
       <div class="lottery-context">
         <div class="lottery-context-grid" style="grid-template-columns:repeat(4,minmax(150px,1fr)) auto;">
@@ -2566,48 +2608,22 @@ function renderLotteryPage(){
           </div>
           <div><button id="refreshLotteryContext" class="btn btn-gray">套用條件</button></div>
         </div>
-        <div class="small" style="margin-top:10px;">場地預設帶入北投；未選擇的其他條件視為全部，例如只選「球類」即可匯出該球類全部登記資料。</div>
-      </div>
-
-      <div class="admin-tabs" role="tablist" aria-label="抽籤作業功能">
-        <button id="dayCheckTab" class="admin-tab active" role="tab">抽籤名單</button>
-        <button id="importResultTab" class="admin-tab" role="tab">結果匯入</button>
-        <button id="publishResultTab" class="admin-tab" role="tab">結果公布</button>
       </div>
 
       <div id="dayCheckPanel">
-        <div class="lottery-action-card">
-          <div class="lottery-step-title">抽籤名單</div>
-          <div class="lottery-step-desc">依目前篩選條件叫出登記清單並匯出，於 Excel 完成電子化抽籤；可只選一項條件，也可組合多項條件。</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button id="exportDayCheckBtn" class="btn btn-green">匯出抽籤名單</button>
+        <div class="lottery-main-actions">
+          <div class="lottery-main-actions-title">名單作業</div>
+          <div class="lottery-main-actions-buttons">
+            <button id="exportDayCheckBtn" class="btn btn-primary">匯出抽籤名單</button>
+            <button id="importLotteryResultBtn" class="btn btn-primary">匯入抽籤結果</button>
+            <input id="importLotteryFile" type="file" accept=".xlsx,.xls,.csv" style="display:none;">
           </div>
         </div>
-        <div id="dayCheckSummary"></div>
-        <div id="dayCheckTable"></div>
-      </div>
 
-      <div id="importResultPanel" style="display:none;">
-        <div class="lottery-action-card">
-          <div class="lottery-step-title">匯入 Excel 抽籤結果</div>
-          <div class="lottery-step-desc">Excel 抽籤完成後直接匯回系統。系統以「序號」比對登記資料，抽籤狀態可填中籤、未中籤、候補1、候補2…。匯入前會先檢核並預覽，不會立即公布。</div>
-          <button id="importLotteryResultBtn" class="btn btn-primary">選擇 Excel 並匯入</button>
-          <input id="importLotteryFile" type="file" accept=".xlsx,.xls,.csv" style="display:none;">
-        </div>
         <div id="importLotteryPreview"></div>
         <div id="importResultSummary"></div>
-      </div>
-
-      <div id="publishResultPanel" style="display:none;">
-        <div class="lottery-action-card">
-          <div class="lottery-step-title">結果確認與公布</div>
-          <div class="lottery-step-desc">先確認匯入後的中籤、候補與未中籤狀態；確認無誤後，再前往登記資料執行公布。只有完成公布的結果才會同步至民眾前台。</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button id="goPublishRecordsBtn" class="btn btn-primary">前往結果公告</button>
-            <button id="goRecordsCheckBtn" class="btn btn-gray">查看登記資料</button>
-          </div>
-        </div>
-        <div id="publishResultSummary"></div>
+        <div id="dayCheckSummary"></div>
+        <div id="dayCheckTable"></div>
       </div>
 
       <details class="lottery-advanced">
@@ -2738,36 +2754,24 @@ function renderLotteryPage(){
     </div>
   `;
 
-  function switchLotteryTab(tab){
-    const dayPanel=document.getElementById('dayCheckPanel');
-    const importPanel=document.getElementById('importResultPanel');
-    const publishPanel=document.getElementById('publishResultPanel');
+  function switchBuiltInLotteryTab(tab){
     const singlePanel=document.getElementById('singleLotteryPanel');
     const batchPanel=document.getElementById('batchLotteryPanel');
-    const dayTab=document.getElementById('dayCheckTab');
-    const importTab=document.getElementById('importResultTab');
-    const publishTab=document.getElementById('publishResultTab');
-
-    dayPanel.style.display = tab==='day' ? 'block' : 'none';
-    importPanel.style.display = tab==='import' ? 'block' : 'none';
-    publishPanel.style.display = tab==='publish' ? 'block' : 'none';
-    singlePanel.style.display = tab==='single' ? 'block' : 'none';
-    batchPanel.style.display = tab==='batch' ? 'block' : 'none';
-    [dayTab,importTab,publishTab].forEach(el=>el && el.classList.remove('active'));
     const singleTab=document.getElementById('singleLotteryTab');
     const batchTab=document.getElementById('batchLotteryTab');
-    [singleTab,batchTab].forEach(el=>el && el.classList.remove('active'));
-    if(tab==='day') dayTab.classList.add('active');
-    if(tab==='import') importTab.classList.add('active');
-    if(tab==='publish') publishTab.classList.add('active');
-    if(tab==='single' && singleTab) singleTab.classList.add('active');
-    if(tab==='batch' && batchTab) batchTab.classList.add('active');
 
-    if(tab==='batch') previewBatch();
-    if(tab==='single') refresh();
-    if(tab==='day') renderDayCheck();
-    if(tab==='import') renderImportSummary();
-    if(tab==='publish') renderPublishSummary();
+    singlePanel.style.display = tab==='single' ? 'block' : 'none';
+    batchPanel.style.display = tab==='batch' ? 'block' : 'none';
+    [singleTab,batchTab].forEach(el=>el && el.classList.remove('active'));
+
+    if(tab==='single' && singleTab){
+      singleTab.classList.add('active');
+      refresh();
+    }
+    if(tab==='batch' && batchTab){
+      batchTab.classList.add('active');
+      previewBatch();
+    }
   }
 
   function renderImportSummary(){
@@ -2780,24 +2784,11 @@ function renderLotteryPage(){
     box.innerHTML=`<div class="msg info">目前 ${label} 共 ${records.length} 筆登記；已有 ${withResult} 筆結果、${locked} 筆已鎖定。</div>`;
   }
 
-  function renderPublishSummary(){
-    const box=document.getElementById('publishResultSummary'); if(!box) return;
-    const {location,venue,day,time,records}=getDayCheckRecords();
-    if(!records.length){ box.innerHTML='<div class="msg info">目前條件沒有登記資料，請調整上方篩選條件。</div>'; return; }
-    const counts={winner:0,wait:0,lose:0,notYet:0,published:0};
-    records.forEach(r=>{ const s=String(r.lottery_status||''); if(s==='中籤') counts.winner++; else if(s.startsWith('候補')) counts.wait++; else if(s==='未中籤') counts.lose++; else counts.notYet++; if(r.result_published) counts.published++; });
-    box.innerHTML=`<div class="cards"><div class="stat"><div class="label">中籤</div><div class="num" style="color:#16a34a">${counts.winner}</div></div><div class="stat"><div class="label">候補</div><div class="num" style="color:#d97706">${counts.wait}</div></div><div class="stat"><div class="label">未中籤</div><div class="num" style="color:#64748b">${counts.lose}</div></div><div class="stat"><div class="label">未抽籤／已公布</div><div class="num">${counts.notYet} / ${counts.published}</div></div></div>`;
-  }
 
-  document.getElementById('dayCheckTab').onclick=()=>switchLotteryTab('day');
-  document.getElementById('importResultTab').onclick=()=>switchLotteryTab('import');
-  document.getElementById('publishResultTab').onclick=()=>switchLotteryTab('publish');
-  document.getElementById('singleLotteryTab').onclick=()=>switchLotteryTab('single');
-  document.getElementById('batchLotteryTab').onclick=()=>switchLotteryTab('batch');
-  document.getElementById('refreshLotteryContext').onclick=()=>{ window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION; const lotLoc=document.getElementById('lotLocation'); if(lotLoc) lotLoc.value=window.currentLotteryLocation; const batchLoc=document.getElementById('batchLocation'); if(batchLoc) batchLoc.value=window.currentLotteryLocation; renderDayCheck(); renderImportSummary(); renderPublishSummary(); previewBatch(); };
-  document.getElementById('goPublishRecordsBtn').onclick=()=>{ const {location,venue,day,time}=getDayCheckRecords(); recordState.location=location||DEFAULT_LOCATION; recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='publish'; renderPage('records'); };
-  document.getElementById('goRecordsCheckBtn').onclick=()=>{ const {location,venue,day,time}=getDayCheckRecords(); recordState.location=location||DEFAULT_LOCATION; recordState.venue=venue||''; recordState.day=day||''; recordState.time=time||''; recordState.page=1; recordsActionTab='filter'; renderPage('records'); };
-  ['dayCheckLocation','dayCheckVenue','dayCheckDay','dayCheckTime'].forEach(id=>{ const el=document.getElementById(id); if(el) el.onchange=()=>{ window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION; const lotLoc=document.getElementById('lotLocation'); if(lotLoc) lotLoc.value=window.currentLotteryLocation; const batchLoc=document.getElementById('batchLocation'); if(batchLoc) batchLoc.value=window.currentLotteryLocation; renderDayCheck(); renderImportSummary(); renderPublishSummary(); }; });
+  document.getElementById('singleLotteryTab').onclick=()=>switchBuiltInLotteryTab('single');
+  document.getElementById('batchLotteryTab').onclick=()=>switchBuiltInLotteryTab('batch');
+  document.getElementById('refreshLotteryContext').onclick=()=>{ window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION; const lotLoc=document.getElementById('lotLocation'); if(lotLoc) lotLoc.value=window.currentLotteryLocation; const batchLoc=document.getElementById('batchLocation'); if(batchLoc) batchLoc.value=window.currentLotteryLocation; renderDayCheck(); renderImportSummary(); previewBatch(); };
+  ['dayCheckLocation','dayCheckVenue','dayCheckDay','dayCheckTime'].forEach(id=>{ const el=document.getElementById(id); if(el) el.onchange=()=>{ window.currentLotteryLocation=document.getElementById('dayCheckLocation')?.value || DEFAULT_LOCATION; const lotLoc=document.getElementById('lotLocation'); if(lotLoc) lotLoc.value=window.currentLotteryLocation; const batchLoc=document.getElementById('batchLocation'); if(batchLoc) batchLoc.value=window.currentLotteryLocation; renderDayCheck(); renderImportSummary(); }; });
   document.getElementById('exportDayCheckBtn').onclick=()=>{
     const {records}=getDayCheckRecords();
     if(records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
