@@ -774,6 +774,51 @@
   }
 </style>
 
+
+<style id="records-list-layout-v2">
+  .records-shared-toolbar{
+    display:grid!important;
+    grid-template-columns:minmax(220px,1.45fr) repeat(5,minmax(120px,1fr)) 110px!important;
+    gap:10px!important;
+    width:100%!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+  }
+  .records-shared-toolbar > *{
+    min-width:0!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+  }
+  .records-filter-actions{
+    display:flex;
+    justify-content:flex-end;
+    align-items:center;
+    gap:10px;
+    margin-top:10px;
+    width:100%;
+  }
+  .records-filter-actions .btn{
+    min-width:126px!important;
+  }
+  .records-fixed-filter{
+    overflow:hidden!important;
+  }
+  @media(max-width:1320px){
+    .records-shared-toolbar{
+      grid-template-columns:repeat(4,minmax(160px,1fr))!important;
+    }
+  }
+  @media(max-width:900px){
+    .records-shared-toolbar{
+      grid-template-columns:repeat(2,minmax(150px,1fr))!important;
+    }
+    .records-filter-actions{
+      justify-content:flex-start;
+      flex-wrap:wrap;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -1433,6 +1478,7 @@ function renderRecordsScopeSummary(){
 }
 
 function renderRecordsPage(){
+  if(recordsActionTab==='batch') recordsActionTab='filter';
   selectedRecordIds.clear();
   const locations=getAdminLocations();
   if(!recordState.location) recordState.location=DEFAULT_LOCATION;
@@ -1456,16 +1502,17 @@ function renderRecordsPage(){
             ${['手機重複','超過次數','超過名額','公布未完成','候補異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
           </select>
           <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
+        </div>
+        <div class="records-filter-actions">
           <button id="applyFilterBtn" class="btn btn-primary">套用條件</button>
-          <button id="exportBtn" class="btn btn-gray">匯出目前名單</button>
+          <button id="exportBtn" class="btn btn-primary">匯出目前名單</button>
         </div>
       </div>
 
       <div id="recordsScopeSummary"></div>
 
       <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
-        <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
-        <button class="records-function-tab ${recordsActionTab==='batch'?'active':''}" data-action-tab="batch">批次處理</button>
+        <button class="records-function-tab ${recordsActionTab!=='publish'?'active':''}" data-action-tab="filter">登記清單</button>
         <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
       </div>
 
@@ -1518,23 +1565,12 @@ function renderRecordsWorkspace(){
     renderRecordsTable();
     return;
   }
-  if(recordsActionTab==='batch'){
-    box.innerHTML=`
-      <div class="records-workspace-head">
-        <div>
-          <strong>批次處理</strong>
-          <div class="small">勾選清單後可一次變更狀態或刪除；個別狀態也可直接使用下拉選單調整。</div>
-        </div>
-      </div>
-      <div id="recordsTable"></div>`;
-    renderRecordsTable();
-    return;
-  }
+
   box.innerHTML=`
     <div class="records-workspace-head">
       <div>
         <strong>登記清單</strong>
-        <div class="small">目前清單會依上方工作範圍顯示；需要匯出時使用上方「匯出目前名單」。</div>
+        <div class="small">可直接勾選多筆資料進行狀態變更或刪除；個別狀態也可使用下拉選單調整，最後一次儲存。</div>
       </div>
     </div>
     <div id="recordsTable"></div>`;
@@ -1632,7 +1668,7 @@ function renderRecordsTable(){
   if(recordState.page>totalPages) recordState.page=totalPages;
   const start=(recordState.page-1)*recordState.perPage;
   const rows=filtered.slice(start,start+recordState.perPage);
-  const isBatch=recordsActionTab==='batch';
+  const isBatch=recordsActionTab!=='publish';
   const pageIds=rows.map(r=>String(r.id));
   const allPageSelected=isBatch && pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
 
