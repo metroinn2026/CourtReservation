@@ -110,7 +110,7 @@
     <aside class="sidebar">
       <div class="brand"><h1>北投會館運動場域智慧租借管理系統｜管理後台</h1><span>Admin Console</span></div>
       <nav class="nav">
-        <button data-page="dashboard" class="active">📊 總覽儀表板</button>
+        <button data-page="dashboard" class="active">📊 作業總覽</button>
         <button data-page="records">📋 登記資料</button>
         <button data-page="capacity">🎯 名額設定</button>
         <button data-page="lottery">🎲 抽籤作業</button>
@@ -282,7 +282,7 @@ function countSuspiciousPhones(){
 }
 function setActiveNav(page){
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
-  const title={dashboard:'總覽儀表板',records:'登記資料',capacity:'抽籤名額設定',lottery:'抽籤作業',settings:'文字設定中心',logs:'操作紀錄',accounts:'帳號權限管理'}[page] || '';
+  const title={dashboard:'作業總覽',records:'登記資料',capacity:'抽籤名額設定',lottery:'抽籤作業',settings:'文字設定中心',logs:'操作紀錄',accounts:'帳號權限管理'}[page] || '';
   document.getElementById('pageTitle').textContent=title;
 }
 function renderPage(page){
@@ -297,117 +297,115 @@ function renderPage(page){
   if(page==='accounts') renderAccountsPage();
 }
 function renderDashboard(){
-  const s=stats();
-
-  const dailyMap={};
+  const stageMap = {};
   allRecords.forEach(r=>{
-    const d=r.registered_at ? new Date(r.registered_at) : null;
-    if(!d || isNaN(d)) return;
-    const key=d.toISOString().slice(0,10);
-    if(!dailyMap[key]) dailyMap[key]={count:0,people:new Set(),hours:0};
-    dailyMap[key].count++;
-    dailyMap[key].people.add(`${normalizePhone(r.phone)}|${r.id_last4||''}`);
-    dailyMap[key].hours += recordHours(r);
+    const key = `${r.venue_type||'未分類'}|${r.day_of_week||'-'}|${r.time_slot||'-'}`;
+    if(!stageMap[key]) stageMap[key] = {key, venue:r.venue_type||'未分類', day:r.day_of_week||'-', time:r.time_slot||'-', records:[]};
+    stageMap[key].records.push(r);
   });
 
-  const dailyRows=Object.entries(dailyMap)
-    .map(([date,v])=>({date,count:v.count,people:v.people.size,hours:v.hours}))
-    .sort((a,b)=>a.date.localeCompare(b.date));
-
-  const maxDaily=Math.max(1,...dailyRows.map(r=>r.count));
-  const chartW=900, chartH=280, padL=54, padR=24, padT=24, padB=54;
-  const innerW=chartW-padL-padR, innerH=chartH-padT-padB;
-
-  let lineSvg='';
-  if(dailyRows.length===0){
-    lineSvg=`<div class="small" style="padding:24px;text-align:center;">目前尚無登記趨勢資料</div>`;
-  }else{
-    const points=dailyRows.map((r,i)=>{
-      const x=padL + (dailyRows.length===1 ? innerW/2 : i*(innerW/(dailyRows.length-1)));
-      const y=padT + innerH - (r.count/maxDaily)*innerH;
-      return {x,y,...r};
-    });
-
-    const poly=points.map(p=>`${p.x},${p.y}`).join(' ');
-    const grid=[0,.25,.5,.75,1].map(rate=>{
-      const y=padT + innerH - rate*innerH;
-      const label=Math.round(maxDaily*rate);
-      return `<line x1="${padL}" y1="${y}" x2="${chartW-padR}" y2="${y}" stroke="#e5e7eb"/><text x="${padL-10}" y="${y+4}" text-anchor="end" font-size="11" fill="#64748b">${label}</text>`;
-    }).join('');
-
-    lineSvg=`
-      <div class="table-wrap" style="border:none;">
-        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:auto;background:white;border:1px solid var(--border);border-radius:14px;">
-          ${grid}
-          <line x1="${padL}" y1="${padT+innerH}" x2="${chartW-padR}" y2="${padT+innerH}" stroke="#94a3b8"/>
-          <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+innerH}" stroke="#94a3b8"/>
-          <polyline points="${poly}" fill="none" stroke="var(--blue)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          ${points.map((p,i)=>`
-            <circle cx="${p.x}" cy="${p.y}" r="5" fill="var(--blue)"/>
-            <text x="${p.x}" y="${p.y-10}" text-anchor="middle" font-size="11" fill="var(--blue)" font-weight="800">${p.count}</text>
-            ${i%Math.ceil(points.length/8 || 1)===0 || points.length<=8 ? `<text x="${p.x}" y="${padT+innerH+24}" text-anchor="middle" font-size="11" fill="#64748b">${p.date.slice(5)}</text>` : ''}
-          `).join('')}
-        </svg>
-      </div>
-    `;
-  }
-
-  const venueHtml=venueOrder.map(v=>{
-    const d=s.byVenue[v]||{count:0,people:0,hours:0};
-    return `<div class="stat"><div class="label">${v}</div><div class="num">${d.count}</div><div class="small">${d.people} 人｜${d.hours} 小時</div></div>`;
-  }).join('');
-
-  const slotMap={};
-  allRecords.forEach(r=>{
-    const key=`${r.venue_type||'未分類'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'}`;
-    if(!slotMap[key]) slotMap[key]={key,count:0,people:new Set()};
-    slotMap[key].count++;
-    slotMap[key].people.add(`${normalizePhone(r.phone)}|${r.id_last4||''}`);
+  const stages = Object.values(stageMap).map(g=>{
+    const total=g.records.length;
+    const pendingLottery=g.records.filter(r=>!r.lottery_status).length;
+    const withResult=total-pendingLottery;
+    const published=g.records.filter(r=>r.result_published).length;
+    const waitlist=g.records.filter(r=>String(r.lottery_status||'').startsWith('候補')).length;
+    let state='完成';
+    if(pendingLottery>0) state='待處理抽籤';
+    else if(published<total) state='待公布';
+    else if(waitlist>0) state='已公布／含候補';
+    return {...g,total,pendingLottery,withResult,published,waitlist,state};
   });
 
-  const hotSlots=Object.values(slotMap)
-    .map(x=>({...x,people:x.people.size}))
-    .sort((a,b)=>b.count-a.count)
+  const pendingLotteryStages=stages.filter(x=>x.pendingLottery>0);
+  const pendingPublishStages=stages.filter(x=>x.pendingLottery===0 && x.published<x.total);
+  const waitlistStages=stages.filter(x=>x.waitlist>0);
+  const suspicious=countSuspiciousPhones();
+
+  const priority={ '待處理抽籤':1, '待公布':2, '已公布／含候補':3, '完成':4 };
+  const taskRows=stages
+    .filter(x=>x.state!=='完成')
+    .sort((a,b)=> (priority[a.state]-priority[b.state]) || venueSortValue(a.venue)-venueSortValue(b.venue) || daySortValue(a.day)-daySortValue(b.day) || timeSortValue(a.time)-timeSortValue(b.time))
     .slice(0,10);
 
-  const hotSlotHtml=hotSlots.length?`
+  const statusTag=(x)=>{
+    if(x.state==='待處理抽籤') return '<span class="tag warn">待處理抽籤</span>';
+    if(x.state==='待公布') return '<span class="tag" style="background:#dbeafe;color:#1d4ed8;">待公布</span>';
+    return '<span class="tag green">已公布／含候補</span>';
+  };
+
+  const nextAction=(x)=>{
+    if(x.state==='待處理抽籤') return '<button class="btn btn-primary dash-go-lottery">前往抽籤作業</button>';
+    if(x.state==='待公布') return '<button class="btn btn-primary dash-go-records">前往結果公告</button>';
+    return '<button class="btn btn-gray dash-go-records">查看候補資料</button>';
+  };
+
+  const taskHtml=taskRows.length?`
     <div class="table-wrap">
       <table>
-        <thead><tr><th>排行</th><th>場次</th><th>登記筆數</th><th>登記人數</th></tr></thead>
+        <thead><tr><th>球場</th><th>星期</th><th>時段</th><th>登記筆數</th><th>目前狀態</th><th>建議操作</th></tr></thead>
         <tbody>
-          ${hotSlots.map((x,i)=>`
-            <tr>
-              <td><strong>${i+1}</strong></td>
-              <td>${escapeHtml(x.key)}</td>
-              <td>${x.count}</td>
-              <td>${x.people}</td>
-            </tr>
-          `).join('')}
+          ${taskRows.map(x=>`<tr>
+            <td><strong>${escapeHtml(x.venue)}</strong></td>
+            <td>${escapeHtml(x.day)}</td>
+            <td>${escapeHtml(x.time)}</td>
+            <td>${x.total}</td>
+            <td>${statusTag(x)}</td>
+            <td>${nextAction(x)}</td>
+          </tr>`).join('')}
         </tbody>
       </table>
-    </div>
-  `:`<div class="small">目前尚無熱門時段資料</div>`;
+    </div>`:`<div class="msg ok">目前沒有待處理場次。</div>`;
 
   document.getElementById('content').innerHTML=`
-    ${renderCards(s)}
+    <div class="panel" style="padding-bottom:14px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+        <div>
+          <h3 style="margin-bottom:6px;">📌 作業總覽</h3>
+          <div class="small">聚焦尚待處理的抽籤、公布與候補作業，快速掌握下一步。</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-gray" id="dashCapacityBtn">名額設定</button>
+          <button class="btn btn-gray" id="dashRecordsBtn">登記資料</button>
+          <button class="btn btn-primary" id="dashLotteryBtn">抽籤作業</button>
+        </div>
+      </div>
+    </div>
 
-    <div class="panel">
-      <h3>📈 每日登記趨勢</h3>
-      <div class="small" style="margin-bottom:12px;">用來觀察宣傳後是否帶動登記量，以及截止日前是否出現集中登記。</div>
-      ${lineSvg}
+    <div class="cards">
+      <div class="stat"><div class="label">待處理抽籤場次</div><div class="num" style="color:#d97706">${pendingLotteryStages.length}</div><div class="small">尚有登記資料未設定抽籤結果</div></div>
+      <div class="stat"><div class="label">待公布場次</div><div class="num" style="color:#2563eb">${pendingPublishStages.length}</div><div class="small">結果已完成、尚未對民眾公布</div></div>
+      <div class="stat"><div class="label">含候補場次</div><div class="num" style="color:#7c3aed">${waitlistStages.length}</div><div class="small">已有候補順位，便於後續遞補管理</div></div>
+      <div class="stat"><div class="label">資料異常提醒</div><div class="num" style="color:#b45309">${suspicious}</div><div class="small">同手機對應多身分，建議人工確認</div></div>
     </div>
 
     <div class="panel">
-      <h3>🏆 運動類型統計</h3>
-      <div class="cards">${venueHtml}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <div>
+          <h3 style="margin:0 0 6px;">🗂 近期待辦</h3>
+          <div class="small">依目前資料狀態列出優先處理場次，完成後會自動從清單移除。</div>
+        </div>
+      </div>
+      ${taskHtml}
     </div>
 
     <div class="panel">
-      <h3>🔥 熱門場次排行</h3>
-      <div class="small" style="margin-bottom:12px;">可用來判斷哪些星期與時段最搶手，後續可作為調整名額或開放時段參考。</div>
-      ${hotSlotHtml}
+      <h3>⚡ 快速操作</h3>
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;">
+        <button class="btn btn-gray" id="quickCapacity">設定場次名額</button>
+        <button class="btn btn-gray" id="quickRecords">查詢登記資料</button>
+        <button class="btn btn-primary" id="quickLottery">匯出／匯入抽籤結果</button>
+        <button class="btn btn-gray" id="quickPublish">結果公告</button>
+      </div>
     </div>
   `;
+
+  const go=(id,page)=>{ const el=document.getElementById(id); if(el) el.onclick=()=>renderPage(page); };
+  go('dashCapacityBtn','capacity'); go('dashRecordsBtn','records'); go('dashLotteryBtn','lottery');
+  go('quickCapacity','capacity'); go('quickRecords','records'); go('quickLottery','lottery');
+  const qp=document.getElementById('quickPublish'); if(qp) qp.onclick=()=>{ recordsActionTab='publish'; renderPage('records'); };
+  document.querySelectorAll('.dash-go-lottery').forEach(b=>b.onclick=()=>renderPage('lottery'));
+  document.querySelectorAll('.dash-go-records').forEach(b=>b.onclick=()=>renderPage('records'));
 }
 
 function daySortValue(day){
