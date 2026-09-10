@@ -680,24 +680,20 @@ function getRecordAnomalyTypes(record){
   const types=[];
   const records=allRecords||[];
   const phone=normalizePhone(record.phone);
+  const pk=personKey(record);
 
-  // 同手機多身分
+  // 手機重複：同一手機對應不同身分
   if(phone){
     const ids=new Set(records.filter(r=>normalizePhone(r.phone)===phone).map(r=>String(r.id_last4||'').trim()).filter(Boolean));
-    if(ids.size>1) types.push('同手機多身分');
+    if(ids.size>1) types.push('手機重複');
   }
 
-  // 重複場次登記
-  const pk=personKey(record);
+  // 超過次數：合併「重複場次登記」與「超過申請上限」
   if(pk!=='|'){
-    const same=records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
-    if(same.length>1) types.push('重複場次登記');
-  }
-
-  // 超過申請上限（目前羽球／籃球每人限1時段）
-  if(['羽球','籃球'].includes(record.venue_type) && pk!=='|'){
-    const slots=new Set(records.filter(r=>personKey(r)===pk && r.venue_type===record.venue_type).map(r=>`${r.day_of_week||''}|${r.time_slot||''}`));
-    if(slots.size>1) types.push('超過申請上限');
+    const sameStage=records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
+    const sameSportSlots=new Set(records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type).map(r=>`${r.day_of_week||''}|${r.time_slot||''}`));
+    const exceedsRule = sameStage.length>1 || (['羽球','籃球'].includes(record.venue_type) && sameSportSlots.size>1);
+    if(exceedsRule) types.push('超過次數');
   }
 
   const stage=records.filter(r=>recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
@@ -705,17 +701,17 @@ function getRecordAnomalyTypes(record){
     const start=getStageStartTime(record.time_slot);
     const cap=Number(capacitySettings[settingKey(record.venue_type,record.day_of_week,start)] ?? capacityMap[record.venue_type] ?? 0);
     const winners=stage.filter(x=>x.lottery_status==='中籤').length;
-    if(cap>=0 && winners>cap) types.push('中籤人數超過名額');
+    if(cap>=0 && winners>cap) types.push('超過名額');
 
     const published=stage.filter(x=>x.result_published).length;
     const noResult=stage.filter(x=>!String(x.lottery_status||'').trim()).length;
-    if(published>0 && noResult>0) types.push('公布資料不完整');
+    if(published>0 && noResult>0) types.push('公布未完成');
 
     const nums=stage.map(x=>String(x.lottery_status||'').match(/^候補(\d+)$/)).filter(Boolean).map(m=>Number(m[1])).sort((a,b)=>a-b);
     if(nums.length){
       const dup=nums.some((n,i)=>i>0 && n===nums[i-1]);
       const gap=nums.some((n,i)=>n!==i+1);
-      if(dup||gap) types.push('候補順位異常');
+      if(dup||gap) types.push('候補異常');
     }
   }
   return [...new Set(types)];
@@ -723,7 +719,7 @@ function getRecordAnomalyTypes(record){
 function anomalyTags(record){
   const types=getRecordAnomalyTypes(record);
   if(!types.length) return '<span class="tag gray">正常</span>';
-  return types.map(t=>`<span class="tag ${['重複場次登記','超過申請上限','中籤人數超過名額','公布資料不完整'].includes(t)?'error':'warn'}" style="margin:2px 4px 2px 0;display:inline-block;">${escapeHtml(t)}</span>`).join('');
+  return types.map(t=>`<span class="tag ${['超過次數','超過名額','公布未完成'].includes(t)?'error':'warn'}" style="margin:2px 4px 2px 0;display:inline-block;">${escapeHtml(t)}</span>`).join('');
 }
 
 function getStageStartTime(timeSlot){
@@ -735,7 +731,7 @@ function buildDataAnomalies(){
   const issues=[];
   const records=allRecords||[];
 
-  // 1. 同手機對應多個身分
+  // 1. 手機重複
   const phoneGroups={};
   records.forEach(r=>{
     const phone=normalizePhone(r.phone); if(!phone) return;
@@ -745,76 +741,71 @@ function buildDataAnomalies(){
   Object.entries(phoneGroups).forEach(([phone,rows])=>{
     const ids=[...new Set(rows.map(r=>String(r.id_last4||'').trim()).filter(Boolean))];
     if(ids.length>1) issues.push({
-      type:'同手機多身分', severity:'warn', count:rows.length,
-      detail:`手機 ${phone} 對應 ${ids.length} 組身分證後4碼，請確認是否為代填或資料異常。`,
+      type:'手機重複', severity:'warn', count:rows.length,
+      detail:`${phone}｜${ids.length}組身分`,
       target:'records'
     });
   });
 
-  // 2. 同一人重複登記相同場次
-  const exactGroups={};
+  // 2. 超過次數：合併重複場次與超過申請上限
+  const personSportGroups={};
   records.forEach(r=>{
     const pk=personKey(r); if(pk==='|') return;
-    const k=`${pk}|${recordLocation(r)}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
-    if(!exactGroups[k]) exactGroups[k]=[]; exactGroups[k].push(r);
+    const k=`${pk}|${recordLocation(r)}|${r.venue_type||''}`;
+    if(!personSportGroups[k]) personSportGroups[k]=[];
+    personSportGroups[k].push(r);
   });
-  Object.values(exactGroups).forEach(rows=>{
-    if(rows.length>1){ const r=rows[0]; issues.push({
-      type:'重複場次登記', severity:'error', count:rows.length,
-      detail:`${r.name||'申請人'}於 ${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'} 出現 ${rows.length} 筆相同場次登記。`,
+  Object.values(personSportGroups).forEach(rows=>{
+    const r=rows[0];
+    const stageCounts={};
+    rows.forEach(x=>{
+      const k=`${x.day_of_week||''}|${x.time_slot||''}`;
+      stageCounts[k]=(stageCounts[k]||0)+1;
+    });
+    const hasDuplicateStage=Object.values(stageCounts).some(n=>n>1);
+    const distinctSlots=Object.keys(stageCounts).length;
+    const overSportLimit=['羽球','籃球'].includes(r.venue_type) && distinctSlots>1;
+    if(hasDuplicateStage || overSportLimit) issues.push({
+      type:'超過次數', severity:'error', count:rows.length,
+      detail:`${r.name||'申請人'}｜${r.venue_type||'-'}｜${rows.length}筆`,
       target:'records'
-    }); }
+    });
   });
 
-  // 3. 羽球／籃球同一人超過1個時段（依目前登記規則）
-  const limitedGroups={};
-  records.filter(r=>['羽球','籃球'].includes(r.venue_type)).forEach(r=>{
-    const pk=personKey(r); if(pk==='|') return;
-    const k=`${pk}|${r.venue_type}`;
-    if(!limitedGroups[k]) limitedGroups[k]=[]; limitedGroups[k].push(r);
-  });
-  Object.values(limitedGroups).forEach(rows=>{
-    const slots=new Set(rows.map(r=>`${r.day_of_week||''}|${r.time_slot||''}`));
-    if(slots.size>1){ const r=rows[0]; issues.push({
-      type:'超過申請上限', severity:'error', count:slots.size,
-      detail:`${r.name||'申請人'}於${r.venue_type}登記 ${slots.size} 個時段，超過目前每人限1時段規則。`,
-      target:'records'
-    }); }
-  });
-
-  // 4. 中籤數超過該場次設定名額
+  // 3. 場次層級檢核
   const stageGroups={};
   records.forEach(r=>{
-    const k=`${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
-    if(!stageGroups[k]) stageGroups[k]=[]; stageGroups[k].push(r);
+    const k=`${recordLocation(r)}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
+    if(!stageGroups[k]) stageGroups[k]=[];
+    stageGroups[k].push(r);
   });
   Object.values(stageGroups).forEach(rows=>{
-    const r=rows[0]; const winners=rows.filter(x=>x.lottery_status==='中籤').length;
+    const r=rows[0];
+    const stageLabel=`${locationLabel(recordLocation(r))}｜${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'}`;
+    const winners=rows.filter(x=>x.lottery_status==='中籤').length;
     const start=getStageStartTime(r.time_slot);
     const cap=Number(capacitySettings[settingKey(r.venue_type,r.day_of_week,start)] ?? capacityMap[r.venue_type] ?? 0);
     if(cap>=0 && winners>cap) issues.push({
-      type:'中籤人數超過名額', severity:'error', count:winners-cap,
-      detail:`${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'} 中籤 ${winners} 人，超過設定名額 ${cap} 人。`,
+      type:'超過名額', severity:'error', count:winners-cap,
+      detail:`${stageLabel}｜中籤${winners}/${cap}`,
       target:'lottery'
     });
 
-    // 5. 已有部分公告，但仍存在未抽籤資料
     const published=rows.filter(x=>x.result_published).length;
     const noResult=rows.filter(x=>!String(x.lottery_status||'').trim()).length;
     if(published>0 && noResult>0) issues.push({
-      type:'公布資料不完整', severity:'error', count:noResult,
-      detail:`${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'} 已有結果公布，但仍有 ${noResult} 筆未設定抽籤結果。`,
+      type:'公布未完成', severity:'error', count:noResult,
+      detail:`${stageLabel}｜${noResult}筆未完成`,
       target:'records'
     });
 
-    // 6. 候補順位重複或跳號
     const nums=rows.map(x=>String(x.lottery_status||'').match(/^候補(\d+)$/)).filter(Boolean).map(m=>Number(m[1])).sort((a,b)=>a-b);
     if(nums.length){
       const dup=nums.some((n,i)=>i>0 && n===nums[i-1]);
       const gap=nums.some((n,i)=>n!==i+1);
       if(dup||gap) issues.push({
-        type:'候補順位異常', severity:'warn', count:nums.length,
-        detail:`${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'} 候補順位${dup?'有重複':''}${dup&&gap?'且':''}${gap?'不連續':''}，請確認。`,
+        type:'候補異常', severity:'warn', count:nums.length,
+        detail:`${stageLabel}｜順位需確認`,
         target:'lottery'
       });
     }
@@ -1222,7 +1213,7 @@ function renderRecordsPage(){
           <select id="filterTime"><option value="">全部時段</option>${times.map(t=>`<option ${recordState.time===t?'selected':''} value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}</select>
           <select id="filterAnomaly">
             <option value="">全部異常狀態</option>
-            ${['同手機多身分','重複場次登記','超過申請上限','中籤人數超過名額','公布資料不完整','候補順位異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
+            ${['手機重複','超過次數','超過名額','公布未完成','候補異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
           </select>
           <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
           <button id="applyFilterBtn" class="btn btn-primary">套用篩選</button>
@@ -3325,7 +3316,7 @@ function exportToCsv(records){
   if(!records.length){alert('沒有資料可以匯出');return;}
   let csv='序號,抽籤狀態,公布狀態,鎖定,異常狀態,姓名,手機,身分證後4碼,地點,運動類型,星期,時段,登記時間\n';
   records.forEach(r=>{
-    const state=isSuspiciousPhone(r)?'同手機多身分':'正常';
+    const state=isSuspiciousPhone(r)?'手機重複':'正常';
     csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.result_published?'已公布':'未公布'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${r.id_last4||''}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
   });
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
@@ -3333,18 +3324,16 @@ function exportToCsv(records){
 }
 function showAnomalyDefinitionModal(){
   const body=`
-    <div style="display:grid;gap:10px;text-align:left;">
-      <div><strong>同手機多身分</strong><br><span>同一手機號碼對應不同身分證後4碼，提醒確認是否為代填或資料異常。</span></div>
-      <div><strong>重複場次登記</strong><br><span>同一申請人於相同球場、星期及時段出現2筆以上登記資料。</span></div>
-      <div><strong>超過申請上限</strong><br><span>申請筆數超過目前設定之登記規則，例如羽球、籃球每人限登記1個時段。</span></div>
-      <div><strong>中籤人數超過名額</strong><br><span>同一場次設定為「中籤」的人數超過該場次可用名額。</span></div>
-      <div><strong>公布資料不完整</strong><br><span>同一場次已有部分結果公布，但仍存在尚未設定抽籤結果的資料。</span></div>
-      <div><strong>候補順位異常</strong><br><span>同一場次候補順位出現重複或不連續情形，需人工確認。</span></div>
-      <div style="margin-top:4px;padding:10px 12px;background:#f8fafc;border-radius:10px;color:#64748b;">異常註記僅供管理人員檢核參考，系統不會自動刪除或修改資料。</div>
+    <div style="display:grid;gap:8px;text-align:left;">
+      <div><strong>手機重複</strong>：同一手機對應不同身分。</div>
+      <div><strong>超過次數</strong>：同一申請人登記次數超過規則。</div>
+      <div><strong>超過名額</strong>：中籤人數超過場次名額。</div>
+      <div><strong>公布未完成</strong>：已公布但仍有未完成結果。</div>
+      <div><strong>候補異常</strong>：候補順位重複或不連續。</div>
+      <div style="margin-top:4px;padding:10px 12px;background:#f8fafc;border-radius:10px;color:#64748b;">僅供檢核提醒，不會自動修改資料。</div>
     </div>`;
   showModal('異常註記說明', body, ()=>{}, false);
 }
-
 function showModal(title,body,onOk,withInput=false,onCancel=null){
   const el=document.createElement('div'); el.className='modal';
   el.innerHTML=`<div class="modal-card"><h3>${title}</h3><div class="small">${body}</div>${withInput?'<input id="modalInput" type="password" style="width:100%;margin-top:12px;border:1px solid #d1d5db;border-radius:10px;padding:10px">':''}<div class="modal-actions"><button class="btn btn-gray" id="mCancel">取消</button><button class="btn btn-primary" id="mOk">確認</button></div></div>`;
