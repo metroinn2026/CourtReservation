@@ -255,8 +255,13 @@
           const closedSettings = {};
           (rows || []).forEach((row) => {
             const key = `${row.venue_type}|${row.day_of_week}|${row.time_slot}`;
+            const startTime = String(row.time_slot || '').match(/\d{2}:\d{2}/)?.[0] || String(row.time_slot || '');
+            const startKey = `${row.venue_type}|${row.day_of_week}|${startTime}`;
             settings[key] = Number(row.winner_count || 0);
             closedSettings[key] = row.is_closed === true;
+            // 同步建立「開始時間」別名，避免舊版／新版時段格式不同造成前台無法辨識。
+            settings[startKey] = Number(row.winner_count || 0);
+            closedSettings[startKey] = row.is_closed === true;
           });
           return { settings, closedSettings };
         }
@@ -304,6 +309,11 @@
                   refreshCapacitySettings();
                 })
                 .subscribe();
+            }
+
+            // Realtime 若未啟用 replication，仍每 10 秒重新讀取一次，確保後台「不開放」可同步到前台。
+            if (!window.__venueLotteryCapacityPoller) {
+              window.__venueLotteryCapacityPoller = setInterval(refreshCapacitySettings, 10000);
             }
 
             return { isOk: result.isOk };
@@ -2536,10 +2546,17 @@
       });
     }
 
+    function getVenueDurationHours(venue) {
+      return venue === '籃球' ? 2 : 1;
+    }
+
     function getTimeOptionsForVenue(venue) {
-      return venue && venue.includes('桌球')
-        ? ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00']
-        : ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00'];
+      const duration = getVenueDurationHours(venue);
+      const starts = [];
+      for (let h = 6; h + duration <= 22; h += duration) {
+        starts.push(`${String(h).padStart(2, '0')}:00`);
+      }
+      return starts;
     }
 
     function getLotterySettingKey(venue, day, timeSlot) {
@@ -2547,13 +2564,14 @@
     }
 
     function getTimeSlotForSetting(venue, startTime) {
-      return formatTimeSlotDisplay(startTime, venue && venue.includes('桌球'));
+      return formatTimeSlotDisplay(startTime, venue);
     }
 
     function getLotteryWinnerCount(venue, day, startTime) {
       const timeSlot = getTimeSlotForSetting(venue, startTime);
       const settingKey = getLotterySettingKey(venue, day, timeSlot);
-      const configured = lotterySettings[settingKey];
+      const startKey = getLotterySettingKey(venue, day, startTime);
+      const configured = lotterySettings[settingKey] ?? lotterySettings[startKey];
       if (configured !== undefined && configured !== null && configured !== '') {
         return Number(configured);
       }
@@ -2563,7 +2581,8 @@
     function isLotterySlotClosed(venue, day, startTime) {
       const timeSlot = getTimeSlotForSetting(venue, startTime);
       const settingKey = getLotterySettingKey(venue, day, timeSlot);
-      return closedSlotSettings[settingKey] === true;
+      const startKey = getLotterySettingKey(venue, day, startTime);
+      return closedSlotSettings[settingKey] === true || closedSlotSettings[startKey] === true;
     }
 
     function countRegistrationsForSlot(venue, day, startTime) {
@@ -2574,14 +2593,14 @@
       ).length;
     }
 
-    function formatTimeSlotDisplay(startTime, isTableTennis) {
+    function formatTimeSlotDisplay(startTime, venue='') {
       const startHour = parseInt(String(startTime).split(':')[0], 10);
       if (Number.isNaN(startHour)) return startTime;
 
-      // 桌球為 1 小時；羽球／籃球依目前前台規則為 2 小時時段。
-      const endHour = isTableTennis ? startHour : startHour + 1;
+      const duration = getVenueDurationHours(venue);
+      const endHour = startHour + duration - 1;
       const endTimeStr = String(endHour).padStart(2, '0') + ':59';
-      return `${startTime}-${endTimeStr}`;
+      return `${String(startHour).padStart(2, '0')}:00-${endTimeStr}`;
     }
 
     function renderTimeButtons() {
@@ -2595,11 +2614,13 @@
           ? allRecords.some(r => samePersonRecord(r) && r.venue_type === currentSelection.venue)
           : false;
 
-      const hintText = isTableTennis 
+      const hintText = isTableTennis
         ? '本場地以1小時為單位進行登記，不限時數'
         : userHasRegistration
         ? '您已登記此運動類型，如需變更，請先至「我的登記」刪除原登記紀錄。'
-        : '本場地以2小時為單位進行登記，每個帳號僅能登記一個時段';
+        : currentSelection.venue === '籃球'
+        ? '本場地以2小時為單位進行登記，每個帳號僅能登記一個時段'
+        : '本場地以1小時為單位進行登記，每個帳號僅能登記一個時段';
       
       const hintBgColor = userHasRegistration ? '#fee2e2' : '#e5f2f7';
       const hintTextColor = userHasRegistration ? '#7f1d1d' : 'var(--primary-blue)';
@@ -2816,7 +2837,7 @@
         }
       } else {
         const serialNumber = generateSerialNumber();
-        const timeSlotWithEnd = formatTimeSlotDisplay(selectedTimes[0], false);
+        const timeSlotWithEnd = formatTimeSlotDisplay(selectedTimes[0], currentSelection.venue);
         const result = await window.dataSdk.create({
           name: currentSelection.name,
           phone: currentSelection.phone,
@@ -2871,9 +2892,9 @@
           const displayTimes = groups.map(group => formatTimeRange(group)).join(' • ');
           document.getElementById('summary-time').textContent = displayTimes;
         } else if (isTableTennis) {
-          document.getElementById('summary-time').textContent = formatTimeSlotDisplay(currentSelection.time, true);
+          document.getElementById('summary-time').textContent = formatTimeSlotDisplay(currentSelection.time, currentSelection.venue);
         } else {
-          document.getElementById('summary-time').textContent = formatTimeSlotDisplay(currentSelection.time, false);
+          document.getElementById('summary-time').textContent = formatTimeSlotDisplay(currentSelection.time, currentSelection.venue);
         }
       } else {
         document.getElementById('summary-time').textContent = '-';

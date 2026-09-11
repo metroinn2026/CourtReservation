@@ -3507,6 +3507,15 @@
     margin:0;
     accent-color:#b91c1c;
   }
+  .capacity-save-status{
+    min-height:16px;
+    margin-top:3px;
+    font-size:11px;
+    color:#64748b;
+  }
+  .capacity-save-status.ok{color:#15803d;}
+  .capacity-save-status.error{color:#b91c1c;}
+
   .capacity-cell.is-closed .capacity-closed-toggle{
     color:#b91c1c;
   }
@@ -4892,7 +4901,7 @@ function renderCapacityPage(){
         </div>
       </div>
 
-      <div class="capacity-open-note">勾選「不開放」後，前台會顯示「不開放登記」並禁止選取；未勾選的場次名額須至少為 1。</div>
+      <div class="capacity-open-note">勾選「不開放」會立即儲存並同步至前台；前台將顯示「不開放登記」且禁止選取。未勾選的場次名額須至少為 1。</div>
       <div id="bulkCapTable"></div>
     </div>
   `;
@@ -4990,6 +4999,7 @@ function renderBulkCapacityTable(){
                       <span>不開放</span>
                     </label>
                     <div class="small" style="margin-top:4px;color:${registered>0?'var(--blue)':'#94a3b8'};">已報${registered}</div>
+                    <div class="capacity-save-status" aria-live="polite"></div>
                   </td>`;
               }).join('')}
             </tr>
@@ -5001,14 +5011,51 @@ function renderBulkCapacityTable(){
   container.innerHTML=html;
 
   document.querySelectorAll('.cap-closed-input').forEach(checkbox=>{
-    checkbox.onchange=()=>{
+    checkbox.onchange=async()=>{
       const cell=checkbox.closest('.capacity-cell');
       const capInput=cell?.querySelector('.cap-input');
+      const statusEl=cell?.querySelector('.capacity-save-status');
+      const previousClosed = !checkbox.checked;
+
       if(capInput){
         capInput.disabled=checkbox.checked;
         if(!checkbox.checked && Number(capInput.value||0)<1) capInput.value=1;
       }
       if(cell) cell.classList.toggle('is-closed', checkbox.checked);
+      if(statusEl){ statusEl.textContent='儲存中…'; statusEl.className='capacity-save-status'; }
+      checkbox.disabled=true;
+
+      const winnerCount=Math.max(1, Number(capInput?.value || 1));
+      const payload={
+        venue_type: checkbox.dataset.venue,
+        day_of_week: checkbox.dataset.day,
+        time_slot: checkbox.dataset.slot,
+        winner_count: winnerCount,
+        is_closed: checkbox.checked,
+        updated_at: new Date().toISOString()
+      };
+
+      const {error}=await db.from(CAPACITY_TABLE).upsert(payload,{onConflict:'venue_type,day_of_week,time_slot'});
+      checkbox.disabled=false;
+
+      if(error){
+        console.error(error);
+        checkbox.checked=previousClosed;
+        if(capInput) capInput.disabled=previousClosed;
+        if(cell) cell.classList.toggle('is-closed', previousClosed);
+        if(statusEl){ statusEl.textContent='儲存失敗'; statusEl.className='capacity-save-status error'; }
+        alert('場次開放狀態儲存失敗，請稍後再試。');
+        return;
+      }
+
+      const key=settingKey(payload.venue_type,payload.day_of_week,payload.time_slot);
+      capacitySettings[key]=winnerCount;
+      closedSlotSettings[key]=payload.is_closed;
+      if(statusEl){
+        statusEl.textContent='已儲存';
+        statusEl.className='capacity-save-status ok';
+        setTimeout(()=>{ if(statusEl) statusEl.textContent=''; },1800);
+      }
     };
   });
 }
