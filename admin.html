@@ -3314,6 +3314,24 @@
   }
 </style>
 
+
+<style id="batch-lottery-waitlist-layout-v1">
+  #batchLotteryPanel > div[style*="grid-template-columns"]{
+    grid-template-columns:1.05fr 1.05fr .9fr .9fr .95fr .95fr .8fr .8fr auto auto!important;
+  }
+  #batchWinnerCount,#batchWaitlistCount{min-width:0!important;width:100%!important;}
+  @media(max-width:1350px){
+    #batchLotteryPanel > div[style*="grid-template-columns"]{
+      grid-template-columns:repeat(5,minmax(150px,1fr))!important;
+    }
+  }
+  @media(max-width:900px){
+    #batchLotteryPanel > div[style*="grid-template-columns"]{
+      grid-template-columns:repeat(2,minmax(150px,1fr))!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5109,10 +5127,10 @@ function renderLotteryPage(){
 
       <div id="batchLotteryPanel" style="display:none;">
         <div class="alert">
-          批次抽籤適合一次處理多個場次。系統會依「運動類型＋星期＋時段」分場次，並依你輸入的正取人數抽出中籤者，其餘自動依序列為備取。
+          批次抽籤適合一次處理多個場次。系統會依「運動類型＋星期＋時段」分場次，並依你輸入的正取與備取人數產生結果；超過正取及備取名額者列為未中籤。
         </div>
 
-        <div style="display:grid;grid-template-columns:1.1fr 1.1fr 1fr 1fr 1fr 1fr 1fr auto auto;gap:12px;align-items:end;margin-bottom:14px;">
+        <div style="display:grid;grid-template-columns:1.05fr 1.05fr .9fr .9fr .95fr .95fr .8fr .8fr auto auto;gap:12px;align-items:end;margin-bottom:14px;">
           <div>
             <label class="small" style="font-weight:900;color:#334155;">場地</label>
             <select id="batchLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(window.currentLotteryLocation || DEFAULT_LOCATION, false)}</select>
@@ -5161,6 +5179,11 @@ function renderLotteryPage(){
           <div>
             <label class="small" style="font-weight:900;color:#334155;">每場正取人數</label>
             <input id="batchWinnerCount" type="number" min="1" value="1" placeholder="正取人數">
+          </div>
+
+          <div>
+            <label class="small" style="font-weight:900;color:#334155;">每場備取人數</label>
+            <input id="batchWaitlistCount" type="number" min="0" value="0" placeholder="備取人數">
           </div>
 
           <button id="previewBatchLot" class="btn btn-gray">預覽批次</button>
@@ -6082,6 +6105,7 @@ function renderLotteryPage(){
     const timeStart=document.getElementById('batchTimeStart')?.value || '';
     const timeEnd=document.getElementById('batchTimeEnd')?.value || '';
     const winnerCountInput=Math.max(1, parseInt(document.getElementById('batchWinnerCount')?.value || '1',10));
+    const waitlistCountInput=Math.max(0, parseInt(document.getElementById('batchWaitlistCount')?.value || '0',10));
 
     const dayOrder={'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6,'周日':7};
     const timeOrder={};
@@ -6128,6 +6152,7 @@ function renderLotteryPage(){
       return {
         ...s,
         winnerCount:winnerCountInput,
+        waitlistCount:waitlistCountInput,
         peopleCount,
         locked,
         canDraw:!locked && winnerCountInput>0 && peopleCount>0
@@ -6149,11 +6174,11 @@ function renderLotteryPage(){
     const info=document.getElementById('batchLotteryInfo');
     const table=document.getElementById('batchLotteryTable');
     if(!info||!table) return;
-    info.innerHTML=`場地：${escapeHtml(locationLabel(document.getElementById('batchLocation')?.value || DEFAULT_LOCATION))}｜共 ${stages.length} 個場次｜可批次抽籤 ${drawable.length} 場｜已鎖定 ${locked.length} 場｜每場正取 ${document.getElementById('batchWinnerCount')?.value || 1} 人`;
+    info.innerHTML=`場地：${escapeHtml(locationLabel(document.getElementById('batchLocation')?.value || DEFAULT_LOCATION))}｜共 ${stages.length} 個場次｜可批次抽籤 ${drawable.length} 場｜已鎖定 ${locked.length} 場｜每場正取 ${document.getElementById('batchWinnerCount')?.value || 1} 人｜每場備取 ${document.getElementById('batchWaitlistCount')?.value || 0} 人`;
     table.innerHTML=stages.length?`
       <div class="table-wrap">
         <table>
-          <thead><tr><th>項次</th><th>場地</th><th>類型</th><th>星期</th><th>時段</th><th>筆數</th><th>人數</th><th>正取</th><th>預計備取</th><th>異常註記</th></tr></thead>
+          <thead><tr><th>項次</th><th>場地</th><th>類型</th><th>星期</th><th>時段</th><th>筆數</th><th>人數</th><th>正取</th><th>備取</th><th>未中籤</th><th>異常註記</th></tr></thead>
           <tbody>
             ${stages.map((s,i)=>`<tr>
               <td>${i+1}</td>
@@ -6163,8 +6188,9 @@ function renderLotteryPage(){
               <td>${escapeHtml(s.time)}</td>
               <td>${s.records.length}</td>
               <td>${s.peopleCount}</td>
-              <td><strong>${s.winnerCount}</strong></td>
-              <td>${Math.max(0,s.peopleCount-s.winnerCount)}</td>
+              <td><strong>${Math.min(s.winnerCount,s.peopleCount)}</strong></td>
+              <td>${Math.min(s.waitlistCount,Math.max(0,s.peopleCount-s.winnerCount))}</td>
+              <td>${Math.max(0,s.peopleCount-s.winnerCount-s.waitlistCount)}</td>
               <td>${s.locked?'<span class="tag green">已鎖定</span>':s.canDraw?'<span class="tag warn">可抽籤</span>':'<span class="tag gray">不抽</span>'}</td>
             </tr>`).join('')}
           </tbody>
@@ -6176,12 +6202,14 @@ function renderLotteryPage(){
     const stages=batchStages().filter(s=>s.canDraw);
     if(stages.length===0){alert('沒有可批次抽籤的場次。請確認範圍、正取人數或是否已鎖定。');return;}
     const okConfirm=await confirmModal('確認批次抽籤',`確定要批次抽籤並鎖定 ${stages.length} 個場次嗎？
-場地：${locationLabel(document.getElementById('batchLocation')?.value || DEFAULT_LOCATION)}`);
+場地：${locationLabel(document.getElementById('batchLocation')?.value || DEFAULT_LOCATION)}
+每場正取：${document.getElementById('batchWinnerCount')?.value || 1} 人
+每場備取：${document.getElementById('batchWaitlistCount')?.value || 0} 人`);
     if(!okConfirm) return;
 
     let totalExpected=0, totalUpdated=0;
     for(const s of stages){
-      const waitCount=Math.max(0,s.peopleCount-s.winnerCount);
+      const waitCount=Math.min(s.waitlistCount,Math.max(0,s.peopleCount-s.winnerCount));
       const result=performLotteryWithWaitlist(s.records,s.winnerCount,waitCount);
       const batch=`BATCH|${s.location}|${s.venue}|${s.day}|${s.time}|${new Date().toISOString()}`;
       const rows=[];
@@ -6206,7 +6234,7 @@ function renderLotteryPage(){
 
   document.getElementById('previewBatchLot').onclick=previewBatch;
   document.getElementById('runBatchLot').onclick=runBatch;
-  ['batchLocation','batchVenue','batchDayStart','batchDayEnd','batchTimeStart','batchTimeEnd','batchWinnerCount'].forEach(id=>{
+  ['batchLocation','batchVenue','batchDayStart','batchDayEnd','batchTimeStart','batchTimeEnd','batchWinnerCount','batchWaitlistCount'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){
       el.onchange=previewBatch;
