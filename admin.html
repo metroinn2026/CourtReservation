@@ -3102,6 +3102,120 @@
   }
 </style>
 
+
+<style id="lottery-topbar-left-align-fix">
+  /* 抽籤作業中心：移除上方白色框，整列靠左排列 */
+  .lottery-main-panel > .lottery-context{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    border-radius:0!important;
+    padding:0!important;
+    margin:0 20px 14px!important;
+  }
+
+  .lottery-main-panel .lottery-context-grid{
+    display:flex!important;
+    flex-wrap:wrap!important;
+    justify-content:flex-start!important;
+    align-items:flex-end!important;
+    gap:12px 14px!important;
+    grid-template-columns:none!important;
+    width:100%!important;
+  }
+
+  .lottery-main-panel .lottery-context-grid > div:not(.lottery-filter-actions){
+    flex:0 0 auto!important;
+  }
+
+  .lottery-main-panel .lottery-context-grid > div > label{
+    display:block!important;
+    margin:0 0 6px!important;
+  }
+
+  .lottery-main-panel .lottery-filter-actions{
+    flex:0 0 auto!important;
+    display:flex!important;
+    flex-wrap:wrap!important;
+    align-items:flex-end!important;
+    justify-content:flex-start!important;
+    gap:10px!important;
+    margin-left:0!important;
+  }
+
+  .lottery-main-panel .lottery-filter-actions .btn{
+    min-height:42px!important;
+    height:42px!important;
+  }
+
+  /* 與下方場次處理清單左邊界一致 */
+  .lottery-main-panel > #dayCheckPanel{
+    padding:0 20px 16px!important;
+  }
+
+  @media (max-width: 960px){
+    .lottery-main-panel > .lottery-context{
+      margin:0 16px 14px!important;
+    }
+    .lottery-main-panel > #dayCheckPanel{
+      padding:0 16px 16px!important;
+    }
+  }
+</style>
+
+
+<style id="lottery-white-surface-consistency-fix">
+  /* 抽籤作業配合其他頁面：改為白底雙區塊呈現 */
+  .lottery-main-panel > .lottery-context{
+    background:#ffffff!important;
+    border:1px solid var(--ui-line)!important;
+    border-radius:18px!important;
+    box-shadow:none!important;
+    padding:18px 18px!important;
+    margin:0 0 18px!important;
+  }
+
+  .lottery-main-panel > #dayCheckPanel{
+    background:#ffffff!important;
+    border:1px solid var(--ui-line)!important;
+    border-radius:18px!important;
+    box-shadow:none!important;
+    padding:18px 18px 20px!important;
+    margin:0!important;
+  }
+
+  /* 內層取消再包一層卡片，避免框上加框 */
+  .lottery-main-panel #dayCheckPanel > .panel{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    border-radius:0!important;
+    padding:0!important;
+    margin:0 0 20px!important;
+  }
+
+  .lottery-main-panel #dayCheckPanel > .panel:last-child{
+    margin-bottom:0!important;
+  }
+
+  .lottery-main-panel .lottery-context-grid{
+    align-items:end!important;
+  }
+
+  .lottery-main-panel .lottery-filter-actions{
+    align-items:end!important;
+  }
+
+  @media (max-width: 960px){
+    .lottery-main-panel > .lottery-context{
+      padding:16px!important;
+    }
+    .lottery-main-panel > #dayCheckPanel{
+      padding:16px!important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
