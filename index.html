@@ -912,7 +912,34 @@
     }
   </style>
   <style>body { box-sizing: border-box; }</style>
- </head>
+ 
+<style id="frontend-member-tabs-v1">
+  .verify-intro{margin:-2px 0 14px;padding:11px 12px;background:#f0f7ff;border-left:4px solid var(--primary-blue);border-radius:8px;color:#475569;font-size:13px;line-height:1.65;}
+  .member-tabs-wrap{margin:0 0 14px;background:#fff;}
+  .member-tabs{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--border-light);}
+  .member-tab{appearance:none;border:0;border-bottom:3px solid transparent;background:#fff;color:#64748b;padding:13px 5px 11px;font-size:14px;font-weight:800;cursor:pointer;}
+  .member-tab.active{color:var(--primary-blue);border-bottom-color:var(--primary-blue);}
+  .member-tab-hint{padding:10px 12px;color:#64748b;font-size:12px;line-height:1.55;background:#f8fafc;}
+  .member-tab-panel{width:100%;}
+  .tab-section-heading{margin-bottom:14px;}
+  .tab-section-heading h2{margin-bottom:5px!important;}
+  .tab-section-note{color:#64748b;font-size:12.5px;line-height:1.6;}
+  .registration-success{margin:0 0 14px;padding:14px;background:#ecfdf5;border-left:4px solid #10b981;border-radius:8px;}
+  .registration-success-title{color:#065f46;font-size:15px;font-weight:900;margin-bottom:5px;}
+  .registration-success-text{color:#475569;font-size:12.5px;line-height:1.65;}
+  .registration-success-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .success-link-btn{appearance:none;border:1px solid #bfdbfe;background:#fff;color:var(--primary-blue);border-radius:8px;padding:8px 11px;font-size:12px;font-weight:800;cursor:pointer;}
+  .success-link-btn:hover{background:#eff6ff;}
+  .result-overview{padding:12px;border-radius:8px;background:#f0f7ff;color:#475569;font-size:13px;line-height:1.6;margin-bottom:12px;}
+  .result-item{background:#fff;border:1px solid var(--border-light);border-radius:10px;padding:14px;margin-bottom:10px;}
+  .result-item-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:9px;}
+  .result-item-title{color:#1f2937;font-size:14px;font-weight:900;line-height:1.5;}
+  .result-item-meta{color:#64748b;font-size:12px;line-height:1.6;}
+  .result-empty{text-align:center;color:#94a3b8;padding:26px 12px;background:#f8fafc;border-radius:8px;font-size:13px;line-height:1.65;}
+  @media(max-width:420px){.member-tab{font-size:13px;padding-left:3px;padding-right:3px;}}
+</style>
+
+</head>
  <body>
   <main>
    <div class="phone-frame">
@@ -924,9 +951,12 @@
     <div class="phone-content">
      <!-- Verification Section -->
      <div class="section" id="verification-section">
-      <h2>🔎 查詢／登記我的資料</h2>
+      <h2>身分驗證</h2>
       <div id="register-notice-box" style="display:none;background:#fff7ed;border-left:4px solid #FF9800;padding:12px;border-radius:8px;margin-bottom:16px;font-size:13px;line-height:1.7;color:#9a3412;"></div>
-      <div id="verify-form">
+      <div class="verify-intro">
+        完成身分驗證後，可進行場次登記、查看已登記資料及抽籤結果。
+       </div>
+       <div id="verify-form">
        <div class="form-group">
         <label for="member-name">姓名 *</label> <input type="text" id="member-name" placeholder="請輸入姓名">
        </div>
@@ -935,21 +965,42 @@
        </div>
        <div class="form-group">
         <label for="member-id-last4">身分證後4碼 *</label> <input type="text" id="member-id-last4" maxlength="4" inputmode="numeric" placeholder="請輸入身分證後4碼">
-       </div><button class="btn btn-primary" id="verify-btn">查詢我的登記</button>
+       </div><button class="btn btn-primary" id="verify-btn">驗證身分並進入</button>
        <div id="verification-message"></div>
       </div>
       <div class="member-display" id="member-display">
        <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">
-          ✓ 已查詢登記資料
+          ✓ 身分驗證完成
          </div>
          <div style="font-size: 16px; font-weight: 700; color: var(--primary-blue);"><span id="display-name">-</span> • <span id="display-phone">-</span>
          </div>
         </div><button id="logout-btn" style="background: white; color: #7f1d1d; border: 2px solid #fecaca; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">登出</button>
        </div>
       </div>
-     </div><!-- Location Section -->
+     </div>
+
+     <div class="member-tabs-wrap" id="member-tabs-wrap" style="display:none;">
+      <div class="member-tabs" role="tablist" aria-label="會員功能">
+       <button type="button" class="member-tab active" data-member-tab="register">場次登記</button>
+       <button type="button" class="member-tab" data-member-tab="records">我的登記</button>
+       <button type="button" class="member-tab" data-member-tab="results">抽籤結果</button>
+      </div>
+      <div class="member-tab-hint" id="member-tab-hint">選擇場地、球類、日期與時段完成登記。</div>
+     </div>
+
+     <div class="registration-success" id="registration-success" style="display:none;">
+      <div class="registration-success-title">登記完成</div>
+      <div class="registration-success-text">您可至「我的登記」確認登記資料；抽籤完成並公布後，可至「抽籤結果」查看結果。</div>
+      <div class="registration-success-actions">
+       <button type="button" class="success-link-btn" data-go-tab="records">查看我的登記</button>
+       <button type="button" class="success-link-btn" data-go-tab="results">查看抽籤結果</button>
+      </div>
+     </div>
+
+     <div id="register-tab-panel" class="member-tab-panel">
+     <!-- Location Section -->
      <div class="section" id="location-section" style="display: none;">
       <h2><span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--primary-blue); color: white; border-radius: 50%; font-size: 14px; font-weight: 700;">1</span>選擇地點</h2>
       <div class="button-grid single-column" id="location-buttons"></div>
@@ -984,10 +1035,27 @@
        <div class="summary-item"><span>時段</span><span class="summary-value" id="summary-time">-</span>
        </div>
       </div><button class="btn btn-primary" id="submit-btn" style="margin-top: 16px;">送出登記</button>
-     </div><!-- Records Section -->
-     <div class="section" id="records-section" style="display: none;">
-      <h2>📋 我的登記紀錄</h2>
-      <div id="records-list"></div>
+     </div>
+     </div><!-- /register-tab-panel -->
+
+     <div id="records-tab-panel" class="member-tab-panel" style="display:none;">
+      <div class="section" id="records-section">
+       <div class="tab-section-heading">
+        <h2>我的登記</h2>
+        <div class="tab-section-note">可查看目前已登記的場次與登記資料；如需修改，可先取消原登記後重新登記。</div>
+       </div>
+       <div id="records-list"></div>
+      </div>
+     </div>
+
+     <div id="results-tab-panel" class="member-tab-panel" style="display:none;">
+      <div class="section" id="lottery-results-section">
+       <div class="tab-section-heading">
+        <h2>抽籤結果</h2>
+        <div class="tab-section-note">抽籤完成並公告後，結果會顯示於此；尚未公布的場次也會標示目前狀態。</div>
+       </div>
+       <div id="lottery-results-list"></div>
+      </div>
      </div>
     </div>
    </div>
@@ -1051,6 +1119,7 @@
       onDataChanged(data) {
         allRecords = data || [];
         renderRecords();
+        renderLotteryResults();
         if (currentSelection.venue && currentSelection.day) {
           renderTimeButtons();
         }
@@ -1587,8 +1656,14 @@
       
       updateSummary();
       
-      document.getElementById('records-section').style.display = 'block';
       renderRecords();
+      renderLotteryResults();
+
+      const successBox = document.getElementById('registration-success');
+      if (successBox) {
+        successBox.style.display = 'block';
+        successBox.scrollIntoView({behavior:'smooth', block:'center'});
+      }
     }
 
     function updateSummary() {
@@ -2564,6 +2639,79 @@
       return svg + legend;
     }
 
+
+    function switchMemberTab(tabName) {
+      const validTabs = ['register','records','results'];
+      if (!validTabs.includes(tabName)) tabName = 'register';
+
+      document.querySelectorAll('.member-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.memberTab === tabName);
+      });
+
+      const registerPanel = document.getElementById('register-tab-panel');
+      const recordsPanel = document.getElementById('records-tab-panel');
+      const resultsPanel = document.getElementById('results-tab-panel');
+
+      if (registerPanel) registerPanel.style.display = tabName === 'register' ? 'block' : 'none';
+      if (recordsPanel) recordsPanel.style.display = tabName === 'records' ? 'block' : 'none';
+      if (resultsPanel) resultsPanel.style.display = tabName === 'results' ? 'block' : 'none';
+
+      const hint = document.getElementById('member-tab-hint');
+      if (hint) {
+        const hints = {
+          register: '選擇場地、球類、日期與時段完成登記。',
+          records: '查看目前已登記的場次；如需修改，可先取消原登記後重新登記。',
+          results: '抽籤完成並公告後，可在此查看中籤、候補或未中籤結果。'
+        };
+        hint.textContent = hints[tabName];
+      }
+
+      if (tabName === 'records') renderRecords();
+      if (tabName === 'results') renderLotteryResults();
+    }
+
+    function getCurrentUserRecords() {
+      if (!currentSelection.phone || !currentSelection.id_last4) return [];
+      const currentUserKey = `${normalizePhoneNumber(currentSelection.phone)}|${currentSelection.id_last4}`;
+      return allRecords.filter(r => `${normalizePhoneNumber(r.phone)}|${r.id_last4 || ''}` === currentUserKey);
+    }
+
+    function renderLotteryResults() {
+      const container = document.getElementById('lottery-results-list');
+      if (!container) return;
+
+      const userRecords = getCurrentUserRecords()
+        .slice()
+        .sort((a,b) => String(b.registered_at || '').localeCompare(String(a.registered_at || '')));
+
+      if (!userRecords.length) {
+        container.innerHTML = '<div class="result-empty">目前沒有登記紀錄。完成場次登記後，可回到本頁查看後續抽籤結果。</div>';
+        return;
+      }
+
+      const publishedCount = userRecords.filter(r => r.result_published).length;
+
+      container.innerHTML = `
+        <div class="result-overview">共 ${userRecords.length} 筆登記，目前 ${publishedCount} 筆已公布結果。尚未公布的場次會保留在本頁，公布後將自動顯示結果。</div>
+        ${userRecords.map(record => {
+          const statusText = getLotteryStatusText(record);
+          const statusClass = getLotteryStatusClass(record.lottery_status || '', record);
+          return `
+            <div class="result-item">
+              <div class="result-item-top">
+                <div>
+                  <div class="result-item-title">${record.venue_type || '場次'}｜${record.day_of_week || ''} ${record.time_slot || ''}</div>
+                  <div class="result-item-meta">${record.location_name || config.location_1 || ''}｜序號 ${record.serial_number || '-'}</div>
+                </div>
+                <span class="lottery-status-badge ${statusClass}">${statusText}</span>
+              </div>
+              ${getLotteryResultNote(record)}
+            </div>
+          `;
+        }).join('')}
+      `;
+    }
+
     function setupAllEventListeners() {
       const verifyBtn = document.getElementById('verify-btn');
       const logoutBtn = document.getElementById('logout-btn');
@@ -2575,7 +2723,16 @@
       const adminModal = document.getElementById('admin-modal');
       const rulesModal = document.getElementById('rules-modal');
 
-      // Verify button - THIS IS THE KEY FIX
+      
+      document.querySelectorAll('.member-tab').forEach(btn => {
+        btn.addEventListener('click', () => switchMemberTab(btn.dataset.memberTab));
+      });
+
+      document.querySelectorAll('[data-go-tab]').forEach(btn => {
+        btn.addEventListener('click', () => switchMemberTab(btn.dataset.goTab));
+      });
+
+// Verify button - THIS IS THE KEY FIX
       if (verifyBtn) {
         verifyBtn.addEventListener('click', function(e) {
           e.preventDefault();
@@ -2633,13 +2790,21 @@
           if (phoneEl) phoneEl.value = phone;
           if (displayPhone) displayPhone.textContent = `${phone}｜後4碼 ${idLast4}`;
 
-          // Show all sections
+          // 顯示登入後功能導覽，預設進入「場次登記」
+          const memberTabsWrap = document.getElementById('member-tabs-wrap');
+          if (memberTabsWrap) memberTabsWrap.style.display = 'block';
+
           if (locationSection) locationSection.style.display = 'block';
           if (venueSection) venueSection.style.display = 'block';
           if (dateSection) dateSection.style.display = 'block';
           if (timeSection) timeSection.style.display = 'block';
           if (summarySection) summarySection.style.display = 'block';
-          if (recordsSection) recordsSection.style.display = 'block';
+
+          const recordsTabPanel = document.getElementById('records-tab-panel');
+          const resultsTabPanel = document.getElementById('results-tab-panel');
+          if (recordsTabPanel) recordsTabPanel.style.display = 'none';
+          if (resultsTabPanel) resultsTabPanel.style.display = 'none';
+          switchMemberTab('register');
           
           // Show header buttons (登記辦法 and 管理)
           const headerButtons = document.getElementById('header-buttons');
@@ -2702,7 +2867,18 @@
           if (dateSection) dateSection.style.display = 'none';
           if (timeSection) timeSection.style.display = 'none';
           if (summarySection) summarySection.style.display = 'none';
-          if (recordsSection) recordsSection.style.display = 'none';
+
+          const memberTabsWrap = document.getElementById('member-tabs-wrap');
+          const registerTabPanel = document.getElementById('register-tab-panel');
+          const recordsTabPanel = document.getElementById('records-tab-panel');
+          const resultsTabPanel = document.getElementById('results-tab-panel');
+          const registrationSuccess = document.getElementById('registration-success');
+
+          if (memberTabsWrap) memberTabsWrap.style.display = 'none';
+          if (registerTabPanel) registerTabPanel.style.display = 'block';
+          if (recordsTabPanel) recordsTabPanel.style.display = 'none';
+          if (resultsTabPanel) resultsTabPanel.style.display = 'none';
+          if (registrationSuccess) registrationSuccess.style.display = 'none';
           
           // Hide header buttons (登記辦法 and 管理)
           const headerButtons = document.getElementById('header-buttons');
