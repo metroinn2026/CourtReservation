@@ -1660,6 +1660,139 @@
   #verification-message{margin-top:10px;scroll-margin-top:20px;}
 </style>
 
+
+<style id="front-font-size-tools">
+  .front-font-tools{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:4px;
+    margin-top:8px;
+    color:#64748b;
+    font-size:12px;
+    line-height:1;
+  }
+  .front-font-label{
+    font-size:15px;
+    font-weight:900;
+    color:#334155;
+    margin-right:2px;
+  }
+  .front-font-btn{
+    appearance:none;
+    border:0;
+    background:transparent;
+    color:#64748b;
+    padding:2px 3px;
+    font-family:inherit;
+    font-size:12px;
+    font-weight:800;
+    cursor:pointer;
+  }
+  .front-font-btn.active{
+    color:var(--primary-blue);
+    text-decoration:underline;
+    text-underline-offset:3px;
+  }
+  .front-font-sep{color:#cbd5e1;}
+
+  body.front-font-large{
+    --front-title-size:22px;
+    --front-section-size:17px;
+    --front-body-size:15px;
+    --front-small-size:13px;
+    --front-button-size:16px;
+    --front-input-size:17px;
+  }
+  body.front-font-xlarge{
+    --front-title-size:24px;
+    --front-section-size:18px;
+    --front-body-size:16px;
+    --front-small-size:14px;
+    --front-button-size:17px;
+    --front-input-size:18px;
+  }
+
+  body.front-font-large #app-title,
+  body.front-font-xlarge #app-title{
+    font-size:var(--front-title-size)!important;
+  }
+
+  body.front-font-large .section h2,
+  body.front-font-large .tab-section-heading h2,
+  body.front-font-xlarge .section h2,
+  body.front-font-xlarge .tab-section-heading h2{
+    font-size:var(--front-section-size)!important;
+  }
+
+  body.front-font-large label,
+  body.front-font-large .rules-inline-body,
+  body.front-font-large .tab-section-note,
+  body.front-font-large .result-overview,
+  body.front-font-large .result-item-title,
+  body.front-font-large .result-item-meta,
+  body.front-font-large .summary-item,
+  body.front-font-large .registration-success-title,
+  body.front-font-large #verification-message,
+  body.front-font-xlarge label,
+  body.front-font-xlarge .rules-inline-body,
+  body.front-font-xlarge .tab-section-note,
+  body.front-font-xlarge .result-overview,
+  body.front-font-xlarge .result-item-title,
+  body.front-font-xlarge .result-item-meta,
+  body.front-font-xlarge .summary-item,
+  body.front-font-xlarge .registration-success-title,
+  body.front-font-xlarge #verification-message{
+    font-size:var(--front-body-size)!important;
+  }
+
+  body.front-font-large .capacity-info,
+  body.front-font-large .header-member-mini,
+  body.front-font-xlarge .capacity-info,
+  body.front-font-xlarge .header-member-mini{
+    font-size:var(--front-small-size)!important;
+  }
+
+  body.front-font-large .button-option,
+  body.front-font-large .btn,
+  body.front-font-large .member-folder-tab,
+  body.front-font-large .success-link-btn,
+  body.front-font-xlarge .button-option,
+  body.front-font-xlarge .btn,
+  body.front-font-xlarge .member-folder-tab,
+  body.front-font-xlarge .success-link-btn{
+    font-size:var(--front-button-size)!important;
+  }
+
+  body.front-font-large input,
+  body.front-font-large select,
+  body.front-font-large textarea,
+  body.front-font-xlarge input,
+  body.front-font-xlarge select,
+  body.front-font-xlarge textarea{
+    font-size:var(--front-input-size)!important;
+  }
+
+  body.front-font-large .button-option,
+  body.front-font-xlarge .button-option{
+    min-height:54px;
+    height:auto;
+  }
+
+  body.front-font-large .member-folder-tab,
+  body.front-font-xlarge .member-folder-tab{
+    min-height:44px;
+    white-space:normal;
+  }
+
+  @media(max-width:420px){
+    .front-font-tools{
+      justify-content:flex-start;
+      margin-top:6px;
+    }
+  }
+</style>
+
 </head>
  <body>
   <main>
@@ -1668,6 +1801,14 @@
      <div class="header-main-row">
       <h1 id="app-title">北投會館運動場域智慧租借管理系統</h1>
            </div>
+     <div class="front-font-tools" aria-label="文字大小">
+      <span class="front-font-label">A</span>
+      <button type="button" class="front-font-btn active" data-front-font="standard">標準</button>
+      <span class="front-font-sep">｜</span>
+      <button type="button" class="front-font-btn" data-front-font="large">大</button>
+      <span class="front-font-sep">｜</span>
+      <button type="button" class="front-font-btn" data-front-font="xlarge">特大</button>
+     </div>
      <div class="header-member-mini" id="header-member-mini" style="display:none;">
       <span id="header-member-name">-</span>
       <span class="header-member-sep">｜</span>
@@ -3475,7 +3616,42 @@
       `;
     }
 
+
+    function applyFrontFontSize(size) {
+      const valid = ['standard', 'large', 'xlarge'];
+      const chosen = valid.includes(size) ? size : 'standard';
+
+      document.body.classList.remove('front-font-large', 'front-font-xlarge');
+      if (chosen === 'large') document.body.classList.add('front-font-large');
+      if (chosen === 'xlarge') document.body.classList.add('front-font-xlarge');
+
+      document.querySelectorAll('[data-front-font]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.frontFont === chosen);
+      });
+
+      try {
+        localStorage.setItem('venue_front_font_size', chosen);
+      } catch (e) {
+        console.warn('無法儲存文字大小設定', e);
+      }
+    }
+
+    function initFrontFontSize() {
+      let saved = 'standard';
+      try {
+        saved = localStorage.getItem('venue_front_font_size') || 'standard';
+      } catch (e) {}
+
+      applyFrontFontSize(saved);
+
+      document.querySelectorAll('[data-front-font]').forEach(btn => {
+        btn.addEventListener('click', () => applyFrontFontSize(btn.dataset.frontFont));
+      });
+    }
+
     function setupAllEventListeners() {
+      initFrontFontSize();
+
       const verifyBtn = document.getElementById('verify-btn');
       const logoutBtn = document.getElementById('logout-btn');
       const adminBtn = document.getElementById('admin-btn');
