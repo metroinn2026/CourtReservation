@@ -3559,10 +3559,24 @@
             const turnstileResult = await turnstileResponse.json().catch(() => ({ success: false }));
 
             if (!turnstileResponse.ok || !turnstileResult.success) {
-              msg.textContent = '機器人驗證未通過，請重新驗證';
+              const errorCodes = Array.isArray(turnstileResult.errorCodes)
+                ? turnstileResult.errorCodes
+                : [];
+
+              let detail = '';
+              if (errorCodes.length) {
+                detail = `（${errorCodes.join(', ')}）`;
+              } else if (turnstileResult.message) {
+                detail = `（${turnstileResult.message}）`;
+              }
+
+              msg.textContent = `機器人驗證未通過${detail}`;
               msg.style.backgroundColor = '#FEE2E2';
               msg.style.color = '#7F1D1D';
               msg.style.display = 'block';
+
+              console.warn('Turnstile verify failed:', turnstileResult);
+
               turnstileToken = '';
               if (window.turnstile) window.turnstile.reset();
               if (msg && typeof msg.scrollIntoView === 'function') {
@@ -3572,7 +3586,7 @@
             }
           } catch (error) {
             console.error('Turnstile verification failed', error);
-            msg.textContent = '機器人驗證服務暫時無法使用，請稍後再試';
+            msg.textContent = '機器人驗證服務暫時無法使用，請稍後再試（network-error）';
             msg.style.backgroundColor = '#FEE2E2';
             msg.style.color = '#7F1D1D';
             msg.style.display = 'block';
