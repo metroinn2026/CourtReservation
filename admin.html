@@ -1139,103 +1139,65 @@
   .dashboard-status-cards{
     display:grid;
     grid-template-columns:repeat(4,minmax(0,1fr));
-    gap:14px;
-    margin-bottom:18px;
+    gap:16px;
+    margin-bottom:22px;
   }
   .dashboard-status-card{
     appearance:none!important;
-    min-height:122px!important;
-    padding:18px 20px!important;
+    width:100%!important;
+    min-height:106px!important;
     text-align:left!important;
+    cursor:pointer!important;
     background:#fff!important;
     border:1px solid var(--border)!important;
     border-top:3px solid #5b8fe6!important;
     border-radius:16px!important;
-    box-shadow:var(--shadow-soft)!important;
+    padding:16px 18px!important;
+    box-shadow:none!important;
     color:var(--text)!important;
-    cursor:pointer!important;
-    display:block!important;
   }
   .dashboard-status-card:hover{
-    border-color:#b9cae0!important;
+    border-color:#bfd0e2!important;
     transform:translateY(-1px);
   }
   .dashboard-status-card.static{cursor:default!important;}
   .dashboard-status-card.static:hover{transform:none;}
-  .dashboard-status-card.anomaly{
-    border-top-color:#d92d20!important;
+  .dashboard-status-card.anomaly{border-top-color:#ef4444!important;}
+  .dashboard-status-card .dashboard-card-label{
+    font-size:12px!important;
+    font-weight:800!important;
+    color:#64748b!important;
+    letter-spacing:.1px;
   }
-  .dashboard-status-card.anomaly .dashboard-card-num{color:#b42318!important;}
-  .dashboard-card-label{
-    font-size:13px;
-    font-weight:900;
-    color:#536274;
+  .dashboard-status-card .dashboard-card-num{
+    margin:8px 0 6px!important;
+    font-size:30px!important;
+    line-height:1.05!important;
+    font-weight:900!important;
+    color:#0f172a!important;
   }
-  .dashboard-card-num{
-    margin:7px 0 5px;
-    font-size:32px;
-    line-height:1;
-    font-weight:900;
-    color:#163f7a;
-  }
-  .dashboard-card-note{
-    font-size:12px;
-    line-height:1.45;
-    color:#7a8899;
+  .dashboard-status-card.anomaly .dashboard-card-num{color:#9a3412!important;}
+  .dashboard-status-card .dashboard-card-note{
+    font-size:12px!important;
+    line-height:1.45!important;
+    color:#64748b!important;
   }
   .dashboard-panel-heading{
     display:flex;
     align-items:center;
     justify-content:space-between;
-    gap:14px;
-    flex-wrap:wrap;
-    margin-bottom:12px;
+    gap:12px;
+    margin-bottom:8px;
   }
-  .dashboard-panel-heading h3{margin:0 0 5px!important;}
-  .dashboard-task-total{
-    font-size:12.5px;
-    font-weight:800;
-    color:#64748b;
-    white-space:nowrap;
-  }
-  .dashboard-task-table{min-width:760px!important;}
-  .dashboard-task-table th:last-child,
-  .dashboard-task-table td:last-child{
-    width:126px!important;
-    min-width:126px!important;
-    text-align:center!important;
-  }
-  .dashboard-action-cell{
-    vertical-align:middle!important;
-    padding-top:8px!important;
-    padding-bottom:8px!important;
-  }
-  .dashboard-action{
-    width:104px!important;
-    min-width:104px!important;
-    height:38px!important;
-    min-height:38px!important;
-    padding:7px 10px!important;
-    margin:0 auto!important;
-    display:inline-flex!important;
-    align-items:center!important;
-    justify-content:center!important;
-    white-space:nowrap!important;
-    font-size:13px!important;
-  }
-  #anomalyCenter .anomaly-go{
-    min-width:96px!important;
-    height:38px!important;
-    min-height:38px!important;
-    display:inline-flex!important;
-    align-items:center!important;
-    justify-content:center!important;
-    margin:0!important;
+  .dashboard-panel-heading .right-note{
+    color:#2563eb;
+    font-size:12px;
+    font-weight:900;
   }
   @media(max-width:1100px){
     .dashboard-status-cards{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
-  @media(max-width:650px){
+  @media(max-width:720px){
     .dashboard-status-cards{grid-template-columns:1fr;}
   }
 </style>
@@ -3218,20 +3180,21 @@
 
 
 <style id="accounts-page-uiux-unified-v1">
+  .accounts-section{margin-bottom:18px!important;}
+
   .accounts-page-panel{
     background:#fff!important;
     border:1px solid var(--ui-line)!important;
     border-radius:18px!important;
     box-shadow:none!important;
     padding:18px 20px!important;
-    margin-bottom:18px!important;
+    margin-bottom:0!important;
   }
 
   .accounts-guide-grid{
     display:grid;
     grid-template-columns:repeat(3,minmax(0,1fr));
     gap:14px;
-    margin-top:6px;
   }
 
   .accounts-guide-item{
@@ -3239,7 +3202,7 @@
     border:1px solid #e2e8f0;
     border-radius:12px;
     padding:14px 16px;
-    min-height:100px;
+    min-height:104px;
   }
 
   .accounts-guide-title{
@@ -3279,7 +3242,6 @@
     grid-template-columns:repeat(4,minmax(0,1fr));
     gap:14px 16px;
     align-items:end;
-    margin-top:6px;
   }
 
   .accounts-create-grid .field{ margin:0!important; }
@@ -3293,8 +3255,13 @@
     border-top:1px solid #e2e8f0;
   }
 
-  .accounts-create-actions .btn{
-    min-width:130px;
+  .accounts-create-actions .btn{ min-width:130px; }
+
+  .accounts-inline-note{
+    margin-top:12px;
+    color:#64748b;
+    font-size:12.5px;
+    line-height:1.7;
   }
 
   .accounts-table-wrap{
@@ -3303,12 +3270,14 @@
     border:1px solid #e2e8f0!important;
     border-radius:12px!important;
     overflow:hidden!important;
+    background:#fff!important;
   }
 
   .accounts-table{
     width:100%!important;
     min-width:760px!important;
     margin:0!important;
+    background:#fff!important;
   }
 
   .accounts-table thead th{
@@ -3321,10 +3290,10 @@
   .accounts-table tbody td{
     padding:14px 16px!important;
     border-bottom:1px solid #e8eef5!important;
+    background:#fff!important;
   }
 
   .accounts-table tbody tr:last-child td{ border-bottom:0!important; }
-
   .accounts-status{ display:inline-flex; align-items:center; font-weight:800; font-size:12.5px; }
   .accounts-status.active{ color:#2563eb; }
   .accounts-status.inactive{ color:#64748b; }
@@ -3870,23 +3839,23 @@ function renderDashboard(){
     </div>`:`<div class="msg ok">目前沒有待處理場次。</div>`;
 
   document.getElementById('content').innerHTML=`
-    <div class="dashboard-status-cards">
-      <button type="button" class="dashboard-status-card" id="dashPendingLottery">
+    <div class="cards dashboard-status-cards">
+      <button type="button" class="stat dashboard-status-card" id="dashPendingLottery">
         <div class="dashboard-card-label">待抽籤場次</div>
         <div class="dashboard-card-num">${pendingLotteryStages.length}</div>
         <div class="dashboard-card-note">尚有資料未完成抽籤結果</div>
       </button>
-      <button type="button" class="dashboard-status-card" id="dashPendingPublish">
+      <button type="button" class="stat dashboard-status-card" id="dashPendingPublish">
         <div class="dashboard-card-label">待公告場次</div>
         <div class="dashboard-card-num">${pendingPublishStages.length}</div>
         <div class="dashboard-card-note">抽籤結果已完成、尚未公告</div>
       </button>
-      <div class="dashboard-status-card static">
+      <div class="stat dashboard-status-card static">
         <div class="dashboard-card-label">已公告場次</div>
         <div class="dashboard-card-num">${publishedStages.length}</div>
         <div class="dashboard-card-note">目前已完成結果公告</div>
       </div>
-      <button type="button" class="dashboard-status-card anomaly" id="dashAnomalyCard">
+      <button type="button" class="stat dashboard-status-card anomaly" id="dashAnomalyCard">
         <div class="dashboard-card-label">異常待確認</div>
         <div class="dashboard-card-num">${anomalyIssues.length}</div>
         <div class="dashboard-card-note">點擊查看系統檢核項目</div>
@@ -6529,8 +6498,8 @@ function renderAccountsPage(){
   if(currentAdmin.role!=='super_admin') return;
 
   document.getElementById('content').innerHTML=`
-    <div class="panel accounts-page-panel">
-      <h3>帳號管理說明</h3>
+    <div class="section-title-outside">帳號管理說明</div>
+    <div class="panel accounts-page-panel accounts-section accounts-guide-panel">
       <div class="accounts-guide-grid">
         <div class="accounts-guide-item">
           <div class="accounts-guide-title">權限說明</div>
@@ -6541,15 +6510,17 @@ function renderAccountsPage(){
           <div class="accounts-guide-text">密碼不會以可直接查看的原文保存，系統只保留用來驗證登入的資料；若忘記密碼，需重新設定。</div>
         </div>
         <div class="accounts-guide-item accounts-guide-reset">
-          <div class="accounts-guide-title">重設提醒</div>
-          <div class="accounts-guide-text">僅在需要重新建立全部後台帳號時使用。執行後會清除所有管理員帳號，重新整理後台後可重新建立第一位超級管理員。</div>
+          <div>
+            <div class="accounts-guide-title">重設提醒</div>
+            <div class="accounts-guide-text">僅在需要重新建立全部後台帳號時使用。執行後會清除所有管理員帳號，重新整理後台後可重新建立第一位超級管理員。</div>
+          </div>
           <div class="accounts-sql-inline">DELETE FROM public.admin_users;</div>
         </div>
       </div>
     </div>
 
-    <div class="panel accounts-page-panel accounts-create-panel">
-      <h3>新增後台帳號</h3>
+    <div class="section-title-outside">新增後台帳號</div>
+    <div class="panel accounts-page-panel accounts-section accounts-create-panel">
       <div class="accounts-create-grid">
         <div class="field">
           <label>帳號</label>
@@ -6571,13 +6542,14 @@ function renderAccountsPage(){
           </select>
         </div>
       </div>
+      <div class="accounts-inline-note">權限說明：一般管理員可查看資料、匯出名單、設定名額及辦理抽籤；超級管理員可另行管理後台帳號與帳號權限。</div>
       <div class="accounts-create-actions">
         <button id="addAccountBtn" class="btn btn-primary">建立帳號</button>
       </div>
     </div>
 
+    <div class="section-title-outside">管理員清單</div>
     <div class="panel accounts-page-panel accounts-list-panel">
-      <h3>管理員清單</h3>
       <div class="table-wrap accounts-table-wrap">
         <table class="accounts-table">
           <thead>
