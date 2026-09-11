@@ -1595,13 +1595,6 @@
     padding-top:16px!important;
   }
 
-  .rules-inline-card{
-    background:#f8fafc;
-    border:1px solid #e2e8f0;
-    border-radius:12px;
-    padding:14px 16px;
-  }
-
   .rules-inline-body{
     color:#334155;
     font-size:14px;
@@ -1610,16 +1603,31 @@
     word-break:break-word;
   }
 
-  .rules-inline-body h3{
-    margin:0 0 8px;
-    color:#0f172a;
-    font-size:15px;
+  .rules-inline-plain{
+    padding:2px 0 0;
   }
 
-  .rules-inline-body p,
-  .rules-inline-body ul,
-  .rules-inline-body li{
-    margin-top:0;
+  .rules-list{
+    margin:0;
+    padding-left:20px;
+  }
+
+  .rules-list li{
+    margin:0 0 14px;
+  }
+
+  .rules-list li:last-child{
+    margin-bottom:0;
+  }
+
+  .rules-list strong{
+    display:block;
+    color:#0f172a;
+    margin-bottom:4px;
+  }
+
+  .rules-list p{
+    margin:0;
   }
 
   @media(max-width:420px){
@@ -1752,13 +1760,7 @@
 
      <div id="rules-tab-panel" class="member-tab-panel" style="display:none;">
       <div class="section" id="rules-section-inline">
-       <div class="tab-section-heading">
-        <h2>登記辦法</h2>
-        <div class="tab-section-note">請於登記前詳閱下列說明與注意事項。</div>
-       </div>
-       <div class="rules-inline-card">
-        <div class="rules-inline-body" id="rules-inline-body">載入中...</div>
-       </div>
+       <div class="rules-inline-body rules-inline-plain" id="rules-inline-body">載入中...</div>
       </div>
      </div>
     </div>
