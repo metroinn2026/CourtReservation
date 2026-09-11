@@ -1216,6 +1216,104 @@
   }
 </style>
 
+
+<style id="frontend-step-guide-minimal-v2">
+  .flow-progress{display:none!important;}
+
+  .flow-compact{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:7px;
+    padding:10px 12px;
+    margin:0 0 8px;
+    background:#fff;
+    border-bottom:1px solid var(--border-light);
+    font-size:12px;
+    font-weight:800;
+    color:#94a3b8;
+  }
+  .flow-compact-step.active{color:var(--primary-blue);}
+  .flow-compact-step.done{color:#475569;}
+  .flow-compact-arrow{color:#cbd5e1;font-size:16px;line-height:1;}
+
+  .verify-helper-text{display:none!important;}
+
+  .service-step{
+    margin:0 0 12px!important;
+    padding:10px 12px!important;
+    background:#fff!important;
+    border-top:1px solid var(--border-light)!important;
+    border-bottom:1px solid var(--border-light)!important;
+  }
+  .service-step-heading,
+  .service-choice-desc,
+  .service-content-heading{
+    display:none!important;
+  }
+  .service-choice-grid{
+    display:grid!important;
+    grid-template-columns:repeat(3,1fr)!important;
+    gap:8px!important;
+  }
+  .service-choice{
+    min-height:42px!important;
+    padding:10px 6px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    border:1px solid #d8e1eb!important;
+    border-radius:9px!important;
+    background:#fff!important;
+    color:#1f2937!important;
+    font-size:13px!important;
+    font-weight:900!important;
+    text-align:center!important;
+  }
+  .service-choice.active{
+    background:var(--primary-blue)!important;
+    border-color:var(--primary-blue)!important;
+    color:#fff!important;
+  }
+
+  .registration-success{
+    margin:0 12px 12px!important;
+    padding:11px 12px!important;
+    background:#f0fdf4!important;
+    border-left:3px solid #22c55e!important;
+    border-radius:7px!important;
+  }
+  .registration-success-title{
+    margin:0!important;
+    font-size:14px!important;
+  }
+  .registration-success-text{display:none!important;}
+  .registration-success-actions{margin-top:8px!important;}
+
+  /* 內容區塊再扁平一點，減少一格一格的感覺 */
+  #register-tab-panel .section,
+  #records-tab-panel .section,
+  #results-tab-panel .section{
+    margin-bottom:10px!important;
+    padding-top:14px!important;
+    padding-bottom:14px!important;
+  }
+
+  #register-tab-panel .section h2,
+  #records-tab-panel .section h2,
+  #results-tab-panel .section h2{
+    font-size:15px!important;
+    margin-bottom:10px!important;
+  }
+
+  .tab-section-note{display:none!important;}
+
+  @media(max-width:390px){
+    .flow-compact{gap:5px;font-size:11px;}
+    .service-choice{font-size:12px!important;padding:9px 3px!important;}
+  }
+</style>
+
 </head>
  <body>
   <main>
@@ -1226,29 +1324,18 @@
      </div>
     </div>
     <div class="phone-content">
-     <!-- Step Guide -->
-     <div class="flow-progress" id="flow-progress">
-      <div class="flow-step active" data-flow-step="1">
-       <div class="flow-step-num">1</div>
-       <div class="flow-step-text">身分驗證</div>
-      </div>
-      <div class="flow-line"></div>
-      <div class="flow-step" data-flow-step="2">
-       <div class="flow-step-num">2</div>
-       <div class="flow-step-text">選擇服務</div>
-      </div>
-      <div class="flow-line"></div>
-      <div class="flow-step" data-flow-step="3">
-       <div class="flow-step-num">3</div>
-       <div class="flow-step-text">完成辦理</div>
-      </div>
+     <div class="flow-compact" id="flow-progress">
+      <span class="flow-compact-step active" data-flow-step="1">身分驗證</span>
+      <span class="flow-compact-arrow">›</span>
+      <span class="flow-compact-step" data-flow-step="2">選擇服務</span>
+      <span class="flow-compact-arrow">›</span>
+      <span class="flow-compact-step" data-flow-step="3">辦理</span>
      </div>
 
      <!-- Verification Section -->
      <div class="section" id="verification-section">
       <h2>身分驗證</h2>
       <div id="register-notice-box" style="display:none;background:#fff7ed;border-left:4px solid #FF9800;padding:12px;border-radius:8px;margin-bottom:16px;font-size:13px;line-height:1.7;color:#9a3412;"></div>
-      <div class="verify-helper-text">完成身分驗證後，可進行場次登記、查看已登記資料及抽籤結果。</div>
        <div id="verify-form">
        <div class="form-group">
         <label for="member-name">姓名 *</label> <input type="text" id="member-name" placeholder="請輸入姓名">
@@ -1275,37 +1362,15 @@
      </div>
 
      <div class="service-step" id="member-tabs-wrap" style="display:none;">
-      <div class="service-step-heading">
-       <div class="service-step-title">選擇服務</div>
-       <div class="service-step-note">請選擇這次要辦理的功能。</div>
-      </div>
       <div class="service-choice-grid" role="tablist" aria-label="會員功能">
-       <button type="button" class="service-choice" data-member-tab="register">
-        <span class="service-choice-title">場次登記</span>
-        <span class="service-choice-desc">選擇球類、日期及時段送出登記</span>
-       </button>
-       <button type="button" class="service-choice" data-member-tab="records">
-        <span class="service-choice-title">我的登記</span>
-        <span class="service-choice-desc">查看已送出的登記資料</span>
-       </button>
-       <button type="button" class="service-choice" data-member-tab="results">
-        <span class="service-choice-title">抽籤結果</span>
-        <span class="service-choice-desc">查看中籤、候補或未中籤結果</span>
-       </button>
-      </div>
-     </div>
-
-     <div class="service-content-heading" id="service-content-heading" style="display:none;">
-      <div class="service-content-step">Step 3</div>
-      <div>
-       <div class="service-content-title" id="service-content-title">完成辦理</div>
-       <div class="service-content-note" id="member-tab-hint"></div>
+       <button type="button" class="service-choice" data-member-tab="register">場次登記</button>
+       <button type="button" class="service-choice" data-member-tab="records">我的登記</button>
+       <button type="button" class="service-choice" data-member-tab="results">抽籤結果</button>
       </div>
      </div>
 
      <div class="registration-success" id="registration-success" style="display:none;">
       <div class="registration-success-title">登記完成</div>
-      <div class="registration-success-text">您可至「我的登記」確認登記資料；抽籤完成並公布後，可至「抽籤結果」查看結果。</div>
       <div class="registration-success-actions">
        <button type="button" class="success-link-btn" data-go-tab="records">查看我的登記</button>
        <button type="button" class="success-link-btn" data-go-tab="results">查看抽籤結果</button>
@@ -2954,7 +3019,7 @@
 
 
     function setFlowStep(step){
-      document.querySelectorAll('.flow-step').forEach(el=>{
+      document.querySelectorAll('.flow-compact-step').forEach(el=>{
         const n=parseInt(el.dataset.flowStep,10);
         el.classList.toggle('active',n===step);
         el.classList.toggle('done',n<step);
@@ -2972,39 +3037,15 @@
       const registerPanel = document.getElementById('register-tab-panel');
       const recordsPanel = document.getElementById('records-tab-panel');
       const resultsPanel = document.getElementById('results-tab-panel');
-      const contentHeading = document.getElementById('service-content-heading');
-      const contentTitle = document.getElementById('service-content-title');
 
       if (registerPanel) registerPanel.style.display = tabName === 'register' ? 'block' : 'none';
       if (recordsPanel) recordsPanel.style.display = tabName === 'records' ? 'block' : 'none';
       if (resultsPanel) resultsPanel.style.display = tabName === 'results' ? 'block' : 'none';
-      if (contentHeading) contentHeading.style.display = 'flex';
-
-      const titles = {
-        register: '場次登記',
-        records: '我的登記',
-        results: '抽籤結果'
-      };
-
-      const hints = {
-        register: '請依序選擇場地、球類、日期與時段後送出登記。',
-        records: '查看目前已登記的場次；如需修改，可先取消原登記後重新登記。',
-        results: '抽籤完成並公告後，可在此查看中籤、候補或未中籤結果。'
-      };
-
-      if (contentTitle) contentTitle.textContent = titles[tabName];
-
-      const hint = document.getElementById('member-tab-hint');
-      if (hint) hint.textContent = hints[tabName];
 
       setFlowStep(3);
 
       if (tabName === 'records') renderRecords();
       if (tabName === 'results') renderLotteryResults();
-
-      if (contentHeading) {
-        contentHeading.scrollIntoView({behavior:'smooth', block:'start'});
-      }
     }
 
     function getCurrentUserRecords() {
@@ -3140,12 +3181,10 @@
           const registerTabPanel = document.getElementById('register-tab-panel');
           const recordsTabPanel = document.getElementById('records-tab-panel');
           const resultsTabPanel = document.getElementById('results-tab-panel');
-          const serviceContentHeading = document.getElementById('service-content-heading');
 
           if (registerTabPanel) registerTabPanel.style.display = 'none';
           if (recordsTabPanel) recordsTabPanel.style.display = 'none';
           if (resultsTabPanel) resultsTabPanel.style.display = 'none';
-          if (serviceContentHeading) serviceContentHeading.style.display = 'none';
 
           document.querySelectorAll('.service-choice').forEach(btn=>btn.classList.remove('active'));
           setFlowStep(2);
@@ -3223,8 +3262,6 @@
           if (recordsTabPanel) recordsTabPanel.style.display = 'none';
           if (resultsTabPanel) resultsTabPanel.style.display = 'none';
           if (registrationSuccess) registrationSuccess.style.display = 'none';
-          const serviceContentHeading = document.getElementById('service-content-heading');
-          if (serviceContentHeading) serviceContentHeading.style.display = 'none';
           document.querySelectorAll('.service-choice').forEach(btn=>btn.classList.remove('active'));
           setFlowStep(1);
           
