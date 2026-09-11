@@ -1794,33 +1794,110 @@
 </style>
 
 
-<style id="front-header-layout-v2">
+<style id="front-header-layout-v3">
   .header-clean{
-    padding:16px 18px 10px!important;
+    padding:16px 18px 11px!important;
+    position:relative;
   }
 
   .header-main-row{
-    display:block!important;
+    display:flex!important;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+    position:relative;
   }
 
   .header-main-row h1{
     margin:0!important;
+    min-width:0;
+    flex:1 1 auto;
+    padding-right:2px;
   }
 
-  .header-utility-row{
-    display:grid;
-    grid-template-columns:minmax(0, 1fr) auto;
+  .font-menu-wrap{
+    position:relative;
+    flex:0 0 auto;
+  }
+
+  .font-menu-trigger{
+    width:34px;
+    height:34px;
+    border:1px solid #d6e0ea;
+    border-radius:50%;
+    background:#fff;
+    color:#0b78b7;
+    font-family:inherit;
+    font-size:16px;
+    font-weight:900;
+    line-height:1;
+    cursor:pointer;
+    display:flex;
     align-items:center;
-    gap:10px;
-    margin-top:10px;
-    padding-top:8px;
-    border-top:1px solid #e5e7eb;
-    min-height:32px;
+    justify-content:center;
+  }
+
+  .font-menu-trigger:hover,
+  .font-menu-trigger[aria-expanded="true"]{
+    background:#f2f8fc;
+    border-color:#9fc7df;
+  }
+
+  .font-menu-popover{
+    position:absolute;
+    right:0;
+    top:40px;
+    width:132px;
+    padding:8px;
+    background:#fff;
+    border:1px solid #dbe5ef;
+    border-radius:10px;
+    box-shadow:0 8px 22px rgba(15,23,42,.14);
+    z-index:40;
+  }
+
+  .font-menu-title{
+    padding:4px 7px 7px;
+    color:#64748b;
+    font-size:11px;
+    font-weight:800;
+  }
+
+  .font-menu-option{
+    width:100%;
+    border:0;
+    background:transparent;
+    color:#334155;
+    padding:8px 9px;
+    border-radius:7px;
+    text-align:left;
+    font-family:inherit;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+  }
+
+  .font-menu-option:hover{
+    background:#f4f8fb;
+  }
+
+  .font-menu-option.active{
+    background:#e8f3f9;
+    color:#0b78b7;
+  }
+
+  .header-member-row{
+    margin-top:8px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    min-height:24px;
   }
 
   .header-member-mini{
     min-width:0;
     margin:0!important;
+    flex:1 1 auto;
     display:flex;
     align-items:center;
     gap:2px;
@@ -1833,6 +1910,8 @@
 
   #header-member-name{
     flex:0 0 auto;
+    color:#334155;
+    font-weight:900;
   }
 
   #header-member-phone{
@@ -1840,77 +1919,34 @@
     text-overflow:ellipsis;
   }
 
-  .header-accessibility{
-    display:flex;
-    align-items:center;
-    justify-content:flex-end;
-    gap:6px;
+  .header-logout-link{
     flex:0 0 auto;
-  }
-
-  .header-accessibility label{
-    color:#64748b;
-    font-size:12px!important;
-    font-weight:700;
-    margin:0;
-  }
-
-  #front-font-select{
-    width:auto;
-    min-width:64px;
-    height:30px;
-    padding:3px 24px 3px 8px;
-    border:1px solid #d7e0ea;
-    border-radius:6px;
-    background:#fff;
-    color:#334155;
+    margin:0!important;
+    padding:2px 0 2px 8px!important;
+    border:0!important;
+    background:transparent!important;
+    color:#b42318!important;
     font-family:inherit;
     font-size:12px!important;
-    font-weight:700;
+    font-weight:800!important;
     cursor:pointer;
   }
 
-  .header-logout-link{
-    margin-left:2px!important;
-    padding:3px 0 3px 6px!important;
-    font-size:12px!important;
-  }
+  .header-logout-link:hover{text-decoration:underline;}
 
-  /* 舊的三段字級文字控制不再使用 */
-  .front-font-tools{
+  .front-font-tools,
+  .header-utility-row,
+  .header-accessibility,
+  #front-font-select{
     display:none!important;
   }
 
   @media(max-width:420px){
-    .header-clean{
-      padding:14px 14px 9px!important;
-    }
-
-    .header-utility-row{
-      gap:7px;
-      margin-top:8px;
-      padding-top:7px;
-    }
-
-    .header-member-mini{
-      font-size:11px!important;
-    }
-
-    .header-accessibility{
-      gap:5px;
-    }
-
-    .header-accessibility label,
-    #front-font-select,
-    .header-logout-link{
-      font-size:11px!important;
-    }
-
-    #front-font-select{
-      min-width:58px;
-      height:28px;
-      padding-left:7px;
-    }
+    .header-clean{padding:14px 14px 10px!important;}
+    .font-menu-trigger{width:32px;height:32px;font-size:15px;}
+    .font-menu-popover{top:38px;width:126px;}
+    .header-member-row{margin-top:7px;}
+    .header-member-mini,.header-logout-link{font-size:11px!important;}
   }
 </style>
 
@@ -1921,22 +1957,23 @@
     <div class="header header-clean">
      <div class="header-main-row">
       <h1 id="app-title">北投會館運動場域智慧租借管理系統</h1>
+      <div class="font-menu-wrap">
+       <button type="button" class="font-menu-trigger" id="font-menu-trigger" aria-label="調整文字大小" aria-expanded="false">A</button>
+       <div class="font-menu-popover" id="font-menu-popover" style="display:none;">
+        <div class="font-menu-title">文字大小</div>
+        <button type="button" class="font-menu-option active" data-front-font="standard">標準</button>
+        <button type="button" class="font-menu-option" data-front-font="large">大</button>
+        <button type="button" class="font-menu-option" data-front-font="xlarge">特大</button>
+       </div>
+      </div>
      </div>
-     <div class="header-utility-row">
-      <div class="header-member-mini" id="header-member-mini" style="display:none;">
+     <div class="header-member-row" id="header-member-row" style="display:none;">
+      <div class="header-member-mini" id="header-member-mini">
        <span id="header-member-name">-</span>
        <span class="header-member-sep">｜</span>
        <span id="header-member-phone">-</span>
       </div>
-      <div class="header-accessibility">
-       <label for="front-font-select">字級</label>
-       <select id="front-font-select" aria-label="文字大小">
-        <option value="standard">標準</option>
-        <option value="large">大</option>
-        <option value="xlarge">特大</option>
-       </select>
-       <button type="button" class="header-logout-link" id="header-logout-btn" style="display:none;">登出</button>
-      </div>
+      <button type="button" class="header-logout-link" id="header-logout-btn">登出</button>
      </div>
     </div>
     <div class="phone-content">
@@ -3748,8 +3785,9 @@
       if (chosen === 'large') document.body.classList.add('front-font-large');
       if (chosen === 'xlarge') document.body.classList.add('front-font-xlarge');
 
-      const fontSelect = document.getElementById('front-font-select');
-      if (fontSelect) fontSelect.value = chosen;
+      document.querySelectorAll('.font-menu-option').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.frontFont === chosen);
+      });
 
       try {
         localStorage.setItem('venue_front_font_size', chosen);
@@ -3766,9 +3804,30 @@
 
       applyFrontFontSize(saved);
 
-      const fontSelect = document.getElementById('front-font-select');
-      if (fontSelect) {
-        fontSelect.addEventListener('change', () => applyFrontFontSize(fontSelect.value));
+      const trigger = document.getElementById('font-menu-trigger');
+      const popover = document.getElementById('font-menu-popover');
+
+      document.querySelectorAll('.font-menu-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          applyFrontFontSize(btn.dataset.frontFont);
+          if (popover) popover.style.display = 'none';
+          if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        });
+      });
+
+      if (trigger && popover) {
+        trigger.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isOpen = popover.style.display !== 'none';
+          popover.style.display = isOpen ? 'none' : 'block';
+          trigger.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+        });
+
+        popover.addEventListener('click', (e) => e.stopPropagation());
+        document.addEventListener('click', () => {
+          popover.style.display = 'none';
+          trigger.setAttribute('aria-expanded', 'false');
+        });
       }
     }
 
@@ -3927,9 +3986,8 @@
           const headerMemberPhone = document.getElementById('header-member-phone');
           if (headerMemberName) headerMemberName.textContent = name;
           if (headerMemberPhone) headerMemberPhone.textContent = `${phone}｜末4碼 ${idLast4}`;
-          if (headerMemberMini) headerMemberMini.style.display = 'flex';
-          const headerLogoutBtn = document.getElementById('header-logout-btn');
-          if (headerLogoutBtn) headerLogoutBtn.style.display = 'inline-block';
+          const headerMemberRow = document.getElementById('header-member-row');
+          if (headerMemberRow) headerMemberRow.style.display = 'flex';
 
           // 顯示登入後功能導覽，預設進入「場次登記」
           const memberTabsWrap = document.getElementById('member-tabs-wrap');
@@ -4012,9 +4070,8 @@
           if (verificationSection) verificationSection.classList.remove('verified');
           if (memberDisplay) memberDisplay.style.display = 'none';
           const headerMemberMini = document.getElementById('header-member-mini');
-          if (headerMemberMini) headerMemberMini.style.display = 'none';
-          const headerLogoutBtn = document.getElementById('header-logout-btn');
-          if (headerLogoutBtn) headerLogoutBtn.style.display = 'none';
+          const headerMemberRow = document.getElementById('header-member-row');
+          if (headerMemberRow) headerMemberRow.style.display = 'none';
           if (nameEl) nameEl.value = '';
           if (phoneEl) phoneEl.value = '';
           if (idLast4El) idLast4El.value = '';
