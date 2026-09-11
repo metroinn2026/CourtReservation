@@ -1523,6 +1523,102 @@
     .rules-text-link{font-size:11.5px;}
     .header-member-mini{font-size:11.5px;}
   }
+
+  /* 會員功能改為資料夾頁籤 */
+  .folder-tabs-wrap{
+    margin:0!important;
+    padding:0!important;
+    background:#fff!important;
+    border-top:1px solid var(--border-light)!important;
+    border-bottom:0!important;
+  }
+
+  .member-folder-tabs{
+    display:flex;
+    align-items:flex-end;
+    gap:8px;
+    overflow-x:auto;
+    padding:12px 12px 0;
+    border-bottom:1px solid #dbe5ef;
+    -ms-overflow-style:none;
+    scrollbar-width:none;
+  }
+
+  .member-folder-tabs::-webkit-scrollbar{display:none;}
+
+  .member-folder-tab{
+    appearance:none;
+    border:1px solid #dbe5ef;
+    border-bottom:none;
+    background:#fff;
+    color:#0f172a;
+    border-radius:12px 12px 0 0;
+    padding:11px 14px 10px;
+    min-height:44px;
+    font-size:13px;
+    font-weight:900;
+    line-height:1;
+    white-space:nowrap;
+    cursor:pointer;
+    position:relative;
+    top:1px;
+    transition:all .15s ease;
+  }
+
+  .member-folder-tab:hover{
+    background:#f8fbff;
+    border-color:#bfd3ea;
+  }
+
+  .member-folder-tab.active{
+    background:var(--primary-blue);
+    border-color:var(--primary-blue);
+    color:#fff;
+  }
+
+  .member-tab-panel{
+    background:#fff;
+  }
+
+  .member-tab-panel .section{
+    margin-top:0!important;
+    border-top:none!important;
+    border-radius:0 0 14px 14px!important;
+    padding-top:16px!important;
+  }
+
+  .rules-inline-card{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    padding:14px 16px;
+  }
+
+  .rules-inline-body{
+    color:#334155;
+    font-size:14px;
+    line-height:1.8;
+    white-space:normal;
+    word-break:break-word;
+  }
+
+  .rules-inline-body h3{
+    margin:0 0 8px;
+    color:#0f172a;
+    font-size:15px;
+  }
+
+  .rules-inline-body p,
+  .rules-inline-body ul,
+  .rules-inline-body li{
+    margin-top:0;
+  }
+
+  @media(max-width:420px){
+    .member-folder-tabs{padding:10px 10px 0;gap:6px;}
+    .member-folder-tab{padding:10px 12px 9px;font-size:12.5px;min-height:40px;}
+    .member-tab-panel .section{padding-top:14px!important;}
+  }
 </style>
 
 </head>
@@ -1532,8 +1628,7 @@
     <div class="header header-clean">
      <div class="header-main-row">
       <h1 id="app-title">北投會館運動場域智慧租借管理系統</h1>
-      <button class="rules-text-link" id="rules-btn">登記辦法</button>
-     </div>
+           </div>
      <div class="header-member-mini" id="header-member-mini" style="display:none;">
       <span id="header-member-name">-</span>
       <span class="header-member-sep">｜</span>
@@ -1571,12 +1666,12 @@
       </div>
      </div>
 
-     <div class="service-step" id="member-tabs-wrap" style="display:none;">
-      <div class="main-service-label">請選擇功能</div>
-      <div class="service-choice-grid" role="tablist" aria-label="會員功能">
-       <button type="button" class="service-choice" data-member-tab="register">場次登記</button>
-       <button type="button" class="service-choice" data-member-tab="records">我的登記</button>
-       <button type="button" class="service-choice" data-member-tab="results">抽籤結果</button>
+     <div class="service-step folder-tabs-wrap" id="member-tabs-wrap" style="display:none;">
+      <div class="member-folder-tabs" role="tablist" aria-label="會員功能">
+       <button type="button" class="member-folder-tab active" data-member-tab="register">場次登記</button>
+       <button type="button" class="member-folder-tab" data-member-tab="records">我的登記</button>
+       <button type="button" class="member-folder-tab" data-member-tab="results">抽籤結果</button>
+       <button type="button" class="member-folder-tab" data-member-tab="rules">登記辦法</button>
       </div>
      </div>
 
@@ -1644,6 +1739,18 @@
         <div class="tab-section-note">抽籤完成並公告後，結果會顯示於此；尚未公布的場次也會標示目前狀態。</div>
        </div>
        <div id="lottery-results-list"></div>
+      </div>
+     </div>
+
+     <div id="rules-tab-panel" class="member-tab-panel" style="display:none;">
+      <div class="section" id="rules-section-inline">
+       <div class="tab-section-heading">
+        <h2>登記辦法</h2>
+        <div class="tab-section-note">請於登記前詳閱下列說明與注意事項。</div>
+       </div>
+       <div class="rules-inline-card">
+        <div class="rules-inline-body" id="rules-inline-body">載入中...</div>
+       </div>
       </div>
      </div>
     </div>
@@ -1736,9 +1843,16 @@
 
 
     function renderSystemTextSettings() {
+      const formattedRules = String(systemSettings.rules_content || '請詳閱登記辦法。').replace(/\n/g, '<br>');
+
       const rulesBody = document.getElementById('rules-body');
       if (rulesBody) {
-        rulesBody.innerHTML = String(systemSettings.rules_content || '請詳閱登記辦法。').replace(/\n/g, '<br>');
+        rulesBody.innerHTML = formattedRules;
+      }
+
+      const rulesInlineBody = document.getElementById('rules-inline-body');
+      if (rulesInlineBody) {
+        rulesInlineBody.innerHTML = formattedRules;
       }
 
       const noticeBox = document.getElementById('register-notice-box');
@@ -3238,20 +3352,22 @@
     }
 
     function switchMemberTab(tabName) {
-      const validTabs = ['register','records','results'];
+      const validTabs = ['register','records','results','rules'];
       if (!validTabs.includes(tabName)) return;
 
-      document.querySelectorAll('.service-choice').forEach(btn => {
+      document.querySelectorAll('.member-folder-tab').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.memberTab === tabName);
       });
 
       const registerPanel = document.getElementById('register-tab-panel');
       const recordsPanel = document.getElementById('records-tab-panel');
       const resultsPanel = document.getElementById('results-tab-panel');
+      const rulesPanel = document.getElementById('rules-tab-panel');
 
       if (registerPanel) registerPanel.style.display = tabName === 'register' ? 'block' : 'none';
       if (recordsPanel) recordsPanel.style.display = tabName === 'records' ? 'block' : 'none';
       if (resultsPanel) resultsPanel.style.display = tabName === 'results' ? 'block' : 'none';
+      if (rulesPanel) rulesPanel.style.display = tabName === 'rules' ? 'block' : 'none';
 
       setFlowStep(3);
 
@@ -3305,7 +3421,6 @@
       const verifyBtn = document.getElementById('verify-btn');
       const logoutBtn = document.getElementById('logout-btn');
       const adminBtn = document.getElementById('admin-btn');
-      const rulesBtn = document.getElementById('rules-btn');
       const submitBtn = document.getElementById('submit-btn');
       const closeAdmin = document.getElementById('close-admin');
       const closeRules = document.getElementById('close-rules');
@@ -3313,7 +3428,7 @@
       const rulesModal = document.getElementById('rules-modal');
 
       
-      document.querySelectorAll('.service-choice').forEach(btn => {
+      document.querySelectorAll('.member-folder-tab').forEach(btn => {
         btn.addEventListener('click', () => switchMemberTab(btn.dataset.memberTab));
       });
 
@@ -3403,11 +3518,14 @@
           const recordsTabPanel = document.getElementById('records-tab-panel');
           const resultsTabPanel = document.getElementById('results-tab-panel');
 
+          const rulesTabPanel = document.getElementById('rules-tab-panel');
+
           if (registerTabPanel) registerTabPanel.style.display = 'none';
           if (recordsTabPanel) recordsTabPanel.style.display = 'none';
           if (resultsTabPanel) resultsTabPanel.style.display = 'none';
+          if (rulesTabPanel) rulesTabPanel.style.display = 'none';
 
-          document.querySelectorAll('.service-choice').forEach(btn=>btn.classList.remove('active'));
+          document.querySelectorAll('.member-folder-tab').forEach(btn=>btn.classList.remove('active'));
           setFlowStep(2);
           
 
@@ -3438,6 +3556,7 @@
           
           updateSummary();
           renderRecords();
+          switchMemberTab('register');
         });
       }
 
@@ -3482,14 +3601,16 @@
           const registerTabPanel = document.getElementById('register-tab-panel');
           const recordsTabPanel = document.getElementById('records-tab-panel');
           const resultsTabPanel = document.getElementById('results-tab-panel');
+          const rulesTabPanel = document.getElementById('rules-tab-panel');
           const registrationSuccess = document.getElementById('registration-success');
 
           if (memberTabsWrap) memberTabsWrap.style.display = 'none';
           if (registerTabPanel) registerTabPanel.style.display = 'block';
           if (recordsTabPanel) recordsTabPanel.style.display = 'none';
           if (resultsTabPanel) resultsTabPanel.style.display = 'none';
+          if (rulesTabPanel) rulesTabPanel.style.display = 'none';
           if (registrationSuccess) registrationSuccess.style.display = 'none';
-          document.querySelectorAll('.service-choice').forEach(btn=>btn.classList.remove('active'));
+          document.querySelectorAll('.member-folder-tab').forEach(btn=>btn.classList.remove('active'));
           setFlowStep(1);
 
           currentSelection = { name: '', phone: '', id_last4: '', location: '', venue: '', day: '', time: '' };
@@ -3517,12 +3638,6 @@
 
           if (adminModal) adminModal.classList.add('active');
           renderAdminTable();
-        });
-      }
-
-      if (rulesBtn) {
-        rulesBtn.addEventListener('click', () => {
-          if (rulesModal) rulesModal.classList.add('active');
         });
       }
 
