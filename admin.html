@@ -3216,6 +3216,200 @@
   }
 </style>
 
+
+<style id="accounts-page-uiux-unified-v1">
+  .accounts-reset-panel,
+  .accounts-create-panel,
+  .accounts-list-panel{
+    background:#fff!important;
+    border:1px solid var(--ui-line)!important;
+    border-radius:18px!important;
+    box-shadow:none!important;
+    padding:18px 20px!important;
+    margin-bottom:18px!important;
+  }
+
+  .accounts-info-line{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:20px;
+    padding:14px 16px;
+    background:#f8fafc;
+    border-radius:10px;
+    color:#475569;
+    font-size:13px;
+    line-height:1.7;
+  }
+
+  .accounts-info-line strong{
+    color:#334155;
+  }
+
+  .accounts-sql{
+    flex:0 0 auto;
+    padding:7px 10px;
+    border-radius:8px;
+    background:#eef2f7;
+    color:#334155;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12px;
+    white-space:nowrap;
+  }
+
+  .accounts-create-grid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:14px 16px;
+    align-items:end;
+  }
+
+  .accounts-create-grid .field{
+    margin:0!important;
+  }
+
+  .accounts-create-grid label{
+    margin-bottom:7px!important;
+  }
+
+  .accounts-create-bottom{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:18px;
+    margin-top:16px;
+    padding-top:14px;
+    border-top:1px solid #e2e8f0;
+  }
+
+  .accounts-role-help{
+    color:#64748b;
+    font-size:12.5px;
+    line-height:1.7;
+  }
+
+  .accounts-role-help strong{
+    color:#334155;
+  }
+
+  .accounts-create-bottom .btn{
+    flex:0 0 auto;
+    min-width:130px;
+  }
+
+  .accounts-security-note{
+    display:grid;
+    grid-template-columns:130px minmax(0,1fr);
+    gap:18px;
+    margin-top:14px;
+    padding:14px 0 0;
+    border-top:1px solid #e2e8f0;
+    color:#64748b;
+    font-size:12.5px;
+    line-height:1.7;
+  }
+
+  .accounts-security-title{
+    color:#334155;
+    font-weight:900;
+  }
+
+  .accounts-table-wrap{
+    margin:0!important;
+    width:100%!important;
+    border:1px solid #e2e8f0!important;
+    border-radius:12px!important;
+    overflow:hidden!important;
+  }
+
+  .accounts-table{
+    width:100%!important;
+    min-width:760px!important;
+    margin:0!important;
+  }
+
+  .accounts-table thead th{
+    background:#e5edf6!important;
+    color:#334155!important;
+    font-weight:900!important;
+    padding:13px 16px!important;
+  }
+
+  .accounts-table tbody td{
+    padding:14px 16px!important;
+    border-bottom:1px solid #e8eef5!important;
+  }
+
+  .accounts-table tbody tr:last-child td{
+    border-bottom:0!important;
+  }
+
+  .accounts-status{
+    display:inline-flex;
+    align-items:center;
+    font-weight:800;
+    font-size:12.5px;
+  }
+
+  .accounts-status.active{
+    color:#2563eb;
+  }
+
+  .accounts-status.inactive{
+    color:#64748b;
+  }
+
+  .accounts-action-head{
+    text-align:right!important;
+  }
+
+  .accounts-action-cell{
+    display:flex;
+    justify-content:flex-end;
+    gap:8px;
+    white-space:nowrap;
+  }
+
+  .accounts-action-cell .btn{
+    min-width:82px!important;
+    height:38px!important;
+    min-height:38px!important;
+  }
+
+  .accounts-loading{
+    text-align:center;
+    color:#64748b;
+    padding:24px!important;
+  }
+
+  @media(max-width:1200px){
+    .accounts-create-grid{
+      grid-template-columns:repeat(2,minmax(0,1fr));
+    }
+  }
+
+  @media(max-width:760px){
+    .accounts-create-grid{
+      grid-template-columns:1fr;
+    }
+
+    .accounts-create-bottom{
+      align-items:flex-start;
+      flex-direction:column;
+    }
+
+    .accounts-security-note{
+      grid-template-columns:1fr;
+      gap:6px;
+    }
+
+    .accounts-info-line{
+      align-items:flex-start;
+      flex-direction:column;
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -6398,58 +6592,154 @@ function renderSettingsPage(){
 
 function renderAccountsPage(){
   if(currentAdmin.role!=='super_admin') return;
+
   document.getElementById('content').innerHTML=`
-    <div class="accounts-page">
-      <div class="section-title-outside section-title-manual">帳號重設說明</div>
-      <div class="panel accounts-note-card" data-titleOutside="1">
-        <div class="alert" style="margin:0;">若需重設登入帳號，可於 Supabase SQL Editor 執行 <strong>DELETE FROM public.admin_users;</strong> 後重新整理後台，系統會出現第一位超級管理員。此操作會清空所有後台帳號，請謹慎使用。</div>
-      </div>
-
-      <div class="accounts-grid">
-        <div class="accounts-col-main">
-          <div class="section-title-outside section-title-manual">新增後台帳號</div>
-          <div class="panel accounts-form-card" data-titleOutside="1">
-            <div class="accounts-form-grid">
-              <div class="field"><label>帳號</label><input id="newUser" placeholder="例如 staff01"></div>
-              <div class="field"><label>顯示名稱</label><input id="newName" placeholder="例如 王小明"></div>
-              <div class="field"><label>密碼</label><input id="newPass" type="password"></div>
-              <div class="field"><label>角色</label><select id="newRole"><option value="staff">一般管理員</option><option value="super_admin">超級管理員</option></select></div>
-            </div>
-            <div class="accounts-actions">
-              <button id="addAccountBtn" class="btn btn-primary">建立帳號</button>
-            </div>
-            <div class="small accounts-role-note">一般管理員：可查看資料、匯出名單、設定名額及抽籤。超級管理員：可另外管理後台帳號與權限。</div>
-          </div>
+    <div class="panel accounts-reset-panel">
+      <h3>帳號重設說明</h3>
+      <div class="accounts-info-line">
+        <div>
+          <strong>僅在需要重新建立全部後台帳號時使用。</strong>
+          執行後會清除所有管理員帳號，重新整理後台後可重新建立第一位超級管理員。
         </div>
+        <div class="accounts-sql">DELETE FROM public.admin_users;</div>
+      </div>
+    </div>
 
-        <div class="accounts-col-side">
-          <div class="section-title-outside section-title-manual">帳號安全說明</div>
-          <div class="panel accounts-security-card" data-titleOutside="1">
-            <div class="alert" style="margin:0 0 12px;">密碼目前以加鹽雜湊方式儲存。</div>
-            <div class="small">若日後正式營運或需更高資安控管，建議改採 Supabase Auth 或其他正式身份驗證機制。</div>
-          </div>
+    <div class="panel accounts-create-panel">
+      <h3>新增後台帳號</h3>
+
+      <div class="accounts-create-grid">
+        <div class="field">
+          <label>帳號</label>
+          <input id="newUser" placeholder="例如 staff01">
+        </div>
+        <div class="field">
+          <label>顯示名稱</label>
+          <input id="newName" placeholder="例如 王小明">
+        </div>
+        <div class="field">
+          <label>密碼</label>
+          <input id="newPass" type="password" placeholder="請輸入登入密碼">
+        </div>
+        <div class="field">
+          <label>角色</label>
+          <select id="newRole">
+            <option value="staff">一般管理員</option>
+            <option value="super_admin">超級管理員</option>
+          </select>
         </div>
       </div>
 
-      <div class="section-title-outside section-title-manual">管理員清單</div>
-      <div class="panel accounts-list-card" data-titleOutside="1">
-        <div id="accountList">讀取中...</div>
+      <div class="accounts-create-bottom">
+        <div class="accounts-role-help">
+          <strong>權限說明：</strong>
+          一般管理員可查看資料、匯出名單、設定名額及辦理抽籤；
+          超級管理員可另行管理後台帳號與權限。
+        </div>
+        <button id="addAccountBtn" class="btn btn-primary">建立帳號</button>
       </div>
-    </div>`;
+
+      <div class="accounts-security-note">
+        <div class="accounts-security-title">帳號安全說明</div>
+        <div>
+          密碼不會以可直接查看的原文保存，系統只保留用來驗證登入的資料，
+          因此管理員無法從後台讀出原本密碼；若忘記密碼，需重新設定。
+          正式營運如需更完整的登入安全機制，可再導入 Supabase Auth。
+        </div>
+      </div>
+    </div>
+
+    <div class="panel accounts-list-panel">
+      <h3>管理員清單</h3>
+      <div class="table-wrap accounts-table-wrap">
+        <table class="accounts-table">
+          <thead>
+            <tr>
+              <th>顯示名稱</th>
+              <th>帳號</th>
+              <th>角色</th>
+              <th>狀態</th>
+              <th class="accounts-action-head">操作</th>
+            </tr>
+          </thead>
+          <tbody id="accountList">
+            <tr><td colspan="5" class="accounts-loading">讀取中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 
   document.getElementById('addAccountBtn').onclick=async()=>{
-    const username=document.getElementById('newUser').value.trim(), display_name=document.getElementById('newName').value.trim(), password=document.getElementById('newPass').value, role=document.getElementById('newRole').value;
-    if(!username||!display_name||!password){alert('請填完整');return;}
-    try{ await createAdminAccount({username,display_name,password,role}); alert('帳號已建立'); renderAccountsPage(); }catch(e){ alert('建立失敗，可能帳號重複'); console.error(e); }
+    const username=document.getElementById('newUser').value.trim();
+    const display_name=document.getElementById('newName').value.trim();
+    const password=document.getElementById('newPass').value;
+    const role=document.getElementById('newRole').value;
+
+    if(!username||!display_name||!password){
+      alert('請填完整');
+      return;
+    }
+
+    try{
+      await createAdminAccount({username,display_name,password,role});
+      alert('帳號已建立');
+      renderAccountsPage();
+    }catch(e){
+      alert('建立失敗，可能帳號重複');
+      console.error(e);
+    }
   };
+
   loadAccountList();
 }
 async function loadAccountList(){
   const admins=await loadAdmins();
-  if(!admins){document.getElementById('accountList').textContent='讀取失敗';return;}
-  document.getElementById('accountList').innerHTML=admins.map(a=>`<div class="account-row"><div><strong>${escapeHtml(a.display_name)}｜${escapeHtml(a.username)}</strong><div class="small">${roleName(a.role)}｜${a.is_active?'啟用中':'已停用'}</div></div><div style="display:flex;gap:8px"><button class="btn btn-gray" data-reset="${a.id}">改密碼</button><button class="btn ${a.is_active?'btn-danger':'btn-green'}" data-toggle="${a.id}" data-active="${a.is_active}">${a.is_active?'停用':'啟用'}</button></div></div>`).join('');
-  document.querySelectorAll('[data-toggle]').forEach(btn=>btn.onclick=async()=>{ const active=btn.dataset.active==='true'; const okConfirm=await confirmModal(active?'確認停用帳號':'確認啟用帳號',`確定要${active?'停用':'啟用'}此管理員帳號嗎？`); if(!okConfirm) return; await db.from(ADMIN_TABLE).update({is_active:!active,updated_at:new Date().toISOString()}).eq('id',btn.dataset.toggle); loadAccountList(); });
-  document.querySelectorAll('[data-reset]').forEach(btn=>btn.onclick=()=>resetPassword(btn.dataset.reset));
+  const list=document.getElementById('accountList');
+  if(!list) return;
+
+  if(!admins){
+    list.innerHTML='<tr><td colspan="5" class="accounts-loading">讀取失敗</td></tr>';
+    return;
+  }
+
+  list.innerHTML=admins.length ? admins.map(a=>`
+    <tr>
+      <td><strong>${escapeHtml(a.display_name)}</strong></td>
+      <td>${escapeHtml(a.username)}</td>
+      <td>${escapeHtml(roleName(a.role))}</td>
+      <td>
+        <span class="accounts-status ${a.is_active?'active':'inactive'}">
+          ${a.is_active?'啟用中':'已停用'}
+        </span>
+      </td>
+      <td class="accounts-action-cell">
+        <button class="btn btn-gray" data-reset="${a.id}">改密碼</button>
+        <button class="btn ${a.is_active?'btn-primary':'btn-gray'}" data-toggle="${a.id}" data-active="${a.is_active}">
+          ${a.is_active?'停用':'啟用'}
+        </button>
+      </td>
+    </tr>
+  `).join('') : '<tr><td colspan="5" class="accounts-loading">目前尚無管理員帳號</td></tr>';
+
+  document.querySelectorAll('[data-toggle]').forEach(btn=>btn.onclick=async()=>{
+    const active=btn.dataset.active==='true';
+    const okConfirm=await confirmModal(
+      active?'確認停用帳號':'確認啟用帳號',
+      `確定要${active?'停用':'啟用'}此管理員帳號嗎？`
+    );
+    if(!okConfirm) return;
+
+    await db.from(ADMIN_TABLE)
+      .update({is_active:!active,updated_at:new Date().toISOString()})
+      .eq('id',btn.dataset.toggle);
+
+    loadAccountList();
+  });
+
+  document.querySelectorAll('[data-reset]').forEach(btn=>{
+    btn.onclick=()=>resetPassword(btn.dataset.reset);
+  });
 }
 function resetPassword(id){
   showModal('重設密碼','請輸入新密碼：',async(input)=>{
