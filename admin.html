@@ -3467,6 +3467,51 @@
   }
 </style>
 
+
+<style id="capacity-closed-management-v1">
+  .capacity-open-note{
+    margin:0 0 12px;
+    padding:10px 12px;
+    border-left:3px solid var(--blue);
+    background:#f8fafc;
+    color:#475569;
+    font-size:12px;
+    line-height:1.6;
+  }
+  .capacity-cell{
+    background:#fff;
+    transition:background .15s ease;
+  }
+  .capacity-cell.is-closed{
+    background:#fff7f7!important;
+  }
+  .capacity-cell.is-closed .cap-input{
+    background:#f3f4f6;
+    color:#94a3b8;
+  }
+  .capacity-closed-toggle{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:5px;
+    margin-top:7px;
+    color:#64748b;
+    font-size:11px;
+    font-weight:700;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .capacity-closed-toggle input{
+    width:14px;
+    height:14px;
+    margin:0;
+    accent-color:#b91c1c;
+  }
+  .capacity-cell.is-closed .capacity-closed-toggle{
+    color:#b91c1c;
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -3551,6 +3596,7 @@ let currentAdmin = null;
 let allRecords = [];
 let allLogs = [];
 let capacitySettings = {};
+let closedSlotSettings = {};
 let systemSettings = {};
 let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let recordsActionTab = 'filter';
@@ -3881,9 +3927,12 @@ async function loadAllData(){
   if(logsRes.error) console.warn('操作紀錄讀取失敗，請確認 admin_operation_logs 資料表是否已建立。', logsRes.error);
 
   capacitySettings={};
+  closedSlotSettings={};
   if(!capRes.error){
     (capRes.data||[]).forEach(row=>{
-      capacitySettings[settingKey(row.venue_type,row.day_of_week,row.time_slot)] = Number(row.winner_count||0);
+      const key=settingKey(row.venue_type,row.day_of_week,row.time_slot);
+      capacitySettings[key] = Number(row.winner_count||0);
+      closedSlotSettings[key] = row.is_closed === true;
     });
   }
 
@@ -4835,13 +4884,15 @@ function renderCapacityPage(){
           </div>
 
           <div class="capacity-action-buttons">
-            <button id="fillDefaultCapBtn" class="btn btn-gray">套用數字</button>
-            <button id="clearAllCapBtn" class="btn btn-gray">本頁清為0</button>
+            <button id="fillDefaultCapBtn" class="btn btn-gray">套用名額</button>
+            <button id="openAllCapBtn" class="btn btn-gray">全頁開放</button>
+            <button id="closeAllCapBtn" class="btn btn-gray">全頁不開放</button>
             <button id="saveAllCapBtn" class="btn btn-primary">儲存目前類型</button>
           </div>
         </div>
       </div>
 
+      <div class="capacity-open-note">勾選「不開放」後，前台會顯示「不開放登記」並禁止選取；未勾選的場次名額須至少為 1。</div>
       <div id="bulkCapTable"></div>
     </div>
   `;
@@ -4862,7 +4913,8 @@ function renderCapacityPage(){
   };
 
   document.getElementById('fillDefaultCapBtn').onclick=()=>fillDefaultCapacity();
-  document.getElementById('clearAllCapBtn').onclick=()=>clearAllCapacity();
+  document.getElementById('openAllCapBtn').onclick=()=>setAllCapacityClosed(false);
+  document.getElementById('closeAllCapBtn').onclick=()=>setAllCapacityClosed(true);
   document.getElementById('saveAllCapBtn').onclick=()=>saveAllCapacity();
 }
 
@@ -4873,15 +4925,20 @@ function renderBulkCapacityTable(){
   const times=getTimeOptionsForVenue(venue);
 
   const totalSettings = days.length * times.length;
-  let filledCount = 0;
+  let openCount = 0;
+  let closedCount = 0;
   let totalCapacity = 0;
   days.forEach(day=>{
     times.forEach(st=>{
       const slot=formatTimeSlotDisplay(st,venue);
       const key=settingKey(venue,day,slot);
       const val=Number(capacitySettings[key] ?? capacityMap[venue] ?? 0);
-      if(val>0) filledCount++;
-      totalCapacity += val;
+      const isClosed=closedSlotSettings[key] === true;
+      if(isClosed) closedCount++;
+      else {
+        openCount++;
+        totalCapacity += val;
+      }
     });
   });
 
@@ -4889,8 +4946,8 @@ function renderBulkCapacityTable(){
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
       <div class="stat" style="padding:14px;"><div class="label">目前場地</div><div class="num" style="font-size:22px;">${escapeHtml(locationLabel(location))}</div></div>
       <div class="stat" style="padding:14px;"><div class="label">目前類型</div><div class="num" style="font-size:22px;">${venue}</div></div>
-      <div class="stat" style="padding:14px;"><div class="label">已設定格數</div><div class="num" style="font-size:22px;color:var(--green);">${filledCount}/${totalSettings}</div></div>
-      <div class="stat" style="padding:14px;"><div class="label">總可用名額</div><div class="num" style="font-size:22px;color:var(--orange);">${totalCapacity}</div></div>
+      <div class="stat" style="padding:14px;"><div class="label">開放場次</div><div class="num" style="font-size:22px;color:var(--green);">${openCount}/${totalSettings}</div></div>
+      <div class="stat" style="padding:14px;"><div class="label">不開放場次</div><div class="num" style="font-size:22px;color:#b91c1c;">${closedCount}</div></div>
     </div>
     <div class="table-wrap">
       <table style="min-width:760px;">
@@ -4908,18 +4965,30 @@ function renderBulkCapacityTable(){
                 const slot=formatTimeSlotDisplay(st,venue);
                 const key=settingKey(venue,day,slot);
                 const val=capacitySettings[key] ?? capacityMap[venue] ?? 0;
+                const isClosed=closedSlotSettings[key] === true;
                 const registered=countSlot(venue,day,st,location);
                 return `
-                  <td style="text-align:center;vertical-align:top;background:${registered>0?'#f8fafc':'white'};">
+                  <td class="capacity-cell ${isClosed?'is-closed':''}" style="text-align:center;vertical-align:top;">
                     <input class="cap-input"
                            data-venue="${venue}"
                            data-day="${day}"
                            data-start="${st}"
                            data-slot="${slot}"
                            type="number"
-                           min="0"
-                           value="${val}"
+                           min="1"
+                           value="${val > 0 ? val : 1}"
+                           ${isClosed?'disabled':''}
                            style="width:64px;text-align:center;border:1px solid #d1d5db;border-radius:8px;padding:7px;">
+                    <label class="capacity-closed-toggle">
+                      <input class="cap-closed-input"
+                             type="checkbox"
+                             data-venue="${venue}"
+                             data-day="${day}"
+                             data-start="${st}"
+                             data-slot="${slot}"
+                             ${isClosed?'checked':''}>
+                      <span>不開放</span>
+                    </label>
                     <div class="small" style="margin-top:4px;color:${registered>0?'var(--blue)':'#94a3b8'};">已報${registered}</div>
                   </td>`;
               }).join('')}
@@ -4930,18 +4999,39 @@ function renderBulkCapacityTable(){
     </div>
   `;
   container.innerHTML=html;
-}
 
-function fillDefaultCapacity(){
-  const val = Number(document.getElementById('defaultCapValue').value || 0);
-  document.querySelectorAll('.cap-input').forEach(input=>{
-    input.value = val;
+  document.querySelectorAll('.cap-closed-input').forEach(checkbox=>{
+    checkbox.onchange=()=>{
+      const cell=checkbox.closest('.capacity-cell');
+      const capInput=cell?.querySelector('.cap-input');
+      if(capInput){
+        capInput.disabled=checkbox.checked;
+        if(!checkbox.checked && Number(capInput.value||0)<1) capInput.value=1;
+      }
+      if(cell) cell.classList.toggle('is-closed', checkbox.checked);
+    };
   });
 }
 
-function clearAllCapacity(){
-  showModal('確認清除名額','確定要把目前類型的名額清為 0 嗎？尚未按「儲存目前類型」前不會寫入資料庫。',async()=>{
-    document.querySelectorAll('.cap-input').forEach(input=>input.value=0);
+function fillDefaultCapacity(){
+  const val = Math.max(1, Number(document.getElementById('defaultCapValue').value || 1));
+  document.querySelectorAll('.capacity-cell').forEach(cell=>{
+    const closed=cell.querySelector('.cap-closed-input')?.checked;
+    const input=cell.querySelector('.cap-input');
+    if(input && !closed) input.value = val;
+  });
+}
+
+function setAllCapacityClosed(closed){
+  const title=closed ? '確認全頁不開放' : '確認全頁開放';
+  const message=closed
+    ? '確定將目前球類所有場次標示為「不開放」嗎？尚未按「儲存目前類型」前不會寫入資料庫。'
+    : '確定將目前球類所有場次改為開放嗎？開放場次名額至少為 1。尚未按「儲存目前類型」前不會寫入資料庫。';
+  showModal(title,message,async()=>{
+    document.querySelectorAll('.cap-closed-input').forEach(checkbox=>{
+      checkbox.checked=closed;
+      checkbox.dispatchEvent(new Event('change'));
+    });
   });
 }
 
@@ -4949,13 +5039,25 @@ async function saveAllCapacity(){
   const inputs=[...document.querySelectorAll('.cap-input')];
   if(inputs.length===0){ alert('沒有可儲存的名額資料'); return; }
 
-  const rows=inputs.map(input=>({
-    venue_type: input.dataset.venue,
-    day_of_week: input.dataset.day,
-    time_slot: input.dataset.slot,
-    winner_count: Number(input.value || 0),
-    updated_at: new Date().toISOString()
-  }));
+  const rows=[];
+  for(const input of inputs){
+    const cell=input.closest('.capacity-cell');
+    const isClosed=cell?.querySelector('.cap-closed-input')?.checked === true;
+    const winnerCount=Number(input.value || 0);
+    if(!isClosed && winnerCount < 1){
+      alert(`${input.dataset.day} ${input.dataset.slot} 為開放場次，名額至少須為 1。`);
+      input.focus();
+      return;
+    }
+    rows.push({
+      venue_type: input.dataset.venue,
+      day_of_week: input.dataset.day,
+      time_slot: input.dataset.slot,
+      winner_count: Math.max(1, winnerCount || 1),
+      is_closed: isClosed,
+      updated_at: new Date().toISOString()
+    });
+  }
 
   const btn=document.getElementById('saveAllCapBtn');
   btn.disabled=true;

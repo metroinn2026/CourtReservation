@@ -252,11 +252,13 @@
 
         function normalizeCapacityRows(rows) {
           const settings = {};
+          const closedSettings = {};
           (rows || []).forEach((row) => {
             const key = `${row.venue_type}|${row.day_of_week}|${row.time_slot}`;
             settings[key] = Number(row.winner_count || 0);
+            closedSettings[key] = row.is_closed === true;
           });
-          return settings;
+          return { settings, closedSettings };
         }
 
         async function fetchCapacitySettings() {
@@ -273,13 +275,14 @@
             return { isOk: false, settings: {} };
           }
 
-          return { isOk: true, settings: normalizeCapacityRows(data) };
+          const normalized = normalizeCapacityRows(data);
+          return { isOk: true, settings: normalized.settings, closedSettings: normalized.closedSettings };
         }
 
         async function refreshCapacitySettings() {
           const result = await fetchCapacitySettings();
           if (result.isOk && capacityHandlerRef && typeof capacityHandlerRef.onSettingsChanged === 'function') {
-            capacityHandlerRef.onSettingsChanged(result.settings);
+            capacityHandlerRef.onSettingsChanged(result.settings, result.closedSettings);
           }
           return result;
         }
@@ -315,6 +318,7 @@
               day_of_week: setting.day_of_week,
               time_slot: setting.time_slot,
               winner_count: Number(setting.winner_count || 0),
+              is_closed: setting.is_closed === true,
               updated_at: new Date().toISOString()
             };
 
@@ -2237,6 +2241,7 @@
   <script>
     let allRecords = [];
     let lotterySettings = {};
+    let closedSlotSettings = {};
     let systemSettings = {
       rules_content: '請於登記期間內完成資料填寫，抽籤結果將依公告時間公布。',
       register_notice: '請詳閱登記辦法後再進行登記。'
@@ -2296,8 +2301,9 @@
     };
 
     const capacityHandler = {
-      onSettingsChanged(settings) {
+      onSettingsChanged(settings, closedSettings) {
         lotterySettings = settings || {};
+        closedSlotSettings = closedSettings || {};
         if (currentSelection.venue && currentSelection.day) {
           renderTimeButtons();
         }
@@ -2554,6 +2560,12 @@
       return capacityMap[venue] || 0;
     }
 
+    function isLotterySlotClosed(venue, day, startTime) {
+      const timeSlot = getTimeSlotForSetting(venue, startTime);
+      const settingKey = getLotterySettingKey(venue, day, timeSlot);
+      return closedSlotSettings[settingKey] === true;
+    }
+
     function countRegistrationsForSlot(venue, day, startTime) {
       return allRecords.filter(r =>
         r.venue_type === venue &&
@@ -2563,15 +2575,11 @@
     }
 
     function formatTimeSlotDisplay(startTime, isTableTennis) {
-      const timeMap = {
-        '06:00': 6, '08:00': 8, '10:00': 10, '12:00': 12, '14:00': 14, '16:00': 16, '18:00': 18, '20:00': 20,
-        '09:00': 9, '11:00': 11, '13:00': 13, '15:00': 15, '17:00': 17, '19:00': 19, '21:00': 21
-      };
-      
-      const startHour = timeMap[startTime];
-      if (startHour === undefined) return startTime;
-      
-      const endHour = startHour + 1;
+      const startHour = parseInt(String(startTime).split(':')[0], 10);
+      if (Number.isNaN(startHour)) return startTime;
+
+      // 桌球為 1 小時；羽球／籃球依目前前台規則為 2 小時時段。
+      const endHour = isTableTennis ? startHour : startHour + 1;
       const endTimeStr = String(endHour).padStart(2, '0') + ':59';
       return `${startTime}-${endTimeStr}`;
     }
@@ -2581,9 +2589,6 @@
       const times = getTimeOptionsForVenue(currentSelection.venue);
       
       const isTableTennis = currentSelection.venue.includes('桌球');
-      const isBadmintonOrBasketball = currentSelection.venue === '羽球' || currentSelection.venue === '籃球';
-      const closedDays = ['周一', '周二', '周三', '周四'];
-      const closedTimes = ['16:00', '18:00'];
       
       const userHasRegistration =
         (currentSelection.venue === '羽球' || currentSelection.venue === '籃球')
@@ -2608,9 +2613,11 @@
         const registered = countRegistrationsForSlot(currentSelection.venue, currentSelection.day, time);
         const winnerCount = getLotteryWinnerCount(currentSelection.venue, currentSelection.day, time);
         
-        const isTimeSlotClosed = isBadmintonOrBasketball && 
-                                 closedDays.includes(currentSelection.day) && 
-                                 closedTimes.includes(time);
+        const isTimeSlotClosed = isLotterySlotClosed(
+          currentSelection.venue,
+          currentSelection.day,
+          time
+        );
         
         // 桌球不限制重複登記；羽球／籃球才檢查同運動、同星期、同時段
         const userHasTimeSlotRegistration = isTableTennis ? false : allRecords.some(r =>
@@ -2773,6 +2780,17 @@
       const selectedTimes = isTableTennis 
         ? currentSelection.time.split(', ').filter(t => t.trim())
         : [currentSelection.time];
+
+      const containsClosedSlot = selectedTimes.some(time =>
+        isLotterySlotClosed(currentSelection.venue, currentSelection.day, time)
+      );
+      if (containsClosedSlot) {
+        alert('所選時段目前不開放登記，請重新選擇其他時段。');
+        currentSelection.time = '';
+        renderTimeButtons();
+        updateSummary();
+        return;
+      }
       
       if (isTableTennis) {
         const groups = detectContinuousGroups(selectedTimes);
