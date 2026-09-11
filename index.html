@@ -1428,13 +1428,117 @@
   }
 </style>
 
+
+<style id="frontend-verified-header-v4">
+  .header-clean{
+    display:block!important;
+    padding:16px 18px 12px!important;
+  }
+
+  .header-main-row{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+  }
+
+  .header-main-row h1{
+    margin:0!important;
+    min-width:0;
+    font-size:20px!important;
+    line-height:1.35!important;
+  }
+
+  .rules-text-link{
+    flex:0 0 auto;
+    appearance:none;
+    border:0;
+    background:transparent;
+    color:#64748b;
+    font-size:12px;
+    font-weight:800;
+    padding:4px 0;
+    cursor:pointer;
+  }
+
+  .rules-text-link:hover{
+    color:var(--primary-blue);
+    text-decoration:underline;
+  }
+
+  .header-member-mini{
+    margin-top:8px;
+    display:flex;
+    align-items:center;
+    gap:2px;
+    color:#64748b;
+    font-size:12px;
+    line-height:1.4;
+  }
+
+  #header-member-name{
+    color:#334155;
+    font-weight:900;
+  }
+
+  .header-member-sep{
+    color:#cbd5e1;
+  }
+
+  .header-logout-link{
+    appearance:none;
+    border:0;
+    background:transparent;
+    color:#b42318;
+    font-size:12px;
+    font-weight:800;
+    padding:2px 0 2px 8px;
+    margin-left:auto;
+    cursor:pointer;
+  }
+
+  .header-logout-link:hover{
+    text-decoration:underline;
+  }
+
+  /* 登入完成後：身分驗證整區消失，不再佔首屏 */
+  .verification-section.verified{
+    display:none!important;
+  }
+
+  /* 主功能緊接在 header 下方 */
+  .verification-section.verified + .service-step,
+  #member-tabs-wrap{
+    margin-top:0!important;
+  }
+
+  /* 隱藏原本 header-buttons */
+  #header-buttons{
+    display:none!important;
+  }
+
+  @media(max-width:420px){
+    .header-clean{padding:14px 16px 10px!important;}
+    .header-main-row h1{font-size:19px!important;}
+    .rules-text-link{font-size:11.5px;}
+    .header-member-mini{font-size:11.5px;}
+  }
+</style>
+
 </head>
  <body>
   <main>
    <div class="phone-frame">
-    <div class="header">
-     <h1 id="app-title">北投會館運動場域智慧租借管理系統</h1>
-     <div style="display: none; gap: 8px;" id="header-buttons"><button class="admin-toggle-btn" id="rules-btn">📋 登記辦法</button> 
+    <div class="header header-clean">
+     <div class="header-main-row">
+      <h1 id="app-title">北投會館運動場域智慧租借管理系統</h1>
+      <button class="rules-text-link" id="rules-btn">登記辦法</button>
+     </div>
+     <div class="header-member-mini" id="header-member-mini" style="display:none;">
+      <span id="header-member-name">-</span>
+      <span class="header-member-sep">｜</span>
+      <span id="header-member-phone">-</span>
+      <button type="button" class="header-logout-link" id="header-logout-btn">登出</button>
      </div>
     </div>
     <div class="phone-content">
@@ -3275,6 +3379,16 @@
           if (phoneEl) phoneEl.value = phone;
           if (displayPhone) displayPhone.textContent = `${phone}｜後4碼 ${idLast4}`;
 
+          const verificationSection = document.getElementById('verification-section');
+          if (verificationSection) verificationSection.classList.add('verified');
+
+          const headerMemberMini = document.getElementById('header-member-mini');
+          const headerMemberName = document.getElementById('header-member-name');
+          const headerMemberPhone = document.getElementById('header-member-phone');
+          if (headerMemberName) headerMemberName.textContent = name;
+          if (headerMemberPhone) headerMemberPhone.textContent = `${phone}｜末4碼 ${idLast4}`;
+          if (headerMemberMini) headerMemberMini.style.display = 'flex';
+
           // 顯示登入後功能導覽，預設進入「場次登記」
           const memberTabsWrap = document.getElementById('member-tabs-wrap');
           if (memberTabsWrap) memberTabsWrap.style.display = 'block';
@@ -3296,10 +3410,7 @@
           document.querySelectorAll('.service-choice').forEach(btn=>btn.classList.remove('active'));
           setFlowStep(2);
           
-          // Show header buttons (登記辦法 and 管理)
-          const headerButtons = document.getElementById('header-buttons');
-          if (headerButtons) headerButtons.style.display = 'flex';
-          
+
           // Auto-select 北投會館
           currentSelection.location = config.location_1;
           currentSelection.venue = '';
@@ -3330,6 +3441,11 @@
         });
       }
 
+      const headerLogoutBtn = document.getElementById('header-logout-btn');
+      if (headerLogoutBtn && logoutBtn) {
+        headerLogoutBtn.addEventListener('click', () => logoutBtn.click());
+      }
+
       if (logoutBtn) {
         logoutBtn.addEventListener('click', () => {
           const verifyForm = document.getElementById('verify-form');
@@ -3349,6 +3465,8 @@
           const verificationSection = document.getElementById('verification-section');
           if (verificationSection) verificationSection.classList.remove('verified');
           if (memberDisplay) memberDisplay.style.display = 'none';
+          const headerMemberMini = document.getElementById('header-member-mini');
+          if (headerMemberMini) headerMemberMini.style.display = 'none';
           if (nameEl) nameEl.value = '';
           if (phoneEl) phoneEl.value = '';
           if (idLast4El) idLast4El.value = '';
@@ -3373,11 +3491,7 @@
           if (registrationSuccess) registrationSuccess.style.display = 'none';
           document.querySelectorAll('.service-choice').forEach(btn=>btn.classList.remove('active'));
           setFlowStep(1);
-          
-          // Hide header buttons (登記辦法 and 管理)
-          const headerButtons = document.getElementById('header-buttons');
-          if (headerButtons) headerButtons.style.display = 'none';
-          
+
           currentSelection = { name: '', phone: '', id_last4: '', location: '', venue: '', day: '', time: '' };
           const recordsList = document.getElementById('records-list');
           if (recordsList) recordsList.innerHTML = '';
