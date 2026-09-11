@@ -1950,6 +1950,112 @@
   }
 </style>
 
+
+<style id="header-actions-unified-v3">
+  .header-main-row{
+    display:block!important;
+  }
+
+  .header-member-row{
+    margin-top:9px!important;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    min-height:34px;
+  }
+
+  .header-member-mini{
+    min-width:0;
+    flex:1 1 auto;
+    overflow:hidden;
+  }
+
+  .header-member-actions{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex:0 0 auto;
+  }
+
+  .header-action-btn{
+    appearance:none;
+    min-width:58px;
+    height:32px;
+    padding:0 10px!important;
+    border:1px solid var(--primary-blue)!important;
+    border-radius:8px!important;
+    background:#fff!important;
+    color:var(--primary-blue)!important;
+    font-family:inherit;
+    font-size:12px!important;
+    font-weight:800!important;
+    line-height:30px!important;
+    text-align:center;
+    cursor:pointer;
+    box-shadow:none!important;
+    margin:0!important;
+    white-space:nowrap;
+  }
+
+  .header-action-btn:hover{
+    background:#f2f8fc!important;
+    text-decoration:none!important;
+  }
+
+  .font-menu-trigger{
+    width:auto!important;
+    min-width:64px!important;
+    font-size:12px!important;
+    border-radius:8px!important;
+  }
+
+  .font-menu-wrap{
+    position:relative;
+    flex:0 0 auto;
+  }
+
+  .font-menu-popover{
+    top:38px!important;
+    right:0!important;
+    width:130px!important;
+    z-index:30;
+  }
+
+  .header-logout-link{
+    min-width:54px!important;
+  }
+
+  @media(max-width:420px){
+    .header-member-row{
+      gap:7px;
+    }
+
+    .header-member-actions{
+      gap:5px;
+    }
+
+    .header-action-btn{
+      min-width:50px;
+      height:30px;
+      padding:0 8px!important;
+      font-size:11px!important;
+      line-height:28px!important;
+    }
+
+    .font-menu-trigger{
+      min-width:58px!important;
+    }
+
+    .header-logout-link{
+      min-width:48px!important;
+    }
+
+    .header-member-mini{
+      font-size:11px!important;
+    }
+  }
+</style>
+
 </head>
  <body>
   <main>
@@ -1957,15 +2063,6 @@
     <div class="header header-clean">
      <div class="header-main-row">
       <h1 id="app-title">北投會館運動場域智慧租借管理系統</h1>
-      <div class="font-menu-wrap">
-       <button type="button" class="font-menu-trigger" id="font-menu-trigger" aria-label="調整文字大小" aria-expanded="false">A</button>
-       <div class="font-menu-popover" id="font-menu-popover" style="display:none;">
-        <div class="font-menu-title">文字大小</div>
-        <button type="button" class="font-menu-option active" data-front-font="standard">標準</button>
-        <button type="button" class="font-menu-option" data-front-font="large">大</button>
-        <button type="button" class="font-menu-option" data-front-font="xlarge">特大</button>
-       </div>
-      </div>
      </div>
      <div class="header-member-row" id="header-member-row" style="display:none;">
       <div class="header-member-mini" id="header-member-mini">
@@ -1973,7 +2070,18 @@
        <span class="header-member-sep">｜</span>
        <span id="header-member-phone">-</span>
       </div>
-      <button type="button" class="header-logout-link" id="header-logout-btn">登出</button>
+      <div class="header-member-actions">
+       <div class="font-menu-wrap" id="font-menu-wrap">
+        <button type="button" class="header-action-btn font-menu-trigger" id="font-menu-trigger" aria-label="調整文字大小" aria-expanded="false">A 字級</button>
+        <div class="font-menu-popover" id="font-menu-popover" style="display:none;">
+         <div class="font-menu-title">文字大小</div>
+         <button type="button" class="font-menu-option active" data-front-font="standard">標準</button>
+         <button type="button" class="font-menu-option" data-front-font="large">大</button>
+         <button type="button" class="font-menu-option" data-front-font="xlarge">特大</button>
+        </div>
+       </div>
+       <button type="button" class="header-action-btn header-logout-link" id="header-logout-btn">登出</button>
+      </div>
      </div>
     </div>
     <div class="phone-content">
@@ -4072,6 +4180,10 @@
           const headerMemberMini = document.getElementById('header-member-mini');
           const headerMemberRow = document.getElementById('header-member-row');
           if (headerMemberRow) headerMemberRow.style.display = 'none';
+          const fontMenuPopover = document.getElementById('font-menu-popover');
+          const fontMenuTrigger = document.getElementById('font-menu-trigger');
+          if (fontMenuPopover) fontMenuPopover.style.display = 'none';
+          if (fontMenuTrigger) fontMenuTrigger.setAttribute('aria-expanded', 'false');
           if (nameEl) nameEl.value = '';
           if (phoneEl) phoneEl.value = '';
           if (idLast4El) idLast4El.value = '';
