@@ -604,7 +604,11 @@
     .button-option.selected {
       background: var(--primary-blue);
       border-color: var(--primary-blue);
-      color: white;
+      color: white !important;
+    }
+
+    .button-option.selected * {
+      color: white !important;
     }
 
     .button-option:disabled {
@@ -2234,7 +2238,7 @@
           btn.disabled = false;
           btn.style.opacity = '1';
           btn.style.cursor = 'pointer';
-          btn.style.color = 'inherit';
+          btn.style.removeProperty('color');
         }
         
         const capacityInfo = document.createElement('div');
