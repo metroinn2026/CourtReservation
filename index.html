@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>北投會館運動場域智慧租借管理系統</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <script>
     // 雲端版：登記資料寫入 Supabase，設定資料仍保留本機預設值
     let config = {
@@ -1639,28 +1640,14 @@
 
 
 <style id="human-check-style">
-  .human-check{
+  .turnstile-wrap{
+    margin:4px 0 14px;
+    min-height:66px;
     display:flex;
     align-items:center;
-    gap:9px;
-    min-height:44px;
-    margin:2px 0 14px;
-    padding:10px 12px;
-    border:1px solid #dbe5ef;
-    border-radius:8px;
-    background:#fff;
-    color:#334155;
-    font-size:13px;
-    font-weight:700;
-    cursor:pointer;
-    user-select:none;
   }
-  .human-check input{
-    width:18px;
-    height:18px;
-    margin:0;
-    accent-color:var(--primary-blue);
-    cursor:pointer;
+  .turnstile-wrap .cf-turnstile{
+    max-width:100%;
   }
 </style>
 
@@ -1694,10 +1681,14 @@
        <div class="form-group">
         <label for="member-id-last4">身分證後4碼 *</label> <input type="text" id="member-id-last4" maxlength="4" inputmode="numeric" placeholder="請輸入身分證後4碼">
        </div>
-       <label class="human-check" for="human-check">
-        <input type="checkbox" id="human-check">
-        <span>我不是機器人</span>
-       </label>
+       <div class="turnstile-wrap">
+        <div class="cf-turnstile"
+             data-sitekey="0x4AAAAAAEv4A9v3BlxDIMDi"
+             data-callback="onTurnstileSuccess"
+             data-expired-callback="onTurnstileExpired"
+             data-error-callback="onTurnstileError"
+             data-theme="light"></div>
+       </div>
        <button class="btn btn-primary" id="verify-btn">驗證身分並進入</button>
        <div id="verification-message"></div>
       </div>
@@ -1843,6 +1834,22 @@
     };
 
     let pendingDeleteRecord = null;
+
+    let turnstileToken = '';
+
+    window.onTurnstileSuccess = function(token) {
+      turnstileToken = token || '';
+      const msg = document.getElementById('verification-message');
+      if (msg && msg.textContent.includes('機器人')) msg.style.display = 'none';
+    };
+
+    window.onTurnstileExpired = function() {
+      turnstileToken = '';
+    };
+
+    window.onTurnstileError = function() {
+      turnstileToken = '';
+    };
 
     // Capacity info by venue type
     const capacityMap = {
@@ -3480,7 +3487,7 @@
 
 // Verify button - THIS IS THE KEY FIX
       if (verifyBtn) {
-        verifyBtn.addEventListener('click', function(e) {
+        verifyBtn.addEventListener('click', async function(e) {
           e.preventDefault();
           const nameEl = document.getElementById('member-name');
           const phoneEl = document.getElementById('member-phone');
@@ -3488,7 +3495,6 @@
           const name = nameEl.value.trim();
           const phone = normalizePhoneNumber(phoneEl.value);
           const idLast4 = idLast4El ? idLast4El.value.trim() : '';
-          const humanCheck = document.getElementById('human-check');
           const msg = document.getElementById('verification-message');
 
           if (!name || !phone || !idLast4) {
@@ -3515,12 +3521,49 @@
             return;
           }
 
-          if (!humanCheck || !humanCheck.checked) {
-            msg.textContent = '請先完成「我不是機器人」驗證';
+          if (!turnstileToken) {
+            msg.textContent = '請先完成機器人驗證';
             msg.style.backgroundColor = '#FEE2E2';
             msg.style.color = '#7F1D1D';
             msg.style.display = 'block';
             return;
+          }
+
+          try {
+            verifyBtn.disabled = true;
+            verifyBtn.textContent = '驗證中...';
+
+            const turnstileResponse = await fetch('https://wsvsdwuksuzcjisnpyin.supabase.co/functions/v1/verify-turnstile', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ token: turnstileToken })
+            });
+
+            const turnstileResult = await turnstileResponse.json().catch(() => ({ success: false }));
+
+            if (!turnstileResponse.ok || !turnstileResult.success) {
+              msg.textContent = '機器人驗證未通過，請重新驗證';
+              msg.style.backgroundColor = '#FEE2E2';
+              msg.style.color = '#7F1D1D';
+              msg.style.display = 'block';
+              turnstileToken = '';
+              if (window.turnstile) window.turnstile.reset();
+              return;
+            }
+          } catch (error) {
+            console.error('Turnstile verification failed', error);
+            msg.textContent = '機器人驗證服務暫時無法使用，請稍後再試';
+            msg.style.backgroundColor = '#FEE2E2';
+            msg.style.color = '#7F1D1D';
+            msg.style.display = 'block';
+            turnstileToken = '';
+            if (window.turnstile) window.turnstile.reset();
+            return;
+          } finally {
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = '驗證身分並進入';
           }
 
           currentSelection.name = name;
@@ -3629,7 +3672,6 @@
           const nameEl = document.getElementById('member-name');
           const phoneEl = document.getElementById('member-phone');
           const idLast4El = document.getElementById('member-id-last4');
-          const humanCheck = document.getElementById('human-check');
           const verificationMessage = document.getElementById('verification-message');
 
           if (verifyForm) verifyForm.style.display = 'block';
@@ -3641,7 +3683,8 @@
           if (nameEl) nameEl.value = '';
           if (phoneEl) phoneEl.value = '';
           if (idLast4El) idLast4El.value = '';
-          if (humanCheck) humanCheck.checked = false;
+          turnstileToken = '';
+          if (window.turnstile) window.turnstile.reset();
           if (verificationMessage) verificationMessage.style.display = 'none';
           if (locationSection) locationSection.style.display = 'none';
           if (venueSection) venueSection.style.display = 'none';
