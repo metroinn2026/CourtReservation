@@ -939,6 +939,87 @@
   @media(max-width:420px){.member-tab{font-size:13px;padding-left:3px;padding-right:3px;}}
 </style>
 
+
+<style id="frontend-tab-visual-refresh-v2">
+  /* 身分驗證說明改為一般文字，避免提示色塊過多 */
+  .verify-helper-text{
+    margin:0 0 14px;
+    color:#64748b;
+    font-size:13px;
+    line-height:1.65;
+  }
+
+  /* 隱藏舊版彩色提示樣式殘留 */
+  .verify-intro{display:none!important;}
+
+  /* 會員功能頁籤改成清楚的切換按鈕 */
+  .member-tabs-wrap{
+    margin:0 0 16px!important;
+    background:transparent!important;
+  }
+
+  .member-tabs{
+    display:grid!important;
+    grid-template-columns:repeat(3,1fr)!important;
+    gap:8px!important;
+    padding:8px!important;
+    background:#f1f5f9!important;
+    border:0!important;
+    border-radius:12px!important;
+  }
+
+  .member-tab{
+    appearance:none!important;
+    border:1px solid #d7e0ea!important;
+    border-radius:9px!important;
+    background:#fff!important;
+    color:#1f2937!important;
+    padding:11px 8px!important;
+    font-size:14px!important;
+    font-weight:900!important;
+    cursor:pointer!important;
+    transition:.15s ease!important;
+  }
+
+  .member-tab:hover{
+    border-color:#93b5e1!important;
+    background:#f8fbff!important;
+    color:#1f2937!important;
+  }
+
+  .member-tab.active{
+    background:var(--primary-blue)!important;
+    border-color:var(--primary-blue)!important;
+    color:#fff!important;
+    box-shadow:none!important;
+  }
+
+  .member-tab-hint{
+    margin-top:8px!important;
+    padding:0 2px!important;
+    background:transparent!important;
+    color:#64748b!important;
+    font-size:12px!important;
+    line-height:1.55!important;
+  }
+
+  @media(max-width:420px){
+    .member-tabs{gap:6px!important;padding:6px!important;}
+    .member-tab{font-size:13px!important;padding:10px 4px!important;}
+  }
+</style>
+
+
+<style id="verification-success-simplify-v1">
+  #verified-info{
+    background:#fff!important;
+    border:1px solid #dbe5ef!important;
+    border-left:4px solid #22c55e!important;
+    border-radius:10px!important;
+    padding:12px 14px!important;
+  }
+</style>
+
 </head>
  <body>
   <main>
@@ -953,9 +1034,7 @@
      <div class="section" id="verification-section">
       <h2>身分驗證</h2>
       <div id="register-notice-box" style="display:none;background:#fff7ed;border-left:4px solid #FF9800;padding:12px;border-radius:8px;margin-bottom:16px;font-size:13px;line-height:1.7;color:#9a3412;"></div>
-      <div class="verify-intro">
-        完成身分驗證後，可進行場次登記、查看已登記資料及抽籤結果。
-       </div>
+      <div class="verify-helper-text">完成身分驗證後，可進行場次登記、查看已登記資料及抽籤結果。</div>
        <div id="verify-form">
        <div class="form-group">
         <label for="member-name">姓名 *</label> <input type="text" id="member-name" placeholder="請輸入姓名">
