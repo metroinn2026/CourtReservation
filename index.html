@@ -1637,6 +1637,33 @@
   }
 </style>
 
+
+<style id="human-check-style">
+  .human-check{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    min-height:44px;
+    margin:2px 0 14px;
+    padding:10px 12px;
+    border:1px solid #dbe5ef;
+    border-radius:8px;
+    background:#fff;
+    color:#334155;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    user-select:none;
+  }
+  .human-check input{
+    width:18px;
+    height:18px;
+    margin:0;
+    accent-color:var(--primary-blue);
+    cursor:pointer;
+  }
+</style>
+
 </head>
  <body>
   <main>
@@ -1666,7 +1693,12 @@
        </div>
        <div class="form-group">
         <label for="member-id-last4">身分證後4碼 *</label> <input type="text" id="member-id-last4" maxlength="4" inputmode="numeric" placeholder="請輸入身分證後4碼">
-       </div><button class="btn btn-primary" id="verify-btn">驗證身分並進入</button>
+       </div>
+       <label class="human-check" for="human-check">
+        <input type="checkbox" id="human-check">
+        <span>我不是機器人</span>
+       </label>
+       <button class="btn btn-primary" id="verify-btn">驗證身分並進入</button>
        <div id="verification-message"></div>
       </div>
       <div class="member-display" id="member-display">
@@ -2136,7 +2168,7 @@
       const hintText = isTableTennis 
         ? '本場地以1小時為單位進行登記，不限時數'
         : userHasRegistration
-        ? '⚠️ 您已登記此運動類型，如需變更請先刪除登記紀錄'
+        ? '您已登記此運動類型，如需變更，請先至「我的登記」刪除原登記紀錄。'
         : '本場地以2小時為單位進行登記，每個帳號僅能登記一個時段';
       
       const hintBgColor = userHasRegistration ? '#fee2e2' : '#e5f2f7';
@@ -3456,6 +3488,7 @@
           const name = nameEl.value.trim();
           const phone = normalizePhoneNumber(phoneEl.value);
           const idLast4 = idLast4El ? idLast4El.value.trim() : '';
+          const humanCheck = document.getElementById('human-check');
           const msg = document.getElementById('verification-message');
 
           if (!name || !phone || !idLast4) {
@@ -3476,6 +3509,14 @@
 
           if (!/^\d{4}$/.test(idLast4)) {
             msg.textContent = '請輸入正確的身分證後4碼';
+            msg.style.backgroundColor = '#FEE2E2';
+            msg.style.color = '#7F1D1D';
+            msg.style.display = 'block';
+            return;
+          }
+
+          if (!humanCheck || !humanCheck.checked) {
+            msg.textContent = '請先完成「我不是機器人」驗證';
             msg.style.backgroundColor = '#FEE2E2';
             msg.style.color = '#7F1D1D';
             msg.style.display = 'block';
@@ -3588,6 +3629,7 @@
           const nameEl = document.getElementById('member-name');
           const phoneEl = document.getElementById('member-phone');
           const idLast4El = document.getElementById('member-id-last4');
+          const humanCheck = document.getElementById('human-check');
           const verificationMessage = document.getElementById('verification-message');
 
           if (verifyForm) verifyForm.style.display = 'block';
@@ -3599,7 +3641,7 @@
           if (nameEl) nameEl.value = '';
           if (phoneEl) phoneEl.value = '';
           if (idLast4El) idLast4El.value = '';
-          if (idLast4El) idLast4El.value = '';
+          if (humanCheck) humanCheck.checked = false;
           if (verificationMessage) verificationMessage.style.display = 'none';
           if (locationSection) locationSection.style.display = 'none';
           if (venueSection) venueSection.style.display = 'none';
