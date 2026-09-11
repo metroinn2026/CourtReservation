@@ -566,8 +566,10 @@
       background: white;
       border-radius: 8px;
       cursor: pointer;
-      font-size: 16px;
+      font-size: 15px;
+      font-family: inherit;
       font-weight: 700;
+      line-height: 1.2;
       transition: all 0.2s ease;
       position: relative;
       height: 50px;
@@ -1536,8 +1538,8 @@
   .member-folder-tabs{
     display:flex;
     align-items:flex-end;
-    gap:8px;
-    overflow-x:auto;
+    gap:6px;
+    overflow-x:visible;
     padding:12px 12px 0;
     border-bottom:1px solid #dbe5ef;
     -ms-overflow-style:none;
@@ -1553,16 +1555,22 @@
     background:#fff;
     color:#0f172a;
     border-radius:12px 12px 0 0;
-    padding:11px 14px 10px;
+    padding:11px 10px 10px;
     min-height:44px;
     font-size:13px;
-    font-weight:900;
-    line-height:1;
+    font-family:inherit;
+    font-weight:800;
+    line-height:1.2;
     white-space:nowrap;
     cursor:pointer;
     position:relative;
     top:1px;
     transition:all .15s ease;
+    flex:1 1 0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
   }
 
   .member-folder-tab:hover{
@@ -1615,8 +1623,8 @@
   }
 
   @media(max-width:420px){
-    .member-folder-tabs{padding:10px 10px 0;gap:6px;}
-    .member-folder-tab{padding:10px 12px 9px;font-size:12.5px;min-height:40px;}
+    .member-folder-tabs{padding:10px 8px 0;gap:4px;}
+    .member-folder-tab{padding:10px 6px 9px;font-size:12px;min-height:40px;}
     .member-tab-panel .section{padding-top:14px!important;}
   }
 </style>
@@ -1702,7 +1710,7 @@
       <div id="time-buttons" class="button-grid"></div>
      </div><!-- Summary Section -->
      <div class="section" id="summary-section" style="display: none;">
-      <h2>✅ 確認登記</h2>
+      <h2>確認登記</h2>
       <div class="summary-box">
        <div class="summary-item"><span>姓名</span><span class="summary-value" id="summary-name">-</span>
        </div>
@@ -1778,7 +1786,7 @@
   <div class="rules-modal" id="rules-modal">
    <div class="rules-content">
     <div class="rules-header">
-     <h2 style="margin: 0; color: var(--primary-blue);">📋 登記辦法</h2><button class="rules-close" id="close-rules">✕</button>
+     <h2 style="margin: 0; color: var(--primary-blue);">登記辦法</h2><button class="rules-close" id="close-rules">✕</button>
     </div>
     <div class="rules-body" id="rules-body">載入中...</div>
    </div>
@@ -1994,10 +2002,10 @@
     function renderVenueButtons() {
       const container = document.getElementById('venue-buttons');
       container.innerHTML = `
-        <button class="button-option" data-value="羽球">🏸 羽球</button>
-        <button class="button-option" data-value="籃球">🏀 籃球</button>
-        <button class="button-option" data-value="B1桌球" style="font-size: 14px;">🏓 B1桌球</button>
-        <button class="button-option" data-value="B2桌球" style="font-size: 14px;">🏓 B2桌球</button>
+        <button class="button-option" data-value="羽球">羽球</button>
+        <button class="button-option" data-value="籃球">籃球</button>
+        <button class="button-option" data-value="B1桌球">B1桌球</button>
+        <button class="button-option" data-value="B2桌球">B2桌球</button>
       `;
       document.querySelectorAll('#venue-buttons .button-option').forEach(btn => {
         btn.addEventListener('click', () => {
