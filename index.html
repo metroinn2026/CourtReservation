@@ -1655,6 +1655,11 @@
   }
 </style>
 
+
+<style id="turnstile-mobile-fix">
+  #verification-message{margin-top:10px;scroll-margin-top:20px;}
+</style>
+
 </head>
  <body>
   <main>
@@ -3525,7 +3530,13 @@
             return;
           }
 
-          if (!turnstileToken) {
+          const currentTurnstileToken =
+            turnstileToken ||
+            (window.turnstile && typeof window.turnstile.getResponse === 'function'
+              ? window.turnstile.getResponse()
+              : '');
+
+          if (!currentTurnstileToken) {
             msg.textContent = '請先完成機器人驗證';
             msg.style.backgroundColor = '#FEE2E2';
             msg.style.color = '#7F1D1D';
@@ -3542,7 +3553,7 @@
               headers: {
                 'Content-Type': 'application/json'
               },
-              body: JSON.stringify({ token: turnstileToken })
+              body: JSON.stringify({ token: currentTurnstileToken })
             });
 
             const turnstileResult = await turnstileResponse.json().catch(() => ({ success: false }));
@@ -3554,6 +3565,9 @@
               msg.style.display = 'block';
               turnstileToken = '';
               if (window.turnstile) window.turnstile.reset();
+              if (msg && typeof msg.scrollIntoView === 'function') {
+                msg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
               return;
             }
           } catch (error) {
