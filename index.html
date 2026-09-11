@@ -1793,6 +1793,127 @@
   }
 </style>
 
+
+<style id="front-header-layout-v2">
+  .header-clean{
+    padding:16px 18px 10px!important;
+  }
+
+  .header-main-row{
+    display:block!important;
+  }
+
+  .header-main-row h1{
+    margin:0!important;
+  }
+
+  .header-utility-row{
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) auto;
+    align-items:center;
+    gap:10px;
+    margin-top:10px;
+    padding-top:8px;
+    border-top:1px solid #e5e7eb;
+    min-height:32px;
+  }
+
+  .header-member-mini{
+    min-width:0;
+    margin:0!important;
+    display:flex;
+    align-items:center;
+    gap:2px;
+    color:#64748b;
+    font-size:12px;
+    line-height:1.4;
+    white-space:nowrap;
+    overflow:hidden;
+  }
+
+  #header-member-name{
+    flex:0 0 auto;
+  }
+
+  #header-member-phone{
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  .header-accessibility{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:6px;
+    flex:0 0 auto;
+  }
+
+  .header-accessibility label{
+    color:#64748b;
+    font-size:12px!important;
+    font-weight:700;
+    margin:0;
+  }
+
+  #front-font-select{
+    width:auto;
+    min-width:64px;
+    height:30px;
+    padding:3px 24px 3px 8px;
+    border:1px solid #d7e0ea;
+    border-radius:6px;
+    background:#fff;
+    color:#334155;
+    font-family:inherit;
+    font-size:12px!important;
+    font-weight:700;
+    cursor:pointer;
+  }
+
+  .header-logout-link{
+    margin-left:2px!important;
+    padding:3px 0 3px 6px!important;
+    font-size:12px!important;
+  }
+
+  /* 舊的三段字級文字控制不再使用 */
+  .front-font-tools{
+    display:none!important;
+  }
+
+  @media(max-width:420px){
+    .header-clean{
+      padding:14px 14px 9px!important;
+    }
+
+    .header-utility-row{
+      gap:7px;
+      margin-top:8px;
+      padding-top:7px;
+    }
+
+    .header-member-mini{
+      font-size:11px!important;
+    }
+
+    .header-accessibility{
+      gap:5px;
+    }
+
+    .header-accessibility label,
+    #front-font-select,
+    .header-logout-link{
+      font-size:11px!important;
+    }
+
+    #front-font-select{
+      min-width:58px;
+      height:28px;
+      padding-left:7px;
+    }
+  }
+</style>
+
 </head>
  <body>
   <main>
@@ -1800,20 +1921,22 @@
     <div class="header header-clean">
      <div class="header-main-row">
       <h1 id="app-title">北投會館運動場域智慧租借管理系統</h1>
-           </div>
-     <div class="front-font-tools" aria-label="文字大小">
-      <span class="front-font-label">A</span>
-      <button type="button" class="front-font-btn active" data-front-font="standard">標準</button>
-      <span class="front-font-sep">｜</span>
-      <button type="button" class="front-font-btn" data-front-font="large">大</button>
-      <span class="front-font-sep">｜</span>
-      <button type="button" class="front-font-btn" data-front-font="xlarge">特大</button>
      </div>
-     <div class="header-member-mini" id="header-member-mini" style="display:none;">
-      <span id="header-member-name">-</span>
-      <span class="header-member-sep">｜</span>
-      <span id="header-member-phone">-</span>
-      <button type="button" class="header-logout-link" id="header-logout-btn">登出</button>
+     <div class="header-utility-row">
+      <div class="header-member-mini" id="header-member-mini" style="display:none;">
+       <span id="header-member-name">-</span>
+       <span class="header-member-sep">｜</span>
+       <span id="header-member-phone">-</span>
+      </div>
+      <div class="header-accessibility">
+       <label for="front-font-select">字級</label>
+       <select id="front-font-select" aria-label="文字大小">
+        <option value="standard">標準</option>
+        <option value="large">大</option>
+        <option value="xlarge">特大</option>
+       </select>
+       <button type="button" class="header-logout-link" id="header-logout-btn" style="display:none;">登出</button>
+      </div>
      </div>
     </div>
     <div class="phone-content">
@@ -3625,9 +3748,8 @@
       if (chosen === 'large') document.body.classList.add('front-font-large');
       if (chosen === 'xlarge') document.body.classList.add('front-font-xlarge');
 
-      document.querySelectorAll('[data-front-font]').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.frontFont === chosen);
-      });
+      const fontSelect = document.getElementById('front-font-select');
+      if (fontSelect) fontSelect.value = chosen;
 
       try {
         localStorage.setItem('venue_front_font_size', chosen);
@@ -3644,9 +3766,10 @@
 
       applyFrontFontSize(saved);
 
-      document.querySelectorAll('[data-front-font]').forEach(btn => {
-        btn.addEventListener('click', () => applyFrontFontSize(btn.dataset.frontFont));
-      });
+      const fontSelect = document.getElementById('front-font-select');
+      if (fontSelect) {
+        fontSelect.addEventListener('change', () => applyFrontFontSize(fontSelect.value));
+      }
     }
 
     function setupAllEventListeners() {
@@ -3805,6 +3928,8 @@
           if (headerMemberName) headerMemberName.textContent = name;
           if (headerMemberPhone) headerMemberPhone.textContent = `${phone}｜末4碼 ${idLast4}`;
           if (headerMemberMini) headerMemberMini.style.display = 'flex';
+          const headerLogoutBtn = document.getElementById('header-logout-btn');
+          if (headerLogoutBtn) headerLogoutBtn.style.display = 'inline-block';
 
           // 顯示登入後功能導覽，預設進入「場次登記」
           const memberTabsWrap = document.getElementById('member-tabs-wrap');
@@ -3888,6 +4013,8 @@
           if (memberDisplay) memberDisplay.style.display = 'none';
           const headerMemberMini = document.getElementById('header-member-mini');
           if (headerMemberMini) headerMemberMini.style.display = 'none';
+          const headerLogoutBtn = document.getElementById('header-logout-btn');
+          if (headerLogoutBtn) headerLogoutBtn.style.display = 'none';
           if (nameEl) nameEl.value = '';
           if (phoneEl) phoneEl.value = '';
           if (idLast4El) idLast4El.value = '';
