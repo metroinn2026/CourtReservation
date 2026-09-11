@@ -3332,6 +3332,141 @@
   }
 </style>
 
+
+<style id="admin-font-size-control-v1">
+  .topbar-right{
+    display:flex;
+    align-items:center;
+    gap:20px;
+    min-width:0;
+  }
+
+  .admin-font-control{
+    display:flex;
+    align-items:center;
+    gap:3px;
+    white-space:nowrap;
+    color:#64748b;
+    font-size:13px;
+    user-select:none;
+  }
+
+  .admin-font-a{
+    color:#334155;
+    font-size:15px;
+    font-weight:900;
+    margin-right:4px;
+  }
+
+  .admin-font-divider{
+    color:#cbd5e1;
+  }
+
+  .admin-font-option{
+    appearance:none;
+    border:0;
+    background:transparent;
+    color:#64748b;
+    font-size:13px;
+    font-weight:800;
+    padding:5px 4px;
+    cursor:pointer;
+    border-radius:7px;
+  }
+
+  .admin-font-option:hover{
+    color:#2563eb;
+    background:#f1f5f9;
+  }
+
+  .admin-font-option.active{
+    color:#2563eb;
+    font-weight:900;
+  }
+
+  /* 大：主要閱讀文字約放大 12–15%，不縮放整個頁面 */
+  body.admin-font-large .nav button{font-size:16px!important;}
+  body.admin-font-large .brand h1{font-size:22px!important;}
+  body.admin-font-large .brand span,
+  body.admin-font-large .side-footer{font-size:13.5px!important;}
+  body.admin-font-large .topbar h2{font-size:22px!important;}
+  body.admin-font-large .panel h3,
+  body.admin-font-large .section-title-outside{font-size:20px!important;}
+  body.admin-font-large .small,
+  body.admin-font-large .label,
+  body.admin-font-large label,
+  body.admin-font-large .tag,
+  body.admin-font-large .dashboard-card-note,
+  body.admin-font-large .records-fixed-filter-title,
+  body.admin-font-large .accounts-guide-text,
+  body.admin-font-large .accounts-inline-note{font-size:14px!important;}
+  body.admin-font-large input,
+  body.admin-font-large select,
+  body.admin-font-large textarea,
+  body.admin-font-large .btn,
+  body.admin-font-large button:not(.admin-font-option){font-size:15px!important;}
+  body.admin-font-large th{font-size:14.5px!important;}
+  body.admin-font-large td{font-size:14.5px!important;}
+  body.admin-font-large .stat .label,
+  body.admin-font-large .dashboard-card-label{font-size:13.5px!important;}
+  body.admin-font-large .stat .num,
+  body.admin-font-large .dashboard-card-num{font-size:32px!important;}
+
+  /* 特大：約放大 22–25%，仍以文字為主 */
+  body.admin-font-xlarge .nav button{font-size:18px!important;}
+  body.admin-font-xlarge .brand h1{font-size:24px!important;}
+  body.admin-font-xlarge .brand span,
+  body.admin-font-xlarge .side-footer{font-size:15px!important;}
+  body.admin-font-xlarge .topbar h2{font-size:24px!important;}
+  body.admin-font-xlarge .panel h3,
+  body.admin-font-xlarge .section-title-outside{font-size:22px!important;}
+  body.admin-font-xlarge .small,
+  body.admin-font-xlarge .label,
+  body.admin-font-xlarge label,
+  body.admin-font-xlarge .tag,
+  body.admin-font-xlarge .dashboard-card-note,
+  body.admin-font-xlarge .records-fixed-filter-title,
+  body.admin-font-xlarge .accounts-guide-text,
+  body.admin-font-xlarge .accounts-inline-note{font-size:15.5px!important;}
+  body.admin-font-xlarge input,
+  body.admin-font-xlarge select,
+  body.admin-font-xlarge textarea,
+  body.admin-font-xlarge .btn,
+  body.admin-font-xlarge button:not(.admin-font-option){font-size:16.5px!important;}
+  body.admin-font-xlarge th{font-size:16px!important;}
+  body.admin-font-xlarge td{font-size:16px!important;}
+  body.admin-font-xlarge .stat .label,
+  body.admin-font-xlarge .dashboard-card-label{font-size:15px!important;}
+  body.admin-font-xlarge .stat .num,
+  body.admin-font-xlarge .dashboard-card-num{font-size:34px!important;}
+
+  /* 放大時增加一些列高，避免字貼邊 */
+  body.admin-font-large th,
+  body.admin-font-large td{padding-top:14px!important;padding-bottom:14px!important;}
+  body.admin-font-xlarge th,
+  body.admin-font-xlarge td{padding-top:16px!important;padding-bottom:16px!important;}
+
+  @media(max-width:900px){
+    .topbar-right{gap:10px;}
+    .admin-font-control{font-size:12px;}
+    .admin-font-option{font-size:12px;}
+  }
+
+  @media(max-width:720px){
+    .admin-font-control{
+      position:absolute;
+      right:14px;
+      top:74px;
+      z-index:20;
+      background:#fff;
+      border:1px solid #e2e8f0;
+      border-radius:10px;
+      padding:5px 8px;
+      box-shadow:0 4px 12px rgba(15,23,42,.06);
+    }
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -3382,7 +3517,20 @@
       <div class="side-footer"><div id="sideUser">-</div><button id="logoutBtn" class="btn btn-gray" style="width:100%;margin-top:10px;">登出</button></div>
     </aside>
     <main class="app-main">
-      <header class="topbar"><h2 id="pageTitle">作業總覽</h2><div class="userbox"><div class="avatar" id="userAvatar">A</div><div><div id="topUser" style="font-weight:900;">-</div><div id="topRole" class="small">-</div></div></div></header>
+      <header class="topbar">
+        <h2 id="pageTitle">作業總覽</h2>
+        <div class="topbar-right">
+          <div class="admin-font-control" aria-label="文字大小">
+            <span class="admin-font-a">A</span>
+            <button type="button" class="admin-font-option active" data-font-size="standard">標準</button>
+            <span class="admin-font-divider">｜</span>
+            <button type="button" class="admin-font-option" data-font-size="large">大</button>
+            <span class="admin-font-divider">｜</span>
+            <button type="button" class="admin-font-option" data-font-size="xlarge">特大</button>
+          </div>
+          <div class="userbox"><div class="avatar" id="userAvatar">A</div><div><div id="topUser" style="font-weight:900;">-</div><div id="topRole" class="small">-</div></div></div>
+        </div>
+      </header>
       <div class="content" id="content"></div>
     </main>
   </section>
@@ -6799,6 +6947,50 @@ document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage
   }else{
     bindObserver();
   }
+})();
+</script>
+
+
+<script id="admin-font-size-control-script-v1">
+(function(){
+  const STORAGE_KEY='venue_admin_font_size';
+
+  function normalizeSize(size){
+    return ['standard','large','xlarge'].includes(size) ? size : 'standard';
+  }
+
+  function applyAdminFontSize(size){
+    size=normalizeSize(size);
+    document.body.classList.remove('admin-font-large','admin-font-xlarge');
+
+    if(size==='large') document.body.classList.add('admin-font-large');
+    if(size==='xlarge') document.body.classList.add('admin-font-xlarge');
+
+    document.querySelectorAll('.admin-font-option').forEach(btn=>{
+      btn.classList.toggle('active',btn.dataset.fontSize===size);
+      btn.setAttribute('aria-pressed',btn.dataset.fontSize===size?'true':'false');
+    });
+
+    try{ localStorage.setItem(STORAGE_KEY,size); }catch(e){}
+  }
+
+  function initAdminFontSize(){
+    let saved='standard';
+    try{ saved=normalizeSize(localStorage.getItem(STORAGE_KEY)||'standard'); }catch(e){}
+    applyAdminFontSize(saved);
+
+    document.querySelectorAll('.admin-font-option').forEach(btn=>{
+      btn.onclick=()=>applyAdminFontSize(btn.dataset.fontSize);
+    });
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',initAdminFontSize);
+  }else{
+    initAdminFontSize();
+  }
+
+  window.applyAdminFontSize=applyAdminFontSize;
 })();
 </script>
 
