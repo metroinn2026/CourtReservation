@@ -6,6 +6,7 @@
   <title>北投會館運動場域智慧租借管理系統｜管理後台</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root{
       --blue:#007AB0;--blue2:#005A8C;--green:#40AF36;--orange:#FF9800;--red:#dc2626;
@@ -5497,22 +5498,89 @@ function maskPhoneForNotice(phone){
   return p;
 }
 
-function exportPendingLotteryWorkbook(stages){
-  if(typeof XLSX==='undefined'){alert('Excel 元件尚未載入，請重新整理後再試。');return;}
-  if(!stages||!stages.length){alert('目前沒有待抽籤場次');return;}
-  const wb=XLSX.utils.book_new();
-  const used=new Set();
-  stages.sort((a,b)=>venueSortValue(a.venue)-venueSortValue(b.venue)||daySortValue(a.day)-daySortValue(b.day)||timeSortValue(a.time)-timeSortValue(b.time)).forEach(stage=>{
-    const rows=[...stage.records].sort((a,b)=>String(a.serial_number||'').localeCompare(String(b.serial_number||''))).map((r,i)=>({
-      '項次':i+1,'序號':r.serial_number||'','姓名':r.name||'','手機':r.phone||'','身分證後4碼':r.id_last4||'','場地':locationLabel(recordLocation(r)),'球類':r.venue_type||'','星期':r.day_of_week||'','時段':r.time_slot||'','抽籤狀態':''
-    }));
+async function exportPendingLotteryWorkbook(stages){
+  if(typeof XLSX==='undefined'){
+    alert('Excel 元件尚未載入，請重新整理後再試。');
+    return;
+  }
+  if(typeof JSZip==='undefined'){
+    alert('ZIP 元件尚未載入，請重新整理後再試。');
+    return;
+  }
+  if(!stages||!stages.length){
+    alert('目前沒有待抽籤場次');
+    return;
+  }
+
+  const zip=new JSZip();
+  const usedNames=new Set();
+  const sortedStages=[...stages].sort((a,b)=>
+    venueSortValue(a.venue)-venueSortValue(b.venue) ||
+    daySortValue(a.day)-daySortValue(b.day) ||
+    timeSortValue(a.time)-timeSortValue(b.time)
+  );
+
+  sortedStages.forEach(stage=>{
+    const rows=[...stage.records]
+      .sort((a,b)=>String(a.serial_number||'').localeCompare(String(b.serial_number||'')))
+      .map((r,i)=>({
+        '項次':i+1,
+        '序號':r.serial_number||'',
+        '姓名':r.name||'',
+        '手機':r.phone||'',
+        '身分證後4碼':r.id_last4||'',
+        '場地':locationLabel(recordLocation(r)),
+        '球類':r.venue_type||'',
+        '星期':r.day_of_week||'',
+        '時段':r.time_slot||'',
+        '抽籤狀態':''
+      }));
+
     const ws=XLSX.utils.json_to_sheet(rows);
-    let baseName=`${stage.venue}_${stage.day}_${getStageStartTime(stage.time)}`.replace(/[\\/?*\[\]:]/g,'-').slice(0,28)||'待抽籤';
-    let name=baseName, n=2; while(used.has(name)){name=`${baseName.slice(0,25)}_${n++}`;} used.add(name);
-    XLSX.utils.book_append_sheet(wb,ws,name);
+    ws['!cols']=[
+      {wch:6},{wch:14},{wch:12},{wch:14},{wch:12},
+      {wch:12},{wch:12},{wch:10},{wch:15},{wch:12}
+    ];
+
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'待抽籤名單');
+
+    const arrayBuffer=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+
+    const locationName=String(stage.location||DEFAULT_LOCATION||'北投會館');
+    const rawName=`${locationLabel(locationName)}_${stage.venue}_${stage.day}_${String(stage.time||'').replace(':','')}`;
+    let fileName=rawName.replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,'_').slice(0,80) || '待抽籤名單';
+    let uniqueName=fileName;
+    let n=2;
+    while(usedNames.has(uniqueName)){
+      uniqueName=`${fileName}_${n++}`;
+    }
+    usedNames.add(uniqueName);
+
+    zip.file(`${uniqueName}.xlsx`,arrayBuffer);
   });
-  XLSX.writeFile(wb,`待抽籤名單_${new Date().toISOString().slice(0,10)}.xlsx`);
-  writeOperationLog('匯出待抽籤名單',{stage_count:stages.length,record_count:stages.reduce((s,x)=>s+x.records.length,0)});
+
+  const dateStr=new Date().toISOString().slice(0,10);
+  const blob=await zip.generateAsync({
+    type:'blob',
+    compression:'DEFLATE',
+    compressionOptions:{level:6}
+  });
+
+  const a=document.createElement('a');
+  const url=URL.createObjectURL(blob);
+  a.href=url;
+  a.download=`待抽籤名單_${dateStr}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+
+  writeOperationLog('匯出待抽籤名單ZIP',{
+    stage_count:sortedStages.length,
+    record_count:sortedStages.reduce((s,x)=>s+x.records.length,0),
+    export_type:'one_excel_per_stage'
+  });
 }
 
 function renderLotteryPage(){
@@ -5545,7 +5613,7 @@ function renderLotteryPage(){
           </div>
           <div class="lottery-filter-actions">
             <button id="refreshLotteryContext" class="btn btn-gray">篩選</button>
-            <button id="exportPendingLotteryBtn" class="btn btn-primary">匯出待抽籤名單</button>
+            <button id="exportPendingLotteryBtn" class="btn btn-primary">下載待抽籤名單 ZIP</button>
             <button id="exportDayCheckBtn" class="btn btn-gray">匯出目前篩選</button>
             <button id="importLotteryResultBtn" class="btn btn-primary">匯入抽籤結果</button>
             <button id="pendingPublishBtn" class="btn btn-gray">待發布結果</button>
