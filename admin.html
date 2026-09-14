@@ -5615,10 +5615,10 @@ function renderLotteryPage(){
             <button id="refreshLotteryContext" class="btn btn-gray">篩選</button>
             <button id="exportPendingLotteryBtn" class="btn btn-primary">下載待抽籤名單 ZIP</button>
             <button id="exportDayCheckBtn" class="btn btn-gray">匯出目前篩選</button>
-            <button id="importLotteryResultBtn" class="btn btn-primary">匯入抽籤結果</button>
+            <button id="importLotteryResultBtn" class="btn btn-primary">批次匯入抽籤結果</button>
             <button id="pendingPublishBtn" class="btn btn-gray">待發布結果</button>
             <button id="promotionSuggestionBtn" class="btn btn-gray">遞補建議</button>
-            <input id="importLotteryFile" type="file" accept=".xlsx,.xls,.csv" style="display:none;">
+            <input id="importLotteryFile" type="file" accept=".xlsx,.xls,.csv,.zip" multiple style="display:none;">
           </div>
         </div>
       </div>
@@ -5832,117 +5832,163 @@ function renderLotteryPage(){
   };
   document.getElementById('promotionSuggestionBtn').onclick=renderPromotionSuggestions;
   document.getElementById('importLotteryResultBtn').onclick=()=>{
-    const {venue,day,records}=getDayCheckRecords();
-    if(!venue || !day || records.length===0){
-      alert('請先選擇「運動類型」與「星期」，再匯入該日抽籤結果。');
-      return;
-    }
     document.getElementById('importLotteryFile').click();
   };
 
   document.getElementById('importLotteryFile').onchange=async(e)=>{
-    const file=e.target.files?.[0];
+    const selected=[...(e.target.files||[])];
     e.target.value='';
-    if(!file) return;
+    if(!selected.length) return;
     try{
-      const parsed=await parseLotteryResultFile(file);
-      renderLotteryImportPreview(parsed,file.name);
+      const files=[];
+      for(const file of selected){
+        const lower=String(file.name||'').toLowerCase();
+        if(lower.endsWith('.zip')){
+          if(typeof JSZip==='undefined') throw new Error('ZIP 元件尚未載入，請重新整理後再試。');
+          const zip=await JSZip.loadAsync(await file.arrayBuffer());
+          const entries=Object.values(zip.files).filter(x=>!x.dir && /\.(xlsx|xls|csv)$/i.test(x.name));
+          for(const entry of entries){
+            const blob=await entry.async('blob');
+            files.push(new File([blob],entry.name.split('/').pop(),{type:blob.type||'application/octet-stream'}));
+          }
+        }else{
+          files.push(file);
+        }
+      }
+      if(!files.length) throw new Error('未找到可匯入的 Excel / CSV 檔案。');
+      const batch=await parseLotteryResultFiles(files);
+      renderLotteryBatchImportPreview(batch);
     }catch(err){
       console.error(err);
       alert('讀取檔案失敗：' + (err?.message || '請確認檔案格式'));
     }
   };
 
-  async function parseLotteryResultFile(file){
-    if(typeof XLSX==='undefined') throw new Error('Excel 讀取元件尚未載入，請重新整理頁面後再試。');
-    const buffer=await file.arrayBuffer();
-    const workbook=XLSX.read(buffer,{type:'array'});
-    const sheet=workbook.Sheets[workbook.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false});
-    if(!rows.length) throw new Error('檔案內沒有可讀取的資料。');
-
-    const findValue=(row,names)=>{
-      for(const n of names){
-        if(Object.prototype.hasOwnProperty.call(row,n)) return row[n];
-      }
-      return '';
-    };
-    const normalizeStatus=(value)=>{
-      let v=String(value??'').trim().replace(/\s+/g,'');
-      if(!v || v==='未抽籤') return '';
-      if(v==='正取' || v==='中選' || v==='中籤') return '中籤';
-      if(v==='落選' || v==='未中選' || v==='未中籤') return '未中籤';
-      const m=v.match(/^(?:候補|備取)(\d+)$/);
-      if(m) return `候補${Number(m[1])}`;
-      return null;
-    };
-
-    const {venue,day,records}=getDayCheckRecords();
-    const recordMap=new Map(records.map(r=>[String(r.serial_number||'').trim(),r]));
-    const seen=new Set();
-    const valid=[];
-    const errors=[];
-    const skipped=[];
-
-    rows.forEach((row,idx)=>{
-      const serial=String(findValue(row,['序號','登記序號','serial_number','Serial Number'])??'').trim();
-      const rawStatus=findValue(row,['抽籤狀態','抽籤結果','結果','lottery_status','Lottery Status']);
-      const status=normalizeStatus(rawStatus);
-      const excelRow=idx+2;
-      if(!serial && !String(rawStatus??'').trim()) return;
-      if(!serial){ errors.push({row:excelRow,serial:'',status:String(rawStatus??''),reason:'缺少序號'}); return; }
-      if(seen.has(serial)){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'序號重複'}); return; }
-      seen.add(serial);
-      const record=recordMap.get(serial);
-      if(!record){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:`找不到目前「${venue}｜${day}」的登記資料`}); return; }
-      if(status===null){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'抽籤狀態格式不符'}); return; }
-      if(!status){ skipped.push({row:excelRow,serial,name:record.name,reason:'抽籤狀態空白'}); return; }
-      if(record.result_published){ errors.push({row:excelRow,serial,status,reason:'此筆結果已公布，請先取消公布'}); return; }
-      if(record.lottery_locked || String(record.lottery_status||'').trim()){
-        errors.push({row:excelRow,serial,status,reason:'此筆已有抽籤結果或已鎖定，請先解除鎖定'}); return;
-      }
-      valid.push({row:excelRow,serial,status,record});
-    });
-
-    if(valid.length===0 && errors.length===0) throw new Error('未找到可匯入的抽籤結果。請確認欄位包含「序號」及「抽籤狀態」。');
-    return {valid,errors,skipped,venue,day,totalRows:rows.length};
+  function normalizeImportedLotteryStatus(value){
+    let v=String(value??'').trim().replace(/\s+/g,'');
+    if(!v || v==='未抽籤') return '';
+    if(v==='正取' || v==='中選' || v==='中籤') return '中籤';
+    if(v==='落選' || v==='未中選' || v==='未中籤') return '未中籤';
+    const m=v.match(/^(?:候補|備取)(\d+)$/);
+    if(m) return `候補${Number(m[1])}`;
+    return null;
   }
 
-  function renderLotteryImportPreview(parsed,fileName){
+  async function parseLotteryResultFiles(files){
+    if(typeof XLSX==='undefined') throw new Error('Excel 讀取元件尚未載入，請重新整理頁面後再試。');
+    const findValue=(row,names)=>{
+      for(const n of names){ if(Object.prototype.hasOwnProperty.call(row,n)) return row[n]; }
+      return '';
+    };
+    const recordMap=new Map(allRecords.map(r=>[String(r.serial_number||'').trim(),r]));
+    const globalSeen=new Set();
+    const results=[];
+    let totalValid=0,totalErrors=0,totalSkipped=0;
+
+    for(const file of files){
+      const buffer=await file.arrayBuffer();
+      const workbook=XLSX.read(buffer,{type:'array'});
+      const sheet=workbook.Sheets[workbook.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false});
+      const valid=[],errors=[],skipped=[];
+      const stageKeys=new Set();
+
+      if(!rows.length){
+        errors.push({row:'-',serial:'',status:'',reason:'檔案內沒有可讀取的資料'});
+      }
+
+      rows.forEach((row,idx)=>{
+        const serial=String(findValue(row,['序號','登記序號','serial_number','Serial Number'])??'').trim();
+        const rawStatus=findValue(row,['抽籤狀態','抽籤結果','結果','lottery_status','Lottery Status']);
+        const status=normalizeImportedLotteryStatus(rawStatus);
+        const excelRow=idx+2;
+        if(!serial && !String(rawStatus??'').trim()) return;
+        if(!serial){ errors.push({row:excelRow,serial:'',status:String(rawStatus??''),reason:'缺少序號'}); return; }
+        if(globalSeen.has(serial)){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'此序號已出現在其他匯入檔案'}); return; }
+        globalSeen.add(serial);
+        const record=recordMap.get(serial);
+        if(!record){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'系統找不到此登記序號'}); return; }
+        const stageKey=[recordLocation(record),record.venue_type,record.day_of_week,record.time_slot].join('|');
+        stageKeys.add(stageKey);
+        if(status===null){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'抽籤狀態格式不符'}); return; }
+        if(!status){ skipped.push({row:excelRow,serial,name:record.name,reason:'抽籤狀態空白'}); return; }
+        if(record.result_published){ errors.push({row:excelRow,serial,status,reason:'此筆結果已公布，請先取消公布'}); return; }
+        if(record.lottery_locked || String(record.lottery_status||'').trim()){
+          errors.push({row:excelRow,serial,status,reason:'此筆已有抽籤結果或已鎖定，請先解除鎖定'}); return;
+        }
+        valid.push({row:excelRow,serial,status,record});
+      });
+
+      if(stageKeys.size>1){
+        errors.push({row:'-',serial:'',status:'',reason:'同一檔案包含多個不同場次，請確認檔案內容'});
+      }
+      let stageLabel='';
+      if(stageKeys.size===1){
+        const [loc,venue,day,time]=[...stageKeys][0].split('|');
+        stageLabel=`${locationLabel(loc)}｜${venue}｜${day}｜${time}`;
+      }
+      totalValid+=valid.length; totalErrors+=errors.length; totalSkipped+=skipped.length;
+      results.push({fileName:file.name,valid,errors,skipped,stageLabel,totalRows:rows.length});
+    }
+    return {files:results,totalValid,totalErrors,totalSkipped,totalFiles:results.length};
+  }
+
+  function renderLotteryBatchImportPreview(batch){
     const box=document.getElementById('importLotteryPreview');
     if(!box) return;
-    window.pendingLotteryImport=parsed;
-    const counts={winner:0,wait:0,lose:0};
-    parsed.valid.forEach(x=>{
-      if(x.status==='中籤') counts.winner++;
-      else if(String(x.status).startsWith('候補')) counts.wait++;
-      else if(x.status==='未中籤') counts.lose++;
-    });
-    const errorRows=parsed.errors.slice(0,8).map(x=>`<tr><td>${x.row}</td><td>${escapeHtml(x.serial)}</td><td>${escapeHtml(x.status)}</td><td style="color:#b91c1c;font-weight:800;">${escapeHtml(x.reason)}</td></tr>`).join('');
+    window.pendingLotteryImport=batch;
+    const fileRows=batch.files.map(f=>`<tr>
+      <td>${escapeHtml(f.fileName)}</td>
+      <td>${escapeHtml(f.stageLabel||'-')}</td>
+      <td>${f.valid.length}</td>
+      <td style="color:${f.errors.length?'#b91c1c':'#16a34a'};font-weight:800;">${f.errors.length}</td>
+      <td>${f.skipped.length}</td>
+    </tr>`).join('');
+    const firstErrors=batch.files.flatMap(f=>f.errors.map(e=>({...e,fileName:f.fileName}))).slice(0,10);
+    const errorRows=firstErrors.map(x=>`<tr><td>${escapeHtml(x.fileName)}</td><td>${x.row}</td><td>${escapeHtml(x.serial)}</td><td>${escapeHtml(x.status)}</td><td style="color:#b91c1c;font-weight:800;">${escapeHtml(x.reason)}</td></tr>`).join('');
     box.innerHTML=`
       <div class="panel" style="border:2px solid #93c5fd;background:#f8fbff;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
-          <div>
-            <h3 style="margin:0 0 4px;">📥 抽籤結果匯入預覽</h3>
-            <div class="small">${escapeHtml(fileName)}｜${escapeHtml(parsed.venue)}｜${escapeHtml(parsed.day)}</div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button id="cancelLotteryImportBtn" class="btn btn-gray">取消</button>
-            <button id="confirmLotteryImportBtn" class="btn btn-primary" ${parsed.valid.length===0 || parsed.errors.length>0 ? 'disabled' : ''}>確認匯入並鎖定</button>
-          </div>
+          <div><h3 style="margin:0 0 4px;">批次抽籤結果匯入預覽</h3><div class="small">共 ${batch.totalFiles} 個檔案｜可匯入 ${batch.totalValid} 筆｜錯誤 ${batch.totalErrors} 筆｜略過 ${batch.totalSkipped} 筆</div></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;"><button id="cancelLotteryImportBtn" class="btn btn-gray">取消</button><button id="confirmLotteryImportBtn" class="btn btn-primary" ${batch.totalValid===0 || batch.totalErrors>0 ? 'disabled' : ''}>確認批次匯入並鎖定</button></div>
         </div>
-        <div class="cards" style="margin-bottom:12px;">
-          <div class="stat"><div class="label">可匯入</div><div class="num">${parsed.valid.length}</div></div>
-          <div class="stat"><div class="label">中籤</div><div class="num" style="color:#16a34a">${counts.winner}</div></div>
-          <div class="stat"><div class="label">候補</div><div class="num" style="color:#d97706">${counts.wait}</div></div>
-          <div class="stat"><div class="label">未中籤</div><div class="num" style="color:#64748b">${counts.lose}</div></div>
-        </div>
-        ${parsed.errors.length ? `<div class="msg error"><strong>有 ${parsed.errors.length} 筆需要修正，為避免誤匯入，目前暫不開放確認。</strong><br>請修正 Excel 後重新上傳。</div><div class="table-wrap" style="margin-bottom:12px;"><table style="min-width:650px"><thead><tr><th>Excel列</th><th>序號</th><th>抽籤狀態</th><th>原因</th></tr></thead><tbody>${errorRows}</tbody></table></div>${parsed.errors.length>8?`<div class="small">另有 ${parsed.errors.length-8} 筆錯誤未顯示。</div>`:''}` : '<div class="msg ok">格式檢查完成，可確認匯入。匯入後結果會先鎖定且維持「未公布」，請確認無誤後再執行公布。</div>'}
-        ${parsed.skipped.length ? `<div class="small">另有 ${parsed.skipped.length} 筆因「抽籤狀態空白」而略過，不會更新。</div>` : ''}
+        <div class="table-wrap" style="margin-bottom:12px;"><table style="min-width:760px"><thead><tr><th>檔案</th><th>場次</th><th>可匯入</th><th>錯誤</th><th>略過</th></tr></thead><tbody>${fileRows}</tbody></table></div>
+        ${batch.totalErrors?`<div class="msg error"><strong>有 ${batch.totalErrors} 筆／項錯誤，為避免誤匯入，目前暫不開放確認。</strong><br>請修正檔案後重新批次上傳。</div><div class="table-wrap"><table style="min-width:850px"><thead><tr><th>檔案</th><th>Excel列</th><th>序號</th><th>抽籤狀態</th><th>原因</th></tr></thead><tbody>${errorRows}</tbody></table></div>`:'<div class="msg ok">全部檔案格式檢查完成，可一次批次匯入。匯入後結果會鎖定且維持「未公布」。</div>'}
       </div>`;
-    document.getElementById('cancelLotteryImportBtn').onclick=()=>{ box.innerHTML=''; window.pendingLotteryImport=null; };
+    document.getElementById('cancelLotteryImportBtn').onclick=()=>{box.innerHTML='';window.pendingLotteryImport=null;};
     const confirmBtn=document.getElementById('confirmLotteryImportBtn');
-    if(confirmBtn) confirmBtn.onclick=()=>confirmLotteryImport(parsed);
+    if(confirmBtn) confirmBtn.onclick=()=>confirmLotteryBatchImport(batch);
+  }
+
+  async function confirmLotteryBatchImport(batch){
+    if(!batch || batch.totalValid===0 || batch.totalErrors>0) return;
+    const ok=await confirmModal('確認批次匯入抽籤結果',`確定一次匯入 <strong>${batch.totalFiles}</strong> 個檔案、共 <strong>${batch.totalValid}</strong> 筆抽籤結果並鎖定嗎？<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
+    if(!ok) return;
+    const btn=document.getElementById('confirmLotteryImportBtn');
+    if(btn){btn.disabled=true;btn.textContent='批次匯入中...';}
+    const batchId=`excel-batch-${Date.now()}`;
+    const successIds=[],failed=[];
+    const items=batch.files.flatMap(f=>f.valid.map(x=>({...x,fileName:f.fileName})));
+    for(let i=0;i<items.length;i+=15){
+      const chunk=items.slice(i,i+15);
+      const results=await Promise.all(chunk.map(async item=>{
+        const {error,data}=await db.from(RECORD_TABLE).update({lottery_status:item.status,lottery_locked:true,lottery_batch:batchId,result_published:false,updated_at:new Date().toISOString()}).eq('id',item.record.id).select('id');
+        const noUpdate=!error && (!data || data.length===0);
+        return {item,error:noUpdate?new Error('資料未更新，請確認權限或資料狀態'):error};
+      }));
+      results.forEach(({item,error})=>{if(error)failed.push({serial:item.serial,fileName:item.fileName,error});else successIds.push(item.record.id);});
+    }
+    await writeOperationLog('批次匯入 Excel 抽籤結果',{file_count:batch.totalFiles,imported_count:successIds.length,failed_count:failed.length,batch_id:batchId},successIds);
+    if(failed.length){
+      alert(`已匯入 ${successIds.length} 筆，另有 ${failed.length} 筆更新失敗。請重新整理後確認。`);
+    }else{
+      const goPublish=await confirmModal('批次結果已匯入',`已完成 <strong>${batch.totalFiles}</strong> 個檔案、共 <strong>${successIds.length}</strong> 筆抽籤結果匯入並鎖定。<br><br>是否前往「待發布結果」確認？`);
+      if(goPublish){recordsActionTab='publish';recordState.q='';recordState.location=DEFAULT_LOCATION;recordState.venue='';recordState.day='';recordState.time='';recordState.anomaly='結果待發布';recordState.page=1;renderPage('records');}
+    }
+    document.getElementById('importLotteryPreview').innerHTML='';
+    window.pendingLotteryImport=null;
+    await loadAllData();
+    renderLotteryPage();
   }
 
 
