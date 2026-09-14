@@ -3630,6 +3630,81 @@
     }
   }
 </style>
+
+<style id="capacity-horizontal-scroll-fix">
+  .capacity-main-panel > #bulkCapTable{
+    min-width:0!important;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll{
+    width:100%!important;
+    max-width:100%!important;
+    overflow-x:auto!important;
+    overflow-y:visible!important;
+    overscroll-behavior-x:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll table{
+    width:max-content!important;
+    min-width:100%!important;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll th,
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll td{
+    min-width:108px;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll th:first-child,
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll td:first-child{
+    min-width:72px;
+    width:72px;
+    position:sticky;
+    left:0;
+    z-index:3;
+    background:#fff;
+    box-shadow:1px 0 0 #dbe5ef;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll thead th:first-child{
+    z-index:5;
+    background:#e5edf6!important;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-scroll-top{
+    width:100%;
+    height:16px;
+    margin:0 0 6px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    display:none;
+    border-radius:6px;
+    scrollbar-gutter:stable;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-scroll-top-inner{
+    height:1px;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-scroll-top::-webkit-scrollbar,
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll::-webkit-scrollbar{
+    height:12px;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-scroll-top::-webkit-scrollbar-thumb,
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll::-webkit-scrollbar-thumb{
+    background:#94a3b8;
+    border:3px solid #f8fafc;
+    border-radius:999px;
+  }
+
+  .capacity-main-panel > #bulkCapTable .capacity-scroll-top::-webkit-scrollbar-track,
+  .capacity-main-panel > #bulkCapTable .capacity-table-scroll::-webkit-scrollbar-track{
+    background:#eef2f7;
+    border-radius:999px;
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5206,7 +5281,10 @@ function renderBulkCapacityTable(){
       <div class="stat" style="padding:14px;"><div class="label">開放場次</div><div class="num" style="font-size:22px;color:var(--green);">${openCount}/${totalSettings}</div></div>
       <div class="stat" style="padding:14px;"><div class="label">不開放場次</div><div class="num" style="font-size:22px;color:#b91c1c;">${closedCount}</div></div>
     </div>
-    <div class="table-wrap">
+    <div class="capacity-scroll-top" aria-label="名額設定水平捲動">
+      <div class="capacity-scroll-top-inner"></div>
+    </div>
+    <div class="table-wrap capacity-table-scroll">
       <table style="min-width:760px;">
         <thead>
           <tr>
@@ -5257,6 +5335,42 @@ function renderBulkCapacityTable(){
     </div>
   `;
   container.innerHTML=html;
+
+  const capacityTableScroll = container.querySelector('.capacity-table-scroll');
+  const capacityScrollTop = container.querySelector('.capacity-scroll-top');
+  const capacityScrollTopInner = container.querySelector('.capacity-scroll-top-inner');
+
+  if(capacityTableScroll && capacityScrollTop && capacityScrollTopInner){
+    const table = capacityTableScroll.querySelector('table');
+
+    const syncScrollWidth = () => {
+      const scrollWidth = table ? table.scrollWidth : capacityTableScroll.scrollWidth;
+      capacityScrollTopInner.style.width = `${scrollWidth}px`;
+      capacityScrollTop.style.display =
+        scrollWidth > capacityTableScroll.clientWidth + 2 ? 'block' : 'none';
+    };
+
+    let syncingTop = false;
+    let syncingBottom = false;
+
+    capacityScrollTop.addEventListener('scroll', () => {
+      if(syncingBottom) return;
+      syncingTop = true;
+      capacityTableScroll.scrollLeft = capacityScrollTop.scrollLeft;
+      syncingTop = false;
+    });
+
+    capacityTableScroll.addEventListener('scroll', () => {
+      if(syncingTop) return;
+      syncingBottom = true;
+      capacityScrollTop.scrollLeft = capacityTableScroll.scrollLeft;
+      syncingBottom = false;
+    });
+
+    requestAnimationFrame(syncScrollWidth);
+    setTimeout(syncScrollWidth, 50);
+    window.addEventListener('resize', syncScrollWidth, { once:true });
+  }
 
   document.querySelectorAll('.cap-closed-input').forEach(checkbox=>{
     checkbox.onchange=async()=>{
