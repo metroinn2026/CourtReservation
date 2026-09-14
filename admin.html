@@ -7550,13 +7550,55 @@ function confirmModal(title, body){
 
 function exportToCsv(records){
   if(!records.length){alert('沒有資料可以匯出');return;}
-  let csv='序號,抽籤狀態,公布狀態,鎖定,異常狀態,姓名,手機,身分證後4碼,地點,運動類型,星期,時段,登記時間\n';
-  records.forEach(r=>{
+  if(typeof XLSX==='undefined'){
+    alert('Excel 匯出元件尚未載入，請重新整理頁面後再試。');
+    return;
+  }
+
+  const headers=['序號','抽籤狀態','公布狀態','鎖定','異常狀態','姓名','手機','身分證後4碼','地點','運動類型','星期','時段','登記時間'];
+  const rows=records.map(r=>{
     const state=isSuspiciousPhone(r)?'手機重複':'正常';
-    csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.result_published?'已公布':'未公布'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${r.id_last4||''}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
+    return [
+      String(r.serial_number||''),
+      String(r.lottery_status||'未抽籤'),
+      r.result_published?'已公布':'未公布',
+      r.lottery_locked?'已鎖定':'未鎖定',
+      state,
+      String(r.name||''),
+      String(r.phone||''),
+      String(r.id_last4||''),
+      String(r.location_name||''),
+      String(r.venue_type||''),
+      String(r.day_of_week||''),
+      String(r.time_slot||''),
+      String(r.registered_at||'')
+    ];
   });
-  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`登記清單_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
+
+  const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
+
+  // 序號、手機、身分證後4碼皆屬識別資料，不應被 Excel 當成數值或科學記號。
+  // 強制指定為文字格式，避免 2609... 顯示成 2.609E+11，也保留手機／後4碼前導 0。
+  const textColumns=[0,6,7];
+  for(let rowIndex=1; rowIndex<=rows.length; rowIndex++){
+    textColumns.forEach(colIndex=>{
+      const addr=XLSX.utils.encode_cell({r:rowIndex,c:colIndex});
+      if(ws[addr]){
+        ws[addr].t='s';
+        ws[addr].v=String(ws[addr].v??'');
+        ws[addr].z='@';
+      }
+    });
+  }
+
+  ws['!cols']=[
+    {wch:16},{wch:12},{wch:10},{wch:10},{wch:12},{wch:12},{wch:14},
+    {wch:14},{wch:12},{wch:12},{wch:10},{wch:16},{wch:24}
+  ];
+
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'登記清單');
+  XLSX.writeFile(wb,`登記清單_${new Date().toISOString().slice(0,10)}.xlsx`,{bookType:'xlsx'});
 }
 function showAnomalyDefinitionModal(){
   const body=`
