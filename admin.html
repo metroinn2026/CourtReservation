@@ -3521,6 +3521,23 @@
   }
 </style>
 
+
+<style id="workflow-automation-style">
+  .workflow-status-strip{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;padding:11px 14px;margin-bottom:14px;background:#fff;border:1px solid #dbe5ef;border-radius:12px;}
+  .workflow-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
+  .workflow-field-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;}
+  .workflow-step-list{display:grid;gap:0;border:1px solid #dbe5ef;border-radius:12px;overflow:hidden;background:#fff;}
+  .workflow-step-item{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid #e5e7eb;}
+  .workflow-step-item:last-child{border-bottom:0;}
+  .workflow-step-num{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#eaf3fb;color:#0369a1;font-weight:900;font-size:12px;}
+  .workflow-step-title{font-weight:900;color:#0f172a;font-size:13px;}
+  .workflow-step-note{font-size:12px;color:#64748b;margin-top:2px;}
+  .workflow-count{font-weight:900;color:#0369a1;white-space:nowrap;}
+  .workflow-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+  .promotion-list{display:grid;gap:8px;}
+  .promotion-item{padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;}
+  @media(max-width:900px){.workflow-grid{grid-template-columns:1fr}.workflow-field-grid{grid-template-columns:1fr}.workflow-status-strip{grid-template-columns:1fr}.workflow-status-strip .btn{justify-self:start}}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -3563,6 +3580,7 @@
         <button data-page="dashboard" class="active">作業總覽</button>
         <button data-page="records">登記資料</button>
         <button data-page="capacity">名額設定</button>
+        <button data-page="workflow">流程自動化</button>
         <button data-page="lottery">抽籤作業</button>
         <button data-page="settings">文字設定</button>
         <button data-page="logs">操作紀錄</button>
@@ -3722,6 +3740,15 @@ function getRecordAnomalyTypes(record){
       if(dup||gap) types.push('候補異常');
     }
   }
+  const recStage={location:recordLocation(record),venue:record.venue_type||'',day:record.day_of_week||'',time:record.time_slot||'',records:allRecords.filter(r=>stageKeyFromRecord(r)===stageKeyFromRecord(record))};
+  if(isStageClosed(recStage)) types.push('不開放場次有登記');
+  const end=parseSettingDate(systemSettings.registration_end);
+  const regAt=parseSettingDate(record.registered_at);
+  if(end && regAt && regAt>end) types.push('截止後登記');
+  const stageResultCount=recStage.records.filter(r=>String(r.lottery_status||'').trim()).length;
+  const stagePublished=recStage.records.filter(r=>r.result_published).length;
+  if(stageResultCount>0 && stageResultCount<recStage.records.length) types.push('結果漏匯');
+  if(stageResultCount===recStage.records.length && stageResultCount>0 && stagePublished<recStage.records.length) types.push('結果待發布');
   return [...new Set(types)];
 }
 function anomalyTags(record){
@@ -3817,7 +3844,26 @@ function buildDataAnomalies(){
         target:'lottery'
       });
     }
+    const stageResultCount=rows.filter(x=>String(x.lottery_status||'').trim()).length;
+    if(stageResultCount>0 && stageResultCount<rows.length) issues.push({
+      type:'結果漏匯', severity:'error', count:rows.length-stageResultCount,
+      detail:`${stageLabel}｜${rows.length-stageResultCount}筆尚無結果`, target:'lottery'
+    });
+    if(stageResultCount===rows.length && stageResultCount>0 && published<rows.length) issues.push({
+      type:'結果待發布', severity:'warn', count:rows.length-published,
+      detail:`${stageLabel}｜結果已完成尚未發布`, target:'records'
+    });
+    const stageObj={location:recordLocation(r),venue:r.venue_type||'',day:r.day_of_week||'',time:r.time_slot||'',records:rows};
+    if(isStageClosed(stageObj) && rows.length) issues.push({
+      type:'不開放場次有登記', severity:'error', count:rows.length,
+      detail:`${stageLabel}｜已有${rows.length}筆登記`, target:'records'
+    });
   });
+  const end=parseSettingDate(systemSettings.registration_end);
+  if(end){
+    const afterEnd=records.filter(r=>{ const d=parseSettingDate(r.registered_at); return d && d>end; });
+    if(afterEnd.length) issues.push({type:'截止後登記',severity:'error',count:afterEnd.length,detail:`截止後仍有 ${afterEnd.length} 筆登記資料`,target:'records'});
+  }
   return issues;
 }
 function renderAnomalyCenter(issues){
@@ -3950,7 +3996,9 @@ async function loadAllData(){
     register_notice: '請詳閱登記辦法後再進行登記。',
     winner_template: '{name}您好，您登記的{venue}場地「{day} {time}」已中籤，請於指定期限內完成後續手續。',
     waitlist_template: '{name}您好，您登記的{venue}場地「{day} {time}」目前為{status}，若有名額釋出將依序通知。',
-    loser_template: '{name}您好，您登記的{venue}場地「{day} {time}」本次未中籤，感謝您的登記。'
+    loser_template: '{name}您好，您登記的{venue}場地「{day} {time}」本次未中籤，感謝您的登記。',
+    registration_start: '',
+    registration_end: ''
   };
 
   if(!settingsRes.error){
@@ -3962,6 +4010,57 @@ async function loadAllData(){
   }
 }
 
+
+function parseSettingDate(value){
+  if(!value) return null;
+  const d=new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function getRegistrationState(now=new Date()){
+  const start=parseSettingDate(systemSettings.registration_start);
+  const end=parseSettingDate(systemSettings.registration_end);
+  if(!start && !end) return {key:'open',label:'登記中',note:'尚未設定登記期間，系統維持開放。',start:null,end:null};
+  if(start && now<start) return {key:'not_started',label:'尚未開放',note:`將於 ${formatAdminDateTime(start)} 開放`,start,end};
+  if(end && now>end) return {key:'closed',label:'登記已截止',note:`已於 ${formatAdminDateTime(end)} 截止，目前僅供查詢。`,start,end};
+  return {key:'open',label:'登記中',note:end?`開放至 ${formatAdminDateTime(end)}`:'目前開放登記',start,end};
+}
+function formatAdminDateTime(value){
+  const d=value instanceof Date ? value : new Date(value);
+  if(Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString('zh-TW',{hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function toDateTimeLocal(value){
+  const d=parseSettingDate(value); if(!d) return '';
+  const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function stageKeyFromRecord(r){ return `${recordLocation(r)}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`; }
+function getStageGroups(records=allRecords){
+  const map={};
+  records.forEach(r=>{
+    const key=stageKeyFromRecord(r);
+    if(!map[key]) map[key]={key,location:recordLocation(r),venue:r.venue_type||'',day:r.day_of_week||'',time:r.time_slot||'',records:[]};
+    map[key].records.push(r);
+  });
+  return Object.values(map);
+}
+function getStageCapacity(stage){
+  const start=getStageStartTime(stage.time);
+  return Number(capacitySettings[settingKey(stage.venue,stage.day,stage.time)] ?? capacitySettings[settingKey(stage.venue,stage.day,start)] ?? capacityMap[stage.venue] ?? 0);
+}
+function isStageClosed(stage){
+  const start=getStageStartTime(stage.time);
+  return closedSlotSettings[settingKey(stage.venue,stage.day,stage.time)]===true || closedSlotSettings[settingKey(stage.venue,stage.day,start)]===true;
+}
+function getAutomationStageState(stage){
+  const total=stage.records.length;
+  const withResult=stage.records.filter(r=>String(r.lottery_status||'').trim()).length;
+  const published=stage.records.filter(r=>r.result_published).length;
+  if(withResult===0) return '待抽籤';
+  if(withResult<total) return '結果漏匯';
+  if(published<total) return '待公告';
+  return '已公告';
+}
 function stats(records=allRecords){
   const total=records.length;
   const people=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
@@ -3988,7 +4087,7 @@ function countSuspiciousPhones(){
 }
 function setActiveNav(page){
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
-  const title={dashboard:'作業總覽',records:'登記資料',capacity:'抽籤名額設定',lottery:'抽籤作業',settings:'文字設定中心',logs:'操作紀錄',accounts:'帳號權限管理'}[page] || '';
+  const title={dashboard:'作業總覽',records:'登記資料',capacity:'抽籤名額設定',workflow:'流程自動化',lottery:'抽籤作業',settings:'文字設定中心',logs:'操作紀錄',accounts:'帳號權限管理'}[page] || '';
   document.getElementById('pageTitle').textContent=title;
 }
 function renderPage(page){
@@ -3997,6 +4096,7 @@ function renderPage(page){
   if(page==='dashboard') renderDashboard();
   if(page==='records') renderRecordsPage();
   if(page==='capacity') renderCapacityPage();
+  if(page==='workflow') renderWorkflowPage();
   if(page==='lottery') renderLotteryPage();
   if(page==='settings') renderSettingsPage();
   if(page==='logs') renderLogsPage();
@@ -4062,7 +4162,10 @@ function renderDashboard(){
       </table>
     </div>`:`<div class="msg ok">目前沒有待處理場次。</div>`;
 
+  const regState=getRegistrationState();
+  const regClass=regState.key==='open'?'green':regState.key==='closed'?'gray':'blue';
   document.getElementById('content').innerHTML=`
+    <div class="workflow-status-strip"><div><strong>登記狀態</strong> <span class="tag ${regClass}">${escapeHtml(regState.label)}</span></div><div class="small">${escapeHtml(regState.note)}</div><button class="btn btn-gray" id="dashWorkflowSettings">流程設定</button></div>
     <div class="cards dashboard-status-cards">
       <button type="button" class="stat dashboard-status-card" id="dashPendingLottery">
         <div class="dashboard-card-label">待抽籤場次</div>
@@ -4099,6 +4202,9 @@ function renderDashboard(){
       ${taskHtml}
     </div>
   `;
+
+  const workflowBtn=document.getElementById('dashWorkflowSettings');
+  if(workflowBtn) workflowBtn.onclick=()=>renderPage('workflow');
 
   const pendingLotteryBtn=document.getElementById('dashPendingLottery');
   if(pendingLotteryBtn) pendingLotteryBtn.onclick=()=>renderPage('lottery');
@@ -4320,7 +4426,7 @@ function renderRecordsPage(){
           <select id="filterAnomaly" title="篩選正常或指定異常狀態">
             <option value="" ${recordState.anomaly===''?'selected':''}>全部</option>
             <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
-            ${['手機重複','超過次數','超過名額','公布未完成','候補異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
+            ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','截止後登記'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
           </select>
           <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
         </div>
@@ -4511,6 +4617,7 @@ function renderRecordsTable(){
             <option value="候補1">候補1</option>
             <option value="候補2">候補2</option>
             <option value="候補3">候補3</option>
+            <option value="放棄">放棄</option>
             <option value="未中籤">未中籤</option>
             <option value="__clear__">未抽籤</option>
           </select>
@@ -4619,6 +4726,7 @@ function recordStatusTag(status){
   if(!s) return '<span class="tag gray">未抽籤</span>';
   if(s==='中籤') return '<span class="tag green">中籤</span>';
   if(s.startsWith('候補')) return `<span class="tag warn">${escapeHtml(s)}</span>`;
+  if(s==='放棄') return '<span class="tag gray">放棄</span>';
   if(s==='未中籤') return '<span class="tag gray">未中籤</span>';
   return `<span class="tag gray">${escapeHtml(s)}</span>`;
 }
@@ -4634,6 +4742,7 @@ function recordStatusSelect(record){
     <option value="候補1" ${current==='候補1'?'selected':''}>候補1</option>
     <option value="候補2" ${current==='候補2'?'selected':''}>候補2</option>
     <option value="候補3" ${current==='候補3'?'selected':''}>候補3</option>
+    <option value="放棄" ${current==='放棄'?'selected':''}>放棄</option>
     <option value="未中籤" ${current==='未中籤'?'selected':''}>未中籤</option>
   </select>`;
 }
@@ -4737,6 +4846,7 @@ function renderRecordsTable(){
         <option value="候補1">候補1</option>
         <option value="候補2">候補2</option>
         <option value="候補3">候補3</option>
+        <option value="放棄">放棄</option>
         <option value="未中籤">未中籤</option>
         <option value="__clear__">未抽籤</option>
       </select>
@@ -5211,7 +5321,7 @@ function buildPublishSummary(records){
     const s=String(r.lottery_status||'');
     if(s==='中籤') counts.winner++;
     else if(s.startsWith('候補')) counts.waitlist++;
-    else if(s==='未中籤') counts.loser++;
+    else if(s==='未中籤' || s==='放棄') counts.loser++;
     else counts.noResult++;
     if(r.result_published) counts.published++;
   });
@@ -5319,6 +5429,91 @@ async function saveSetting(key, value){
   return true;
 }
 
+
+function renderWorkflowPage(){
+  const state=getRegistrationState();
+  const stages=getStageGroups();
+  const pendingLottery=stages.filter(s=>getAutomationStageState(s)==='待抽籤');
+  const partial=stages.filter(s=>getAutomationStageState(s)==='結果漏匯');
+  const pendingPublish=stages.filter(s=>getAutomationStageState(s)==='待公告');
+  const closedWithRecords=stages.filter(s=>isStageClosed(s) && s.records.length>0);
+  const end=parseSettingDate(systemSettings.registration_end);
+  const afterEnd=end?allRecords.filter(r=>{const d=parseSettingDate(r.registered_at);return d&&d>end;}):[];
+  const stateClass=state.key==='open'?'green':state.key==='closed'?'gray':'blue';
+
+  document.getElementById('content').innerHTML=`
+    <div class="panel">
+      <h3>登記期間自動開關</h3>
+      <div class="msg info">設定開始及截止時間後，前台會自動切換「尚未開放 → 登記中 → 登記已截止」。截止後不再接受送出，但民眾仍可查詢自己的登記與抽籤結果。</div>
+      <div class="workflow-field-grid">
+        <div class="field"><label>開始時間</label><input id="registrationStartInput" type="datetime-local" value="${escapeHtml(toDateTimeLocal(systemSettings.registration_start))}"></div>
+        <div class="field"><label>截止時間</label><input id="registrationEndInput" type="datetime-local" value="${escapeHtml(toDateTimeLocal(systemSettings.registration_end))}"></div>
+        <button id="saveRegistrationWindow" class="btn btn-primary">儲存期間</button>
+      </div>
+      <div style="margin-top:12px;"><span class="tag ${stateClass}">${escapeHtml(state.label)}</span> <span class="small">${escapeHtml(state.note)}</span></div>
+    </div>
+
+    <div class="panel">
+      <h3>自動化流程狀態</h3>
+      <div class="workflow-step-list">
+        <div class="workflow-step-item"><div class="workflow-step-num">1</div><div><div class="workflow-step-title">登記送出自動檢核</div><div class="workflow-step-note">身分資料、重複登記、申請規則、場次開放狀態與登記期間。</div></div><div class="workflow-count">啟用中</div></div>
+        <div class="workflow-step-item"><div class="workflow-step-num">2</div><div><div class="workflow-step-title">待抽籤名單自動整理</div><div class="workflow-step-note">依球類 × 星期 × 時段自動分組，可直接匯出 Excel。</div></div><div class="workflow-count">${pendingLottery.length} 場</div></div>
+        <div class="workflow-step-item"><div class="workflow-step-num">3</div><div><div class="workflow-step-title">抽籤結果匯入檢核</div><div class="workflow-step-note">依序號比對，自動寫入結果、鎖定並轉為待發布。</div></div><div class="workflow-count">${partial.length?`${partial.length} 場漏匯`:`正常`}</div></div>
+        <div class="workflow-step-item"><div class="workflow-step-num">4</div><div><div class="workflow-step-title">結果發布連動</div><div class="workflow-step-note">管理者確認發布後，前台「我的登記／抽籤結果」同步更新。</div></div><div class="workflow-count">${pendingPublish.length} 場待發布</div></div>
+        <div class="workflow-step-item"><div class="workflow-step-num">5</div><div><div class="workflow-step-title">異常自動提醒</div><div class="workflow-step-note">含截止後登記、結果漏匯、不開放場次仍有登記等。</div></div><div class="workflow-count">${buildDataAnomalies().length} 項</div></div>
+      </div>
+      <div class="workflow-actions">
+        <button id="exportPendingLotteryAuto" class="btn btn-primary" ${pendingLottery.length?'':'disabled'}>匯出待抽籤名單</button>
+        <button id="goPendingPublish" class="btn btn-gray" ${pendingPublish.length?'':'disabled'}>查看待發布結果</button>
+        <button id="goAnomalyCenter" class="btn btn-gray">查看異常</button>
+      </div>
+    </div>
+
+    ${(closedWithRecords.length||afterEnd.length)?`<div class="panel"><h3>需注意</h3>${closedWithRecords.length?`<div class="msg error">目前有 ${closedWithRecords.length} 個「不開放場次」仍存在登記資料。</div>`:''}${afterEnd.length?`<div class="msg error">目前有 ${afterEnd.length} 筆資料的登記時間晚於截止時間。</div>`:''}</div>`:''}
+  `;
+
+  document.getElementById('saveRegistrationWindow').onclick=async()=>{
+    const startRaw=document.getElementById('registrationStartInput').value;
+    const endRaw=document.getElementById('registrationEndInput').value;
+    const start=startRaw?new Date(startRaw):null;
+    const end=endRaw?new Date(endRaw):null;
+    if(start&&end&&end<=start){alert('截止時間必須晚於開始時間');return;}
+    if(!await saveSetting('registration_start',start?start.toISOString():'')) return;
+    if(!await saveSetting('registration_end',end?end.toISOString():'')) return;
+    await writeOperationLog('更新登記期間',{registration_start:start?start.toISOString():'',registration_end:end?end.toISOString():''});
+    alert('登記期間已儲存，前台會依時間自動切換狀態。');
+    await loadAllData(); renderWorkflowPage();
+  };
+  document.getElementById('exportPendingLotteryAuto').onclick=()=>exportPendingLotteryWorkbook(pendingLottery);
+  document.getElementById('goPendingPublish').onclick=()=>{recordsActionTab='publish';recordState.q='';recordState.location=DEFAULT_LOCATION;recordState.venue='';recordState.day='';recordState.time='';recordState.anomaly='結果待發布';recordState.page=1;renderPage('records');};
+  document.getElementById('goAnomalyCenter').onclick=()=>renderPage('dashboard');
+}
+
+function maskPhoneForNotice(phone){
+  const p=normalizePhone(phone);
+  if(p.length>=10) return `${p.slice(0,4)}***${p.slice(-3)}`;
+  if(p.length>=7) return `${p.slice(0,3)}***${p.slice(-2)}`;
+  return p;
+}
+
+function exportPendingLotteryWorkbook(stages){
+  if(typeof XLSX==='undefined'){alert('Excel 元件尚未載入，請重新整理後再試。');return;}
+  if(!stages||!stages.length){alert('目前沒有待抽籤場次');return;}
+  const wb=XLSX.utils.book_new();
+  const used=new Set();
+  stages.sort((a,b)=>venueSortValue(a.venue)-venueSortValue(b.venue)||daySortValue(a.day)-daySortValue(b.day)||timeSortValue(a.time)-timeSortValue(b.time)).forEach(stage=>{
+    const rows=[...stage.records].sort((a,b)=>String(a.serial_number||'').localeCompare(String(b.serial_number||''))).map((r,i)=>({
+      '項次':i+1,'序號':r.serial_number||'','姓名':r.name||'','手機':r.phone||'','身分證後4碼':r.id_last4||'','場地':locationLabel(recordLocation(r)),'球類':r.venue_type||'','星期':r.day_of_week||'','時段':r.time_slot||'','抽籤狀態':''
+    }));
+    const ws=XLSX.utils.json_to_sheet(rows);
+    let baseName=`${stage.venue}_${stage.day}_${getStageStartTime(stage.time)}`.replace(/[\\/?*\[\]:]/g,'-').slice(0,28)||'待抽籤';
+    let name=baseName, n=2; while(used.has(name)){name=`${baseName.slice(0,25)}_${n++}`;} used.add(name);
+    XLSX.utils.book_append_sheet(wb,ws,name);
+  });
+  XLSX.writeFile(wb,`待抽籤名單_${new Date().toISOString().slice(0,10)}.xlsx`);
+  writeOperationLog('匯出待抽籤名單',{stage_count:stages.length,record_count:stages.reduce((s,x)=>s+x.records.length,0)});
+}
+
 function renderLotteryPage(){
   const locations=getAdminLocations();
   window.currentLotteryLocation = window.currentLotteryLocation || DEFAULT_LOCATION;
@@ -5351,11 +5546,13 @@ function renderLotteryPage(){
             <button id="refreshLotteryContext" class="btn btn-gray">篩選</button>
             <button id="exportDayCheckBtn" class="btn btn-primary">匯出抽籤名單</button>
             <button id="importLotteryResultBtn" class="btn btn-primary">匯入抽籤結果</button>
+            <button id="promotionSuggestionBtn" class="btn btn-gray">遞補建議</button>
             <input id="importLotteryFile" type="file" accept=".xlsx,.xls,.csv" style="display:none;">
           </div>
         </div>
       </div>
 
+      <div id="promotionSuggestionPanel"></div>
       <div id="dayCheckPanel">
         <div id="importLotteryPreview"></div>
         <div id="importResultSummary"></div>
@@ -5544,6 +5741,7 @@ function renderLotteryPage(){
     if(records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
     exportToCsv(records);
   };
+  document.getElementById('promotionSuggestionBtn').onclick=renderPromotionSuggestions;
   document.getElementById('importLotteryResultBtn').onclick=()=>{
     const {venue,day,records}=getDayCheckRecords();
     if(!venue || !day || records.length===0){
@@ -5658,6 +5856,43 @@ function renderLotteryPage(){
     if(confirmBtn) confirmBtn.onclick=()=>confirmLotteryImport(parsed);
   }
 
+
+function getPromotionSuggestions(){
+  return getStageGroups().map(stage=>{
+    if(stage.records.some(r=>r.result_published)) return null;
+    const winners=stage.records.filter(r=>r.lottery_status==='中籤');
+    const waitlist=stage.records.filter(r=>/^候補\d+$/.test(String(r.lottery_status||''))).sort((a,b)=>Number(String(a.lottery_status).replace('候補',''))-Number(String(b.lottery_status).replace('候補','')));
+    const abandoned=stage.records.filter(r=>r.lottery_status==='放棄');
+    const capacity=getStageCapacity(stage);
+    const vacancies=Math.max(0,capacity-winners.length);
+    if(!abandoned.length || !waitlist.length || vacancies<=0) return null;
+    return {...stage,capacity,winners,waitlist,abandoned,promote:waitlist.slice(0,vacancies)};
+  }).filter(Boolean);
+}
+function renderPromotionSuggestions(){
+  const panel=document.getElementById('promotionSuggestionPanel'); if(!panel) return;
+  const items=getPromotionSuggestions();
+  if(!items.length){panel.innerHTML='<div class="msg info">目前沒有需要遞補的場次。若有中籤者放棄，請先將該筆狀態改為「放棄」，系統才會提出遞補建議。</div>';return;}
+  panel.innerHTML=`<div class="panel"><h3>候補遞補建議</h3><div class="msg info">系統只提出建議，不會自動變更。確認後才會將候補依順位遞補，並重新整理後續候補順位。</div><div class="promotion-list">${items.map((s,i)=>`<div class="promotion-item"><strong>${escapeHtml(locationLabel(s.location))}｜${escapeHtml(s.venue)}｜${escapeHtml(s.day)}｜${escapeHtml(s.time)}</strong><div class="small" style="margin-top:4px;">放棄 ${s.abandoned.length} 人｜目前中籤 ${s.winners.length}/${s.capacity}｜建議遞補：${s.promote.map(r=>`${escapeHtml(r.name)}（${escapeHtml(r.lottery_status)}）`).join('、')}</div><button class="btn btn-primary apply-promotion" data-index="${i}" style="margin-top:8px;">確認遞補</button></div>`).join('')}</div></div>`;
+  document.querySelectorAll('.apply-promotion').forEach(btn=>btn.onclick=()=>applyPromotionSuggestion(items[Number(btn.dataset.index)]));
+}
+async function applyPromotionSuggestion(stage){
+  if(!stage) return;
+  const ok=await confirmModal('確認候補遞補',`確定依候補順位遞補 ${stage.promote.length} 人嗎？<br><br>${escapeHtml(stage.venue)}｜${escapeHtml(stage.day)}｜${escapeHtml(stage.time)}<br><br>此動作不會自動發布結果。`); if(!ok)return;
+  const promotedIds=new Set(stage.promote.map(r=>String(r.id)));
+  const remaining=stage.waitlist.filter(r=>!promotedIds.has(String(r.id)));
+  const updates=[];
+  stage.promote.forEach(r=>updates.push({id:r.id,status:'中籤'}));
+  remaining.forEach((r,i)=>updates.push({id:r.id,status:`候補${i+1}`}));
+  for(const u of updates){
+    const {error}=await db.from(RECORD_TABLE).update({lottery_status:u.status,lottery_locked:true,result_published:false,updated_at:new Date().toISOString()}).eq('id',u.id);
+    if(error){console.error(error);alert('遞補更新失敗，請重新整理後確認。');return;}
+  }
+  await writeOperationLog('確認候補遞補',{venue_type:stage.venue,day_of_week:stage.day,time_slot:stage.time,promoted_count:stage.promote.length},updates.map(x=>x.id));
+  alert(`已完成 ${stage.promote.length} 人遞補，結果尚未發布。`);
+  await loadAllData(); renderLotteryPage(); setTimeout(renderPromotionSuggestions,0);
+}
+
   async function confirmLotteryImport(parsed){
     if(!parsed || parsed.valid.length===0 || parsed.errors.length>0) return;
     const ok=await confirmModal('確認匯入抽籤結果',`確定匯入 <strong>${parsed.valid.length}</strong> 筆抽籤結果並鎖定嗎？<br><br>${escapeHtml(parsed.venue)}｜${escapeHtml(parsed.day)}<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
@@ -5696,7 +5931,11 @@ function renderLotteryPage(){
     if(failed.length){
       alert(`已匯入 ${successIds.length} 筆，另有 ${failed.length} 筆更新失敗。請重新整理後確認。`);
     }else{
-      alert(`已匯入並鎖定 ${successIds.length} 筆抽籤結果。結果尚未公布，請確認後再執行公布。`);
+      const goPublish=await confirmModal('結果已匯入',`已匯入並鎖定 <strong>${successIds.length}</strong> 筆抽籤結果。<br><br>系統已將本批資料轉為「待發布」，是否前往確認發布？`);
+      if(goPublish){
+        recordState.location=DEFAULT_LOCATION; recordState.venue=parsed.venue; recordState.day=parsed.day; recordState.time=''; recordState.q=''; recordState.anomaly='結果待發布'; recordState.page=1; recordsActionTab='publish';
+        await loadAllData(); renderPage('records'); return;
+      }
     }
     const venue=parsed.venue, day=parsed.day;
     await loadAllData();
@@ -6021,6 +6260,7 @@ function renderLotteryPage(){
                       <option value="候補1" ${r.lottery_status==='候補1'?'selected':''}>候補1</option>
                       <option value="候補2" ${r.lottery_status==='候補2'?'selected':''}>候補2</option>
                       <option value="候補3" ${r.lottery_status==='候補3'?'selected':''}>候補3</option>
+                      <option value="放棄" ${r.lottery_status==='放棄'?'selected':''}>放棄</option>
                       <option value="未中籤" ${r.lottery_status==='未中籤'?'selected':''}>未中籤</option>
                     </select>
                   </td>
@@ -6998,6 +7238,10 @@ function showAnomalyDefinitionModal(){
       <div><strong>超過名額</strong>：中籤人數超過場次名額。</div>
       <div><strong>公布未完成</strong>：已公布但仍有未完成結果。</div>
       <div><strong>候補異常</strong>：候補順位重複或不連續。</div>
+      <div><strong>結果漏匯</strong>：同一場次只有部分資料已有抽籤結果。</div>
+      <div><strong>結果待發布</strong>：結果已完成，但尚未發布至民眾前台。</div>
+      <div><strong>不開放場次有登記</strong>：後台已設定不開放，但仍存在登記資料。</div>
+      <div><strong>截止後登記</strong>：登記時間晚於後台設定的截止時間。</div>
       <div style="margin-top:4px;padding:10px 12px;background:#f8fafc;border-radius:10px;color:#64748b;">僅供檢核提醒，不會自動修改資料。</div>
     </div>`;
   showModal('異常註記說明', body, ()=>{}, false);

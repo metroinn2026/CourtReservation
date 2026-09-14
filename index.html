@@ -106,6 +106,7 @@
         }
 
         window.dataSdk = {
+          refresh: refreshRecords,
           async init(handler) {
             handlerRef = handler;
             const result = await refreshRecords();
@@ -293,6 +294,7 @@
         }
 
         window.capacitySdk = {
+          refresh: refreshCapacitySettings,
           async init(handler) {
             capacityHandlerRef = handler;
             const result = await refreshCapacitySettings();
@@ -2070,6 +2072,17 @@
   }
 </style>
 
+
+<style id="registration-automation-style">
+  .registration-status-banner{margin:0 0 10px;padding:11px 14px;border-left:3px solid var(--primary-blue);background:#eef7fb;color:#075985;font-size:13px;line-height:1.6;}
+  .registration-status-banner.status-closed{border-left-color:#64748b;background:#f1f5f9;color:#475569;}
+  .registration-status-banner.status-not-started{border-left-color:#2563eb;background:#eff6ff;color:#1e40af;}
+  #register-tab-panel.registration-locked #location-section,
+  #register-tab-panel.registration-locked #venue-section,
+  #register-tab-panel.registration-locked #date-section,
+  #register-tab-panel.registration-locked #time-section,
+  #register-tab-panel.registration-locked #summary-section{display:none!important;}
+</style>
 </head>
  <body>
   <main>
@@ -2155,6 +2168,7 @@
      </div>
 
      <div id="register-tab-panel" class="member-tab-panel" style="display:none;">
+     <div id="registration-status-banner" class="registration-status-banner"></div>
      <!-- Location Section -->
      <div class="section" id="location-section" style="display: none;">
       <h2>選擇地點</h2>
@@ -2254,7 +2268,9 @@
     let closedSlotSettings = {};
     let systemSettings = {
       rules_content: '請於登記期間內完成資料填寫，抽籤結果將依公告時間公布。',
-      register_notice: '請詳閱登記辦法後再進行登記。'
+      register_notice: '請詳閱登記辦法後再進行登記。',
+      registration_start: '',
+      registration_end: ''
     };
     let currentSelection = {
       name: '',
@@ -2325,6 +2341,44 @@
     };
 
 
+
+    function parseRegistrationDate(value){
+      if(!value) return null;
+      const d=new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    function formatRegistrationDate(value){
+      const d=value instanceof Date ? value : new Date(value);
+      if(Number.isNaN(d.getTime())) return '-';
+      return d.toLocaleString('zh-TW',{hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    }
+    function getRegistrationState(now=new Date()){
+      const start=parseRegistrationDate(systemSettings.registration_start);
+      const end=parseRegistrationDate(systemSettings.registration_end);
+      if(!start&&!end) return {key:'open',label:'登記中',note:'目前開放登記。'};
+      if(start&&now<start) return {key:'not_started',label:'尚未開放',note:`登記將於 ${formatRegistrationDate(start)} 開放。`};
+      if(end&&now>end) return {key:'closed',label:'登記已截止',note:`登記已於 ${formatRegistrationDate(end)} 截止，目前僅供查詢。`};
+      return {key:'open',label:'登記中',note:end?`登記開放至 ${formatRegistrationDate(end)}。`:'目前開放登記。'};
+    }
+    function renderRegistrationState(){
+      const state=getRegistrationState();
+      const box=document.getElementById('registration-status-banner');
+      const panel=document.getElementById('register-tab-panel');
+      if(box){
+        box.className=`registration-status-banner status-${state.key}`;
+        box.innerHTML=`<strong>${state.label}</strong>　${state.note}`;
+      }
+      if(panel) panel.classList.toggle('registration-locked',state.key!=='open');
+      return state;
+    }
+    async function refreshRuntimeSettings(){
+      if(window.settingsSdk){
+        const s=await window.settingsSdk.getAll();
+        systemSettings={...systemSettings,...(s||{})};
+      }
+      return renderRegistrationState();
+    }
+
     function renderSystemTextSettings() {
       const formattedRules = String(systemSettings.rules_content || '請詳閱登記辦法。').replace(/\n/g, '<br>');
 
@@ -2343,6 +2397,7 @@
         noticeBox.innerHTML = String(systemSettings.register_notice).replace(/\n/g, '<br>');
         noticeBox.style.display = 'block';
       }
+      renderRegistrationState();
     }
 
     async function loadSystemSettings() {
@@ -2371,6 +2426,7 @@
       }
 
       await loadSystemSettings();
+      if(!window.__registrationStateTimer){window.__registrationStateTimer=setInterval(renderRegistrationState,60000);}
 
       // Setup all event listeners AFTER SDK is ready
       setupAllEventListeners();
@@ -2782,9 +2838,21 @@
     }
 
     async function submitRegistration() {
-      if (!currentSelection.name || !currentSelection.phone || !currentSelection.id_last4 || !currentSelection.location || !currentSelection.venue || !currentSelection.day || !currentSelection.time) {
+      const state=await refreshRuntimeSettings();
+      if(state.key!=='open'){
+        alert(state.key==='closed'?'登記已截止，目前僅供查詢。':'目前尚未開放登記。');
+        renderRegistrationState();
         return;
       }
+      if(window.dataSdk?.refresh) await window.dataSdk.refresh();
+      if(window.capacitySdk?.refresh) await window.capacitySdk.refresh();
+
+      if (!currentSelection.name || !currentSelection.phone || !currentSelection.id_last4 || !currentSelection.location || !currentSelection.venue || !currentSelection.day || !currentSelection.time) {
+        alert('登記資料尚未完整，請確認後再送出。');
+        return;
+      }
+      if(!/^09\d{8}$/.test(normalizePhoneNumber(currentSelection.phone))){alert('手機號碼格式不正確，請重新驗證身分。');return;}
+      if(!/^\d{4}$/.test(String(currentSelection.id_last4||''))){alert('身分證後4碼格式不正確，請重新驗證身分。');return;}
 
       const isTableTennis = currentSelection.venue.includes('桌球');
       const limitedSports = ['羽球', '籃球'];
@@ -2801,6 +2869,18 @@
       const selectedTimes = isTableTennis 
         ? currentSelection.time.split(', ').filter(t => t.trim())
         : [currentSelection.time];
+
+      const duplicateStage = selectedTimes.some(time => {
+        const target=formatTimeSlotDisplay(time,currentSelection.venue);
+        return allRecords.some(r=>
+          normalizePhoneNumber(r.phone)===currentSelection.phone &&
+          String(r.id_last4||'')===String(currentSelection.id_last4||'') &&
+          r.venue_type===currentSelection.venue &&
+          r.day_of_week===currentSelection.day &&
+          (r.time_slot===target || String(r.time_slot||'').includes(time))
+        );
+      });
+      if(duplicateStage){alert('您已登記相同場次，請先至「我的登記」確認或刪除原紀錄。');return;}
 
       const containsClosedSlot = selectedTimes.some(time =>
         isLotterySlotClosed(currentSelection.venue, currentSelection.day, time)
@@ -3877,6 +3957,7 @@
 
       setFlowStep(3);
 
+      if (tabName === 'register') renderRegistrationState();
       if (tabName === 'records') renderRecords();
       if (tabName === 'results') renderLotteryResults();
     }
