@@ -3557,6 +3557,78 @@
   .capacity-window-state{margin-top:8px;color:#64748b;}
   .capacity-section-divider{height:1px;background:#dbe5ef;margin:2px 0 16px;}
   @media(max-width:900px){.capacity-window-grid{grid-template-columns:1fr;}.capacity-window-grid .btn{width:100%;}}
+
+  /* 結果公告：簡化為「範圍 → 筆數 → 公告」 */
+  .publish-simple-card{
+    background:#fff;
+    border:1px solid #dbe5ef;
+    border-radius:12px;
+    padding:14px 16px;
+    margin-bottom:14px;
+  }
+  .publish-simple-top,
+  .publish-simple-bottom{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .publish-simple-scope{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    min-width:0;
+  }
+  .publish-simple-label{
+    color:#64748b;
+    font-size:12px;
+    font-weight:800;
+    flex:0 0 auto;
+  }
+  .publish-simple-scope strong{
+    color:#0f172a;
+    font-size:15px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .publish-simple-summary{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px 18px;
+    padding:11px 0;
+    margin:10px 0;
+    border-top:1px solid #e5edf5;
+    border-bottom:1px solid #e5edf5;
+    color:#475569;
+    font-size:13px;
+  }
+  .publish-simple-summary strong{color:#0f172a;}
+  .publish-simple-summary .warn-text,
+  .publish-simple-summary .warn-text strong{color:#b45309;}
+  .publish-simple-hint{
+    color:#64748b;
+    font-size:12px;
+    line-height:1.5;
+  }
+  .publish-simple-actions{
+    display:flex;
+    gap:8px;
+    flex:0 0 auto;
+  }
+  @media(max-width:760px){
+    .publish-simple-top,
+    .publish-simple-bottom{
+      align-items:flex-start;
+      flex-direction:column;
+    }
+    .publish-simple-actions{
+      width:100%;
+    }
+    .publish-simple-actions .btn{
+      flex:1;
+    }
+  }
 </style>
 </head>
 <body>
@@ -4536,40 +4608,47 @@ function renderRecordsPublishWorkspace(){
   const allPublished=records.length>0 && records.every(r=>r.result_published);
   const somePublished=records.some(r=>r.result_published);
 
-  let stateText='尚未選擇可公告範圍';
+  let stateText='請先選擇球類';
   let stateClass='gray';
   if(hasPublishScope && records.length===0){ stateText='目前條件無資料'; stateClass='gray'; }
-  else if(hasPublishScope && c.noResult>0){ stateText=`尚有 ${c.noResult} 筆未抽籤`; stateClass='warn'; }
-  else if(hasPublishScope && allPublished){ stateText='目前範圍已全部公布'; stateClass='green'; }
-  else if(hasPublishScope && somePublished){ stateText='目前範圍部分已公布'; stateClass='warn'; }
-  else if(hasPublishScope && records.length){ stateText='可公布'; stateClass='blue'; }
+  else if(hasPublishScope && c.noResult>0){ stateText=`尚有 ${c.noResult} 筆未完成結果`; stateClass='warn'; }
+  else if(hasPublishScope && allPublished){ stateText='已全部公告'; stateClass='green'; }
+  else if(hasPublishScope && somePublished){ stateText='部分已公告'; stateClass='warn'; }
+  else if(hasPublishScope && records.length){ stateText='可公告'; stateClass='blue'; }
+
+  const hint = !hasPublishScope
+    ? '請先在上方選擇球類；如需縮小範圍，再選星期或時段。'
+    : c.noResult>0
+      ? `目前尚有 ${c.noResult} 筆未設定抽籤結果，完成後才能公告。`
+      : allPublished
+        ? '目前範圍已公告完成。'
+        : '確認範圍與筆數後，即可公告。';
 
   box.innerHTML=`
-    <div class="publish-workspace-card">
-      <div class="publish-workspace-main">
-        <div>
-          <div class="records-scope-title">目前公告範圍</div>
-          <div class="publish-scope-value">${escapeHtml(scope)}</div>
-          <div class="small" style="margin-top:6px;">公告會套用到目前上方篩選出的資料。</div>
+    <div class="publish-simple-card">
+      <div class="publish-simple-top">
+        <div class="publish-simple-scope">
+          <span class="publish-simple-label">公告範圍</span>
+          <strong>${escapeHtml(scope)}</strong>
         </div>
         <span class="tag ${stateClass}">${escapeHtml(stateText)}</span>
       </div>
 
-      <div class="publish-counts">
-        <span>總筆數 <strong>${c.total}</strong></span>
+      <div class="publish-simple-summary">
+        <span>共 <strong>${c.total}</strong> 筆</span>
         <span>中籤 <strong>${c.winner}</strong></span>
         <span>候補 <strong>${c.waitlist}</strong></span>
         <span>未中籤 <strong>${c.loser}</strong></span>
-        <span>未抽籤 <strong>${c.noResult}</strong></span>
-        <span>已公布 <strong>${c.published}</strong></span>
+        ${c.noResult>0?`<span class="warn-text">未完成 <strong>${c.noResult}</strong></span>`:''}
       </div>
 
-      <div class="publish-actions">
-        <button id="publishFilteredBtn" class="btn btn-primary" ${(!hasPublishScope || !records.length || c.noResult>0 || allPublished)?'disabled':''}>公布目前篩選結果</button>
-        <button id="unpublishFilteredBtn" class="btn btn-gray" ${(!records.length || !somePublished)?'disabled':''}>取消公布目前範圍</button>
+      <div class="publish-simple-bottom">
+        <div class="publish-simple-hint">${escapeHtml(hint)}</div>
+        <div class="publish-simple-actions">
+          <button id="publishFilteredBtn" class="btn btn-primary" ${(!hasPublishScope || !records.length || c.noResult>0 || allPublished)?'disabled':''}>公告此範圍</button>
+          ${somePublished?`<button id="unpublishFilteredBtn" class="btn btn-gray">取消公告</button>`:''}
+        </div>
       </div>
-      ${!hasPublishScope?'<div class="section-note">為避免誤公告，至少需選擇「球類」後才能公布；可再搭配星期、時段縮小範圍。</div>':''}
-      ${c.noResult>0?`<div class="section-note" style="color:#9a3412;">尚有 ${c.noResult} 筆未設定抽籤結果，完成後才可公布。</div>`:''}
     </div>`;
 
   const publishBtn=document.getElementById('publishFilteredBtn');
@@ -4585,12 +4664,12 @@ async function publishCurrentFilteredRange(published){
     return;
   }
   if(published && !recordState.venue){
-    alert('為避免誤公告，請至少選擇「球類」後再公布。');
+    alert('請先選擇「球類」後再公告。');
     return;
   }
   const noResult=records.filter(r=>!String(r.lottery_status||'').trim()).length;
   if(published && noResult>0){
-    alert(`目前範圍仍有 ${noResult} 筆未設定抽籤結果，請先完成結果處理。`);
+    alert(`目前範圍仍有 ${noResult} 筆未完成抽籤結果，請先完成結果處理。`);
     return;
   }
 
