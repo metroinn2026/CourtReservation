@@ -3556,6 +3556,7 @@
   .capacity-window-grid .field{margin:0;}
   .capacity-window-state{margin-top:8px;color:#64748b;}
   .capacity-section-divider{height:1px;background:#dbe5ef;margin:2px 0 16px;}
+  .registration-limit-window{margin-bottom:0;}
   @media(max-width:900px){.capacity-window-grid{grid-template-columns:1fr;}.capacity-window-grid .btn{width:100%;}}
 
   /* 結果公告：簡化為「範圍 → 筆數 → 公告」 */
@@ -5308,7 +5309,9 @@ function renderCapacityPage(){
 
       <div class="capacity-section-divider"></div>
 
-      <div id="registrationLimitEditor" class="registration-limit-editor"></div>
+      <div class="capacity-registration-window registration-limit-window">
+        <div id="registrationLimitEditor" class="registration-limit-editor"></div>
+      </div>
 
       <div class="capacity-section-divider"></div>
 
