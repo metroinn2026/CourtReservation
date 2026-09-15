@@ -2270,7 +2270,8 @@
       rules_content: '請於登記期間內完成資料填寫，抽籤結果將依公告時間公布。',
       register_notice: '請詳閱登記辦法後再進行登記。',
       registration_start: '',
-      registration_end: ''
+      registration_end: '',
+      registration_limit_rules: ''
     };
     let currentSelection = {
       name: '',
@@ -2479,6 +2480,58 @@
              String(record.id_last4 || '') === String(currentSelection.id_last4 || '');
     }
 
+    const REGISTRATION_VENUES=['羽球','籃球','B1桌球','B2桌球'];
+    const DEFAULT_REGISTRATION_LIMIT_RULES={
+      single:{'羽球':1,'籃球':1,'B1桌球':0,'B2桌球':0},
+      groups:[]
+    };
+    function normalizeRegistrationLimitRules(raw){
+      let data=raw;
+      if(typeof raw==='string' && raw.trim()){
+        try{ data=JSON.parse(raw); }catch(e){ data=null; }
+      }
+      const single={...DEFAULT_REGISTRATION_LIMIT_RULES.single};
+      if(data && typeof data==='object' && data.single){
+        REGISTRATION_VENUES.forEach(v=>{
+          const n=Number(data.single[v]);
+          single[v]=Number.isFinite(n)&&n>=0?Math.floor(n):single[v];
+        });
+      }
+      const groups=Array.isArray(data?.groups)?data.groups.map((g,i)=>({
+        id:String(g.id||`group_${i+1}`),
+        venues:[...new Set((Array.isArray(g.venues)?g.venues:[]).filter(v=>REGISTRATION_VENUES.includes(v)))],
+        max:Math.max(1,Math.floor(Number(g.max)||1))
+      })).filter(g=>g.venues.length>=2):[];
+      return {single,groups};
+    }
+    function getRegistrationLimitRules(){
+      return normalizeRegistrationLimitRules(systemSettings.registration_limit_rules);
+    }
+    function sameRegistrationLocation(record){
+      const current=currentSelection.location||'北投會館';
+      return String(record.location_name||'北投會館')===String(current);
+    }
+    function getPersonRegistrationRecords(){
+      return allRecords.filter(r=>samePersonRecord(r)&&sameRegistrationLocation(r));
+    }
+    function checkRegistrationLimitForVenue(venue,pendingUnits=1){
+      const rules=getRegistrationLimitRules();
+      const records=getPersonRegistrationRecords();
+      const singleMax=Number(rules.single[venue]||0);
+      const sameVenueCount=records.filter(r=>r.venue_type===venue).length;
+      if(singleMax>0 && sameVenueCount+pendingUnits>singleMax){
+        return {blocked:true,message:`${venue}每人最多登記 ${singleMax} 個時段；如需變更，請先至「我的登記」刪除原登記紀錄。`};
+      }
+      for(const g of rules.groups){
+        if(!g.venues.includes(venue)) continue;
+        const used=records.filter(r=>g.venues.includes(r.venue_type)).length;
+        if(used+pendingUnits>g.max){
+          return {blocked:true,message:`${g.venues.join('＋')}合計每人最多登記 ${g.max} 個時段；如需變更，請先至「我的登記」刪除原登記紀錄。`};
+        }
+      }
+      return {blocked:false,message:''};
+    }
+
         function showConfirmDelete(record, callback) {
       pendingDeleteRecord = record;
       document.getElementById('confirm-modal').classList.add('active');
@@ -2664,19 +2717,23 @@
       const times = getTimeOptionsForVenue(currentSelection.venue);
       
       const isTableTennis = currentSelection.venue.includes('桌球');
-      
-      const userHasRegistration =
-        (currentSelection.venue === '羽球' || currentSelection.venue === '籃球')
-          ? allRecords.some(r => samePersonRecord(r) && r.venue_type === currentSelection.venue)
-          : false;
+      const venueLimitState = checkRegistrationLimitForVenue(currentSelection.venue, 1);
+      const userHasRegistration = venueLimitState.blocked;
+      const rules=getRegistrationLimitRules();
+      const singleLimit=Number(rules.single[currentSelection.venue]||0);
+      const relatedGroup=rules.groups.find(g=>g.venues.includes(currentSelection.venue));
 
-      const hintText = isTableTennis
-        ? '本場地以1小時為單位進行登記，不限時數'
-        : userHasRegistration
-        ? '您已登記此運動類型，如需變更，請先至「我的登記」刪除原登記紀錄。'
+      const hintText = venueLimitState.blocked
+        ? venueLimitState.message
+        : relatedGroup
+        ? `${relatedGroup.venues.join('＋')}合計每人最多登記 ${relatedGroup.max} 個時段`
+        : singleLimit>0
+        ? `${currentSelection.venue}每人最多登記 ${singleLimit} 個時段`
+        : isTableTennis
+        ? '本場地以1小時為單位進行登記'
         : currentSelection.venue === '籃球'
-        ? '本場地以2小時為單位進行登記，每個帳號僅能登記一個時段'
-        : '本場地以1小時為單位進行登記，每個帳號僅能登記一個時段';
+        ? '本場地以2小時為單位進行登記'
+        : '本場地以1小時為單位進行登記';
       
       const hintBgColor = userHasRegistration ? '#fee2e2' : '#e5f2f7';
       const hintTextColor = userHasRegistration ? '#7f1d1d' : 'var(--primary-blue)';
@@ -2716,7 +2773,7 @@
         btn.dataset.value = time;
         btn.textContent = time;
         
-        if (!isTableTennis && userHasRegistration) {
+        if (userHasRegistration) {
           btn.disabled = true;
           btn.style.opacity = '0.3';
           btn.style.cursor = 'not-allowed';
@@ -2855,20 +2912,17 @@
       if(!/^\d{4}$/.test(String(currentSelection.id_last4||''))){alert('身分證後4碼格式不正確，請重新驗證身分。');return;}
 
       const isTableTennis = currentSelection.venue.includes('桌球');
-      const limitedSports = ['羽球', '籃球'];
-      const duplicatedPerson = limitedSports.includes(currentSelection.venue) && allRecords.some(r =>
-        normalizePhoneNumber(r.phone) === currentSelection.phone &&
-        (r.id_last4 || '') === currentSelection.id_last4 &&
-        r.venue_type === currentSelection.venue
-      );
-
-      if (duplicatedPerson) {
-        alert('此手機號碼與身分證後4碼已登記過此運動類型。羽球與籃球各限登記一次；如需修改，請先刪除原登記紀錄後重新登記。');
-        return;
-      }
       const selectedTimes = isTableTennis 
         ? currentSelection.time.split(', ').filter(t => t.trim())
         : [currentSelection.time];
+
+      const pendingUnits = isTableTennis ? Math.max(1, detectContinuousGroups(selectedTimes).length) : 1;
+      const limitState = checkRegistrationLimitForVenue(currentSelection.venue, pendingUnits);
+      if(limitState.blocked){
+        alert(limitState.message);
+        renderTimeButtons();
+        return;
+      }
 
       const duplicateStage = selectedTimes.some(time => {
         const target=formatTimeSlotDisplay(time,currentSelection.venue);

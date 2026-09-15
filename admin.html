@@ -3705,6 +3705,27 @@
   }
 </style>
 
+
+<style id="registration-limit-rules-style">
+  .registration-limit-editor{padding:2px 0 4px;}
+  .registration-limit-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;}
+  .single-limit-grid{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin-bottom:14px;}
+  .limit-input-wrap{display:flex;align-items:center;gap:6px;}
+  .limit-input-wrap input{width:80px;}
+  .limit-input-wrap span,.cross-limit-max span{font-size:12px;color:#64748b;white-space:nowrap;}
+  .cross-limit-list{display:flex;flex-direction:column;gap:8px;}
+  .cross-limit-row{display:grid;grid-template-columns:90px minmax(310px,1fr) 170px 62px;gap:10px;align-items:center;padding:10px 12px;border:1px solid #dbe5ef;border-radius:9px;background:#fff;}
+  .cross-limit-name{font-size:13px;font-weight:800;color:#334155;}
+  .cross-limit-venues{display:flex;flex-wrap:wrap;gap:6px 12px;}
+  .limit-check{display:flex!important;align-items:center;gap:4px;margin:0!important;font-size:12px!important;color:#334155;}
+  .limit-check input{width:15px;height:15px;}
+  .cross-limit-max{display:flex;align-items:center;gap:6px;}
+  .cross-limit-max input{width:60px;}
+  .empty-limit-note{padding:10px 12px;border:1px dashed #cbd5e1;border-radius:8px;color:#64748b;font-size:12px;}
+  .registration-limit-actions{display:flex;justify-content:flex-end;margin-top:12px;}
+  @media(max-width:1000px){.single-limit-grid{grid-template-columns:repeat(2,minmax(120px,1fr));}.cross-limit-row{grid-template-columns:1fr;}.registration-limit-actions{justify-content:flex-start;}}
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -3884,7 +3905,7 @@ function getRecordAnomalyTypes(record){
   if(pk!=='|'){
     const sameStage=records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
     const sameSportSlots=new Set(records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type).map(r=>`${r.day_of_week||''}|${r.time_slot||''}`));
-    const exceedsRule = sameStage.length>1 || (['羽球','籃球'].includes(record.venue_type) && sameSportSlots.size>1);
+    const exceedsRule = sameStage.length>1 || getLimitViolationsForRecord(record,records).length>0;
     if(exceedsRule) types.push('超過次數');
   }
 
@@ -4164,7 +4185,8 @@ async function loadAllData(){
     waitlist_template: '{name}您好，您登記的{venue}場地「{day} {time}」目前為{status}，若有名額釋出將依序通知。',
     loser_template: '{name}您好，您登記的{venue}場地「{day} {time}」本次未中籤，感謝您的登記。',
     registration_start: '',
-    registration_end: ''
+    registration_end: '',
+    registration_limit_rules: ''
   };
 
   if(!settingsRes.error){
@@ -4199,6 +4221,120 @@ function toDateTimeLocal(value){
   const d=parseSettingDate(value); if(!d) return '';
   const p=n=>String(n).padStart(2,'0');
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+const REGISTRATION_VENUES=['羽球','籃球','B1桌球','B2桌球'];
+const DEFAULT_REGISTRATION_LIMIT_RULES={
+  single:{'羽球':1,'籃球':1,'B1桌球':0,'B2桌球':0},
+  groups:[]
+};
+function normalizeRegistrationLimitRules(raw){
+  let data=raw;
+  if(typeof raw==='string' && raw.trim()){
+    try{ data=JSON.parse(raw); }catch(e){ data=null; }
+  }
+  const single={...DEFAULT_REGISTRATION_LIMIT_RULES.single};
+  if(data && typeof data==='object' && data.single){
+    REGISTRATION_VENUES.forEach(v=>{
+      const n=Number(data.single[v]);
+      single[v]=Number.isFinite(n)&&n>=0?Math.floor(n):single[v];
+    });
+  }
+  const groups=Array.isArray(data?.groups)?data.groups.map((g,i)=>({
+    id:String(g.id||`group_${i+1}`),
+    venues:[...new Set((Array.isArray(g.venues)?g.venues:[]).filter(v=>REGISTRATION_VENUES.includes(v)))],
+    max:Math.max(1,Math.floor(Number(g.max)||1))
+  })).filter(g=>g.venues.length>=2):[];
+  return {single,groups};
+}
+function getRegistrationLimitRules(){
+  return normalizeRegistrationLimitRules(systemSettings.registration_limit_rules);
+}
+function personRecordKey(r){ return `${normalizePhone(r.phone)}|${r.id_last4||''}`; }
+function recordCountForLimit(records, personKeyValue, venue, location){
+  return records.filter(r=>personRecordKey(r)===personKeyValue && recordLocation(r)===location && r.venue_type===venue).length;
+}
+function getLimitViolationsForRecord(record, records=allRecords){
+  const rules=getRegistrationLimitRules();
+  const pk=personRecordKey(record);
+  const loc=recordLocation(record);
+  const violations=[];
+  const singleMax=Number(rules.single[record.venue_type]||0);
+  if(singleMax>0){
+    const n=recordCountForLimit(records,pk,record.venue_type,loc);
+    if(n>singleMax) violations.push(`${record.venue_type}最多${singleMax}筆`);
+  }
+  rules.groups.forEach(g=>{
+    if(!g.venues.includes(record.venue_type)) return;
+    const n=records.filter(r=>personRecordKey(r)===pk && recordLocation(r)===loc && g.venues.includes(r.venue_type)).length;
+    if(n>g.max) violations.push(`${g.venues.join('＋')}合計最多${g.max}筆`);
+  });
+  return violations;
+}
+function renderRegistrationLimitEditor(){
+  const box=document.getElementById('registrationLimitEditor');
+  if(!box) return;
+  if(!window.registrationRuleDraft) window.registrationRuleDraft=getRegistrationLimitRules();
+  const draft=window.registrationRuleDraft;
+  box.innerHTML=`
+    <div class="registration-limit-head">
+      <div>
+        <div class="capacity-window-title">登記限制</div>
+        <div class="small">0 表示不限。跨球類限制可自由勾選球類，例如「羽球＋籃球合計最多 1 筆」。</div>
+      </div>
+      <button type="button" id="addRegistrationLimitGroup" class="btn btn-gray">新增跨球類限制</button>
+    </div>
+    <div class="single-limit-grid">
+      ${REGISTRATION_VENUES.map(v=>`<div class="field"><label>${v}</label><div class="limit-input-wrap"><input class="single-limit-input" data-venue="${v}" type="number" min="0" step="1" value="${Number(draft.single[v]||0)}"><span>筆</span></div></div>`).join('')}
+    </div>
+    <div class="cross-limit-list">
+      ${draft.groups.length?draft.groups.map((g,i)=>`
+        <div class="cross-limit-row" data-group-index="${i}">
+          <div class="cross-limit-name">跨球類 ${i+1}</div>
+          <div class="cross-limit-venues">
+            ${REGISTRATION_VENUES.map(v=>`<label class="limit-check"><input type="checkbox" class="group-venue-input" data-group-index="${i}" value="${v}" ${g.venues.includes(v)?'checked':''}> ${v}</label>`).join('')}
+          </div>
+          <div class="cross-limit-max"><span>合計最多</span><input class="group-max-input" data-group-index="${i}" type="number" min="1" step="1" value="${g.max}"><span>筆</span></div>
+          <button type="button" class="btn btn-gray remove-limit-group" data-group-index="${i}">刪除</button>
+        </div>`).join(''):'<div class="empty-limit-note">目前沒有跨球類限制。</div>'}
+    </div>
+    <div class="registration-limit-actions">
+      <button type="button" id="saveRegistrationLimits" class="btn btn-primary">儲存登記限制</button>
+    </div>`;
+
+  box.querySelectorAll('.single-limit-input').forEach(input=>input.oninput=()=>{
+    draft.single[input.dataset.venue]=Math.max(0,Math.floor(Number(input.value)||0));
+  });
+  box.querySelectorAll('.group-venue-input').forEach(input=>input.onchange=()=>{
+    const i=Number(input.dataset.groupIndex); if(!draft.groups[i]) return;
+    const checked=[...box.querySelectorAll(`.group-venue-input[data-group-index="${i}"]:checked`)].map(x=>x.value);
+    draft.groups[i].venues=checked;
+  });
+  box.querySelectorAll('.group-max-input').forEach(input=>input.oninput=()=>{
+    const i=Number(input.dataset.groupIndex); if(!draft.groups[i]) return;
+    draft.groups[i].max=Math.max(1,Math.floor(Number(input.value)||1));
+  });
+  box.querySelectorAll('.remove-limit-group').forEach(btn=>btn.onclick=()=>{
+    draft.groups.splice(Number(btn.dataset.groupIndex),1); renderRegistrationLimitEditor();
+  });
+  const add=document.getElementById('addRegistrationLimitGroup');
+  if(add) add.onclick=()=>{
+    draft.groups.push({id:`group_${Date.now()}`,venues:['羽球','籃球'],max:1});
+    renderRegistrationLimitEditor();
+  };
+  const save=document.getElementById('saveRegistrationLimits');
+  if(save) save.onclick=async()=>{
+    const invalid=draft.groups.find(g=>g.venues.length<2 || !Number.isFinite(Number(g.max)) || Number(g.max)<1);
+    if(invalid){ alert('跨球類限制至少需勾選 2 種球類，且上限至少為 1。'); return; }
+    const normalized=normalizeRegistrationLimitRules(draft);
+    save.disabled=true; save.textContent='儲存中...';
+    const ok=await saveSetting('registration_limit_rules',JSON.stringify(normalized));
+    save.disabled=false; save.textContent='儲存登記限制';
+    if(!ok) return;
+    window.registrationRuleDraft=normalized;
+    await writeOperationLog('更新登記限制',{rules:normalized});
+    alert('登記限制已儲存並同步至前台。');
+  };
 }
 function stageKeyFromRecord(r){ return `${recordLocation(r)}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`; }
 function getStageGroups(records=allRecords){
@@ -5172,6 +5308,10 @@ function renderCapacityPage(){
 
       <div class="capacity-section-divider"></div>
 
+      <div id="registrationLimitEditor" class="registration-limit-editor"></div>
+
+      <div class="capacity-section-divider"></div>
+
       <div class="capacity-toolbar">
         <div class="capacity-toolbar-main">
           <div class="capacity-field">
@@ -5216,6 +5356,8 @@ function renderCapacityPage(){
     };
   });
 
+  window.registrationRuleDraft=getRegistrationLimitRules();
+  renderRegistrationLimitEditor();
   renderBulkCapacityTable();
 
   const saveRegistrationWindowBtn=document.getElementById('saveRegistrationWindow');
@@ -7550,55 +7692,13 @@ function confirmModal(title, body){
 
 function exportToCsv(records){
   if(!records.length){alert('沒有資料可以匯出');return;}
-  if(typeof XLSX==='undefined'){
-    alert('Excel 匯出元件尚未載入，請重新整理頁面後再試。');
-    return;
-  }
-
-  const headers=['序號','抽籤狀態','公布狀態','鎖定','異常狀態','姓名','手機','身分證後4碼','地點','運動類型','星期','時段','登記時間'];
-  const rows=records.map(r=>{
+  let csv='序號,抽籤狀態,公布狀態,鎖定,異常狀態,姓名,手機,身分證後4碼,地點,運動類型,星期,時段,登記時間\n';
+  records.forEach(r=>{
     const state=isSuspiciousPhone(r)?'手機重複':'正常';
-    return [
-      String(r.serial_number||''),
-      String(r.lottery_status||'未抽籤'),
-      r.result_published?'已公布':'未公布',
-      r.lottery_locked?'已鎖定':'未鎖定',
-      state,
-      String(r.name||''),
-      String(r.phone||''),
-      String(r.id_last4||''),
-      String(r.location_name||''),
-      String(r.venue_type||''),
-      String(r.day_of_week||''),
-      String(r.time_slot||''),
-      String(r.registered_at||'')
-    ];
+    csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.result_published?'已公布':'未公布'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${r.id_last4||''}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
   });
-
-  const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
-
-  // 序號、手機、身分證後4碼皆屬識別資料，不應被 Excel 當成數值或科學記號。
-  // 強制指定為文字格式，避免 2609... 顯示成 2.609E+11，也保留手機／後4碼前導 0。
-  const textColumns=[0,6,7];
-  for(let rowIndex=1; rowIndex<=rows.length; rowIndex++){
-    textColumns.forEach(colIndex=>{
-      const addr=XLSX.utils.encode_cell({r:rowIndex,c:colIndex});
-      if(ws[addr]){
-        ws[addr].t='s';
-        ws[addr].v=String(ws[addr].v??'');
-        ws[addr].z='@';
-      }
-    });
-  }
-
-  ws['!cols']=[
-    {wch:16},{wch:12},{wch:10},{wch:10},{wch:12},{wch:12},{wch:14},
-    {wch:14},{wch:12},{wch:12},{wch:10},{wch:16},{wch:24}
-  ];
-
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'登記清單');
-  XLSX.writeFile(wb,`登記清單_${new Date().toISOString().slice(0,10)}.xlsx`,{bookType:'xlsx'});
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`登記清單_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
 function showAnomalyDefinitionModal(){
   const body=`
