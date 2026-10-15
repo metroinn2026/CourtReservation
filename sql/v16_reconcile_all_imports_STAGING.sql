@@ -285,6 +285,11 @@ BEGIN
     RAISE EXCEPTION 'invalid status';
   END IF;
 
+  -- Always acquire the global lock before any row lock (same order as import).
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('court_v16_form_import_reconcile', 0)
+  );
+
   SELECT a.batch_id INTO v_batch
   FROM public.lottery_import_anomalies a
   WHERE a.id = p_anomaly_id
@@ -305,6 +310,171 @@ BEGIN
   RETURN true;
 END;
 $function$;
+
+-- Public entry points are invoker functions; privileged implementations remain
+-- in the non-exposed private schema and independently validate the Auth allowlist.
+CREATE OR REPLACE FUNCTION private.court_v16_lottery_eligibility()
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog
+AS $function$
+DECLARE
+  v_records jsonb;
+  v_capacity jsonb;
+BEGIN
+  IF auth.uid() IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public.lottery_import_admins WHERE user_id = auth.uid()
+  ) THEN RAISE EXCEPTION 'not authorized'; END IF;
+  PERFORM public.court_v16_reconcile_import_anomalies();
+  IF EXISTS (SELECT 1 FROM public.lottery_records r
+    LEFT JOIN public.lottery_form_submissions s ON s.submission_key = r.import_submission_key
+    WHERE NULLIF(r.member_key_hash,'') IS NULL OR NULLIF(r.import_record_key,'') IS NULL
+      OR s.submission_key IS NULL OR r.member_key_hash IS DISTINCT FROM s.member_key_hash
+      OR s.submitted_at_text IS NULL
+      OR NOT pg_input_is_valid(s.submitted_at_text,'timestamp with time zone')
+      OR public.court_v16_slots_overlap(r.time_slot,r.time_slot) IS NOT TRUE
+      OR COALESCE(r.venue_type,'') NOT IN ('羽球','籃球','B1桌球','B2桌球')
+      OR COALESCE(r.day_of_week,'') NOT IN ('周一','周二','周三','周四','周五','周六','周日')) THEN
+    RAISE EXCEPTION '登記來源、會員識別或場次資料不完整，不能抽籤';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.lottery_import_anomalies
+    WHERE COALESCE(resolution_status,'pending') NOT IN ('valid','invalid')) THEN
+    RAISE EXCEPTION '尚有異常待人工確認，不能抽籤';
+  END IF;
+
+  -- A manual "valid" label cannot waive the actual one-sport/overlap limits.
+  WITH eligible AS (
+    SELECT r.* FROM public.lottery_records r WHERE NOT EXISTS (
+      SELECT 1 FROM public.lottery_import_anomalies a WHERE a.resolution_status = 'invalid'
+        AND (a.record_keys @> ARRAY[r.import_record_key] OR
+          (cardinality(a.record_keys)=0 AND a.submission_keys @> ARRAY[r.import_submission_key]))
+    )
+  ) SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'id',r.id,'record_key',r.import_record_key,'member_key_hash',r.member_key_hash,
+      'location_name',r.location_name,'venue_type',r.venue_type,'day_of_week',r.day_of_week,
+      'time_slot',r.time_slot,'lottery_status',COALESCE(r.lottery_status,''),
+      'lottery_locked',COALESCE(r.lottery_locked,false),'result_published',COALESCE(r.result_published,false),
+      'eligible',e.id IS NOT NULL) ORDER BY r.id),'[]'::jsonb)
+    INTO v_records FROM public.lottery_records r LEFT JOIN eligible e ON e.id=r.id;
+  IF EXISTS (
+    WITH eligible AS (
+      SELECT r.* FROM public.lottery_records r WHERE NOT EXISTS (
+        SELECT 1 FROM public.lottery_import_anomalies a WHERE a.resolution_status='invalid'
+          AND (a.record_keys @> ARRAY[r.import_record_key] OR
+            (cardinality(a.record_keys)=0 AND a.submission_keys @> ARRAY[r.import_submission_key]))
+      )
+    )
+    SELECT 1 FROM eligible a JOIN eligible b ON a.member_key_hash=b.member_key_hash AND a.id<b.id
+    WHERE (a.venue_type=b.venue_type AND a.venue_type IN ('羽球','籃球'))
+      OR (a.venue_type=b.venue_type AND a.day_of_week=b.day_of_week AND a.time_slot=b.time_slot)
+      OR (a.venue_type<>b.venue_type AND a.day_of_week=b.day_of_week
+        AND public.court_v16_slots_overlap(a.time_slot,b.time_slot) IS NOT FALSE)
+  ) THEN RAISE EXCEPTION '確認有效的登記仍有會員名額或時段衝突，請將不符合規則者確認無效'; END IF;
+  SELECT COALESCE(jsonb_agg(to_jsonb(c) ORDER BY c.venue_type,c.day_of_week,c.time_slot),'[]'::jsonb)
+    INTO v_capacity FROM public.lottery_capacity_settings c;
+  RETURN jsonb_build_object('records',v_records,'snapshot',md5(v_records::text || v_capacity::text));
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.court_v16_lottery_eligibility()
+RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path = pg_catalog
+AS $function$ SELECT private.court_v16_lottery_eligibility() $function$;
+
+CREATE OR REPLACE FUNCTION private.court_v16_commit_lottery_results(p_rows jsonb,p_snapshot text,p_batch text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog
+AS $function$
+DECLARE
+  v_state jsonb;
+  v_stage record;
+  v_cap integer;
+  v_closed boolean;
+  v_count integer;
+  v_wait_count integer;
+  v_wait_distinct integer;
+  v_wait_max integer;
+BEGIN
+  IF auth.uid() IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public.lottery_import_admins WHERE user_id=auth.uid()
+  ) THEN RAISE EXCEPTION 'not authorized'; END IF;
+  IF jsonb_typeof(p_rows) IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'results must be an array'; END IF;
+  IF jsonb_array_length(p_rows) NOT BETWEEN 1 AND 10000 OR COALESCE(length(p_batch),0) NOT BETWEEN 1 AND 200 THEN
+    RAISE EXCEPTION 'invalid result count or batch label';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_rows) x
+      WHERE jsonb_typeof(x) IS DISTINCT FROM 'object' OR NULLIF(x->>'id','') IS NULL
+        OR COALESCE(x->>'status','') !~ '^(中籤|未中籤|候補[1-9][0-9]{0,4})$'
+        OR (x - 'id' - 'status') <> '{}'::jsonb)
+    OR (SELECT count(DISTINCT x->>'id') FROM jsonb_array_elements(p_rows) x) <> jsonb_array_length(p_rows) THEN
+    RAISE EXCEPTION 'duplicate IDs or invalid result fields';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('court_v16_form_import_reconcile',0));
+  -- Also serialize with legacy direct writes while the permission migration is pending.
+  LOCK TABLE public.lottery_records,public.lottery_form_submissions,
+    public.lottery_import_anomalies,public.lottery_capacity_settings IN SHARE ROW EXCLUSIVE MODE;
+  v_state := private.court_v16_lottery_eligibility();
+  IF p_snapshot IS DISTINCT FROM v_state->>'snapshot' THEN
+    RAISE EXCEPTION '名單或名額已變更，請重新載入並確認結果';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_rows) x
+    LEFT JOIN jsonb_array_elements(v_state->'records') r ON r->>'id'=x->>'id'
+    WHERE r IS NULL OR (r->>'eligible')::boolean IS NOT TRUE
+      OR (r->>'lottery_locked')::boolean OR (r->>'result_published')::boolean
+      OR r->>'lottery_status'<>'') THEN
+    RAISE EXCEPTION '結果含無效、不存在或已有結果的登記';
+  END IF;
+  -- Every affected stage must be complete; never silently write half a draw.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(v_state->'records') r
+    WHERE (r->>'eligible')::boolean
+      AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(p_rows) x WHERE x->>'id'=r->>'id')
+      AND EXISTS (SELECT 1 FROM jsonb_array_elements(p_rows) x
+        JOIN public.lottery_records t ON t.id=(x->>'id')::uuid
+        WHERE t.location_name IS NOT DISTINCT FROM r->>'location_name'
+          AND t.venue_type=r->>'venue_type' AND t.day_of_week=r->>'day_of_week' AND t.time_slot=r->>'time_slot')
+  ) THEN RAISE EXCEPTION '抽籤結果未涵蓋該場次全部有效登記'; END IF;
+
+  FOR v_stage IN SELECT DISTINCT r.location_name,r.venue_type,r.day_of_week,r.time_slot
+    FROM public.lottery_records r JOIN jsonb_array_elements(p_rows) x ON r.id=(x->>'id')::uuid
+  LOOP
+    v_cap := NULL; v_closed := false;
+    SELECT c.winner_count,c.is_closed INTO v_cap,v_closed FROM public.lottery_capacity_settings c
+      WHERE c.venue_type=v_stage.venue_type AND c.day_of_week=v_stage.day_of_week
+        AND c.time_slot IN (v_stage.time_slot,btrim(split_part(v_stage.time_slot,'-',1)))
+      ORDER BY (c.time_slot=v_stage.time_slot) DESC LIMIT 1;
+    v_cap := COALESCE(v_cap,CASE v_stage.venue_type WHEN '羽球' THEN 3 WHEN '籃球' THEN 1 WHEN 'B1桌球' THEN 5 WHEN 'B2桌球' THEN 4 END);
+    SELECT count(*) FILTER (WHERE x->>'status'='中籤'),
+      count(*) FILTER (WHERE x->>'status' LIKE '候補%'),
+      count(DISTINCT x->>'status') FILTER (WHERE x->>'status' LIKE '候補%'),
+      COALESCE(max(CASE WHEN x->>'status' LIKE '候補%' THEN substring(x->>'status' FROM 3)::integer END),0)
+      INTO v_count,v_wait_count,v_wait_distinct,v_wait_max
+      FROM jsonb_array_elements(p_rows) x JOIN public.lottery_records r ON r.id=(x->>'id')::uuid
+      WHERE r.location_name IS NOT DISTINCT FROM v_stage.location_name AND r.venue_type=v_stage.venue_type
+        AND r.day_of_week=v_stage.day_of_week AND r.time_slot=v_stage.time_slot;
+    IF COALESCE(v_closed,false) OR v_cap<=0 OR v_count>v_cap THEN RAISE EXCEPTION '場次未開放或中籤人數超過名額'; END IF;
+    IF v_wait_count<>v_wait_distinct OR v_wait_count<>v_wait_max THEN RAISE EXCEPTION '候補順位重複或不連續'; END IF;
+  END LOOP;
+  UPDATE public.lottery_records r SET lottery_status=x.status,lottery_locked=true,
+    lottery_batch=p_batch,result_published=false,published_at=NULL,updated_at=now()
+    FROM jsonb_to_recordset(p_rows) x(id uuid,status text) WHERE r.id=x.id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  INSERT INTO public.lottery_import_audit(batch_id,actor_id,action,detail)
+    SELECT s.batch_id,auth.uid(),'commit_lottery_results',jsonb_build_object(
+      'lottery_batch',p_batch,'snapshot',p_snapshot,'record_ids',jsonb_agg(r.id ORDER BY r.id))
+    FROM public.lottery_records r JOIN public.lottery_form_submissions s ON s.submission_key=r.import_submission_key
+    JOIN jsonb_array_elements(p_rows) x ON r.id=(x->>'id')::uuid GROUP BY s.batch_id;
+  RETURN jsonb_build_object('updated_count',v_count);
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.court_v16_commit_lottery_results(p_rows jsonb,p_snapshot text,p_batch text)
+RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path = pg_catalog
+AS $function$ SELECT private.court_v16_commit_lottery_results(p_rows,p_snapshot,p_batch) $function$;
+
+REVOKE ALL ON FUNCTION private.court_v16_lottery_eligibility(),
+  private.court_v16_commit_lottery_results(jsonb,text,text),
+  public.court_v16_lottery_eligibility(),public.court_v16_commit_lottery_results(jsonb,text,text) FROM PUBLIC,anon;
+GRANT USAGE ON SCHEMA private TO authenticated;
+GRANT EXECUTE ON FUNCTION private.court_v16_lottery_eligibility(),
+  private.court_v16_commit_lottery_results(jsonb,text,text),
+  public.court_v16_lottery_eligibility(),public.court_v16_commit_lottery_results(jsonb,text,text) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.court_v16_slots_overlap(text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.court_v16_slots_overlap(text, text) TO anon, authenticated, service_role;
