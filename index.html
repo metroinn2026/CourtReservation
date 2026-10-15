@@ -68,7 +68,8 @@
             return null;
           }
           if (!window.__venueLotterySupabaseClient) {
-            window.__venueLotterySupabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            // 前台維持匿名資料連線，不沿用後台 Google 表單匯入的 Auth session。
+            window.__venueLotterySupabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
           }
           return window.__venueLotterySupabaseClient;
         }
@@ -246,7 +247,7 @@
             return null;
           }
           if (!window.__venueLotterySupabaseClient) {
-            window.__venueLotterySupabaseClient = window.supabase.createClient(CAPACITY_SUPABASE_URL, CAPACITY_SUPABASE_KEY);
+            window.__venueLotterySupabaseClient = window.supabase.createClient(CAPACITY_SUPABASE_URL, CAPACITY_SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
           }
           return window.__venueLotterySupabaseClient;
         }
@@ -365,7 +366,7 @@
             return null;
           }
           if (!window.__venueLotterySupabaseClient) {
-            window.__venueLotterySupabaseClient = window.supabase.createClient(SETTINGS_SUPABASE_URL, SETTINGS_SUPABASE_KEY);
+            window.__venueLotterySupabaseClient = window.supabase.createClient(SETTINGS_SUPABASE_URL, SETTINGS_SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
           }
           return window.__venueLotterySupabaseClient;
         }
