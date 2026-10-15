@@ -5866,6 +5866,8 @@ async function getLotteryEligibility(){
   // Reconcile stored registrations across batches before every lottery operation.
   const {error:reconcileError}=await importDb.rpc('court_v16_reconcile_import_anomalies');
   if(reconcileError)throw new Error('跨批次會員規則檢核未完成：'+reconcileError.message+'。請先在測試資料庫安裝 v16 驗證 SQL。');
+  const unverified=(allRecords||[]).filter(r=>!r.member_key_hash||!r.import_submission_key||!r.import_record_key);
+  if(unverified.length)throw new Error(`目前有 ${unverified.length} 筆登記缺少伺服器產生的會員識別雜湊或表單來源鍵，無法依 v16 規則確認抽籤資格；請先完成來源資料核對。`);
   const {data,error}=await importDb.from('lottery_import_anomalies').select('id,anomaly_type,resolution_status,record_keys,submission_keys').range(0,999);
   if(error)throw new Error('異常資格檢核失敗：'+error.message);
   if((data||[]).length===1000)throw new Error('異常筆數達單次安全檢核上限，請先處理或分批核對，不可直接匯出。');
@@ -7802,8 +7804,8 @@ document.getElementById('createFirstAdminBtn').onclick=async()=>{
   }catch(e){ showMsg('loginMsg',`建立失敗：${e.message||'請確認 Supabase Auth 管理員授權及資料庫 SQL。'}`); console.error(e); }
 };
 document.getElementById('logoutBtn').onclick=logout;
-function normalizeFormDay(value){const m=String(value||'').match(/週([一二三四五六日])/);return m?`周${m[1]}`:'';}
-function normalizeFormTime(value){return String(value||'').split(/[,，、\n]/).map(x=>x.trim()).filter(Boolean);}
+function normalizeFormDay(value){const m=String(value||'').match(/(?:週|周|星期)([一二三四五六日])/);return m?`周${m[1]}`:'';}
+function normalizeFormTime(value){return String(value||'').split(/[,，、\n]/).map(x=>x.trim().replace(/[：]/g,':').replace(/[–—－~～至到]/g,'-').replace(/\s*-\s*/g,'-')).filter(Boolean);}
 function formField(row,title){return String(row[title]??'').trim();}
 function normalizeFormTimestamp(value){
   if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString();
@@ -7838,7 +7840,7 @@ async function parseGoogleFormWorkbook(file){
     if(Object.prototype.hasOwnProperty.call(safePayload,identifierField))safePayload[identifierField]=`末4碼 ${identifier.slice(-4)}`;
     const normalizedMemberType=isGo?'台北捷運Go會員':(isBeitou?'北投會館會員':'');
     const sub={submission_key:submissionKey,submitted_at:stamp,member_type:normalizedMemberType,member_key_hash:memberKeyHash,member_identifier:identifier,name,phone,email,raw_payload:safePayload,excel_row:excelRow};submissions.push(sub);
-    if(!name||!normalizedMemberType||!identifier||!phone||!email||(isBeitou&&!/^[A-Z][0-9]{9}$/.test(identifier))||(isGo&&!/^09\d{8}$/.test(phone)))anomalies.push({type:'基本資料格式或必填欄位異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});
+    if(!name||!normalizedMemberType||!identifier||!/^09\d{8}$/.test(phone)||!email||(isBeitou&&!/^[A-Z][0-9]{9}$/.test(identifier))||(isGo&&!/^09\d{8}$/.test(identifier)))anomalies.push({type:'基本資料格式或必填欄位異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});
     const selected=[];
     // v16: 羽球與籃球分別詢問是否申請；保留 v15 單選欄位向下相容。
     const legacySport=formField(row,'是否申請羽球／籃球？');
@@ -7855,13 +7857,17 @@ async function parseGoogleFormWorkbook(file){
     tableSlots.forEach(v=>{const [venue,day,time]=v.split('|');selected.push({venue,day,time});});
     if(!selected.length)anomalies.push({type:'未選擇任何場次',submissionKeys:[submissionKey],recordKeys:[]});
     const seenSlots=new Set();for(const slot of selected){if(!slot.day||!slot.time){anomalies.push({type:'場次欄位無法辨識',submissionKeys:[submissionKey],recordKeys:[]});continue;}
+      const timeParts=slot.time.match(/^([0-9]{1,2}):([0-9]{2})\s*[-–~至]\s*([0-9]{1,2}):([0-9]{2})$/);
+      const validTime=timeParts&&Number(timeParts[1])<=23&&Number(timeParts[3])<=23&&Number(timeParts[2])<=59&&Number(timeParts[4])<=59&&(Number(timeParts[1])*60+Number(timeParts[2]))<(Number(timeParts[3])*60+Number(timeParts[4]));
+      if(!validTime){anomalies.push({type:'場次時間格式異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列：${slot.time}`});continue;}
       const key=[slot.venue,slot.day,slot.time].join('|');if(seenSlots.has(key)){const duplicatedKey=await sha256(`${submissionKey}|${key}`);anomalies.push({type:'同一回覆重複選擇場次',submissionKeys:[submissionKey],recordKeys:[duplicatedKey]});continue;}seenSlots.add(key);
       const recordKey=await sha256(`${submissionKey}|${key}`);records.push({submission_key:submissionKey,record_key:recordKey,member_key_hash:memberKeyHash,member_type:sub.member_type,member_identifier_last4:identifier.slice(-4),name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:slot.time,serial_number:`GF-${recordKey.slice(0,12).toUpperCase()}`,registered_at:stamp||new Date().toISOString()});
     }
   }
-  const identities=new Map();submissions.forEach(s=>{const a=identities.get(s.member_key_hash)||[];a.push(s);identities.set(s.member_key_hash,a);});
-  // 同會員分別最多羽球1場、籃球1場；桌球不設數量上限。
-  // 對不同會員不做跨會員時段衝突判斷。
+  const validSubmissionKeys=new Set(submissions.filter(s=>s.member_type&&s.member_identifier).map(s=>s.submission_key));
+  const validSubmissions=submissions.filter(s=>s.member_type&&s.member_identifier);
+  const identities=new Map();
+  validSubmissions.forEach(s=>{const a=identities.get(s.member_key_hash)||[];a.push(s);identities.set(s.member_key_hash,a);});
   identities.forEach(g=>{
     const keys=[...new Set(g.map(x=>x.submission_key))];
     const related=records.filter(r=>keys.includes(r.submission_key));
@@ -7869,52 +7875,73 @@ async function parseGoogleFormWorkbook(file){
       anomalies.push({type:'相同識別資料對應不同姓名',submissionKeys:keys,recordKeys:related.map(r=>r.record_key)});
   });
   function timeRange(t){
-    const parts=String(t||'').match(/(\d{1,2}):(\d{2})\s*[-–~]\s*(\d{1,2}):(\d{2})/);
-    return parts?[Number(parts[1])*60+Number(parts[2]),Number(parts[3])*60+Number(parts[4])]:null;
+    const parts=String(t||'').match(/(\d{1,2}):(\d{2})\s*[-–~至]\s*(\d{1,2}):(\d{2})/);
+    if(!parts||Number(parts[1])>23||Number(parts[3])>23||Number(parts[2])>59||Number(parts[4])>59)return null;
+    const start=Number(parts[1])*60+Number(parts[2]),end=Number(parts[3])*60+Number(parts[4]);
+    return start<end&&end<=1440?[start,end]:null;
   }
-  function overlaps(a,b){const x=timeRange(a),y=timeRange(b);return x&&y&&x[0]<y[1]&&y[0]<x[1];}
+  function overlaps(a,b){const x=timeRange(a),y=timeRange(b);return !!(x&&y&&x[0]<y[1]&&y[0]<x[1]);}
+  const limitedSports=new Set(['羽球','籃球']);
+  function conflictReason(a,b){
+    if(a.venue_type===b.venue_type&&limitedSports.has(a.venue_type))return a.venue_type+'每位會員超過1場';
+    if(a.venue_type===b.venue_type&&a.day_of_week===b.day_of_week&&a.time_slot===b.time_slot)return '同一會員重複申請相同場次';
+    if(a.day_of_week===b.day_of_week&&a.venue_type!==b.venue_type&&overlaps(a.time_slot,b.time_slot))return '同會員同日期同時段跨球類重複';
+    return '';
+  }
+  function addRecordAnomaly(type,r,detail=''){
+    if(anomalies.some(a=>a.type===type&&(a.recordKeys||[]).includes(r.record_key)))return;
+    anomalies.push({type,submissionKeys:[r.submission_key],recordKeys:[r.record_key],...(detail?{detail}:{})});
+  }
   const byMember=new Map();
-  records.forEach(r=>{const k=r.member_key_hash;const arr=byMember.get(k)||[];arr.push(r);byMember.set(k,arr);});
+  records.filter(r=>validSubmissionKeys.has(r.submission_key)).forEach(r=>{const k=r.member_key_hash;const arr=byMember.get(k)||[];arr.push(r);byMember.set(k,arr);});
   for(const memberRecords of byMember.values()){
-    memberRecords.sort((a,b)=>Date.parse(a.registered_at)-Date.parse(b.registered_at)||a.submission_key.localeCompare(b.submission_key)||a.record_key.localeCompare(b.record_key));
-    const accepted=[],sportCount={'羽球':0,'籃球':0};
-    for(const r of memberRecords){
-      const previous=accepted.find(p=>p.day_of_week===r.day_of_week && p.venue_type!==r.venue_type && overlaps(p.time_slot,r.time_slot));
-      if(previous){
-        const sameSubmit=previous.submission_key===r.submission_key;
-        if(sameSubmit){
-          // 同一回覆沒有跨題目的先後提交順序：兩筆一併待人工確認。
-          anomalies.push({type:'同一回覆跨球類時段衝突（雙方待人工確認）',submissionKeys:[r.submission_key],recordKeys:[previous.record_key,r.record_key],detail:previous.venue_type+' / '+r.venue_type+'｜'+r.day_of_week+'｜'+r.time_slot});
-          accepted.splice(accepted.indexOf(previous),1);
-          if(Object.hasOwn(sportCount,previous.venue_type))sportCount[previous.venue_type]--;
-        }else{
-          anomalies.push({type:'同會員同日期同時段跨球類重複（後筆）',submissionKeys:[r.submission_key],recordKeys:[r.record_key],detail:'衝突較早資料：'+previous.venue_type+' '+previous.day_of_week+' '+previous.time_slot});
+    const internal=new Map();
+    const sameSubmissionGroups=new Map();
+    memberRecords.forEach(r=>{const a=sameSubmissionGroups.get(r.submission_key)||[];a.push(r);sameSubmissionGroups.set(r.submission_key,a);});
+    for(const group of sameSubmissionGroups.values()){
+      for(let i=0;i<group.length;i++)for(let j=i+1;j<group.length;j++){
+        const a=group[i],b=group[j],reason=conflictReason(a,b);
+        if(!reason)continue;
+        const type=reason==='同會員同日期同時段跨球類重複'?'同一回覆跨球類時段衝突（雙方待人工確認）':'同一回覆登記衝突（雙方待人工確認）';
+        for(const [record,peer] of [[a,b],[b,a]]){
+          const key=record.record_key+'|'+type;
+          const entry=internal.get(key)||{record,type,peers:new Set()};
+          entry.peers.add(peer.venue_type+' '+peer.day_of_week+' '+peer.time_slot);
+          internal.set(key,entry);
         }
-        continue;
       }
-      if((r.venue_type==='羽球'||r.venue_type==='籃球')&&sportCount[r.venue_type]>=1){
-        anomalies.push({type:r.venue_type+'每位會員超過1場（後筆）',submissionKeys:[r.submission_key],recordKeys:[r.record_key]});
+    }
+    const manualKeys=new Set();
+    internal.forEach(({record,type,peers})=>{
+      manualKeys.add(record.record_key);
+      addRecordAnomaly(type,record,'同一份回覆內無法判定申請先後；衝突場次：'+[...peers].join('；'));
+    });
+    memberRecords.sort((a,b)=>Date.parse(a.registered_at)-Date.parse(b.registered_at)||a.submission_key.localeCompare(b.submission_key)||a.record_key.localeCompare(b.record_key));
+    const byTimestamp=new Map();
+    memberRecords.forEach(r=>{const k=Date.parse(r.registered_at),a=byTimestamp.get(k)||[];a.push(r);byTimestamp.set(k,a);});
+    for(const sameTimeRecords of byTimestamp.values()){
+      for(let i=0;i<sameTimeRecords.length;i++)for(let j=i+1;j<sameTimeRecords.length;j++){
+        const a=sameTimeRecords[i],b=sameTimeRecords[j];
+        if(a.submission_key===b.submission_key||!conflictReason(a,b))continue;
+        manualKeys.add(a.record_key);manualKeys.add(b.record_key);
+        addRecordAnomaly('同時間提交衝突（雙方待人工確認）',a,'另一筆：'+b.venue_type+' '+b.day_of_week+' '+b.time_slot);
+        addRecordAnomaly('同時間提交衝突（雙方待人工確認）',b,'另一筆：'+a.venue_type+' '+a.day_of_week+' '+a.time_slot);
+      }
+    }
+    const accepted=[];
+    for(const r of memberRecords){
+      if(manualKeys.has(r.record_key))continue;
+      const previous=accepted.find(p=>conflictReason(p,r));
+      if(previous){
+        const reason=conflictReason(previous,r);
+        const type=reason+'（後筆）';
+        addRecordAnomaly(type,r,'較早登記：'+previous.venue_type+' '+previous.day_of_week+' '+previous.time_slot);
         continue;
       }
       accepted.push(r);
-      if(Object.hasOwn(sportCount,r.venue_type))sportCount[r.venue_type]++;
     }
   }
-  // 申請人數超過球場容量屬正常抽籤情境，不列為登記異常。
-  // 聯絡手機可能由不同會員共用；不可單憑共用電話判定異常。
-
-
-  // 同一會員重複提交完全相同桌球場次，後筆列異常（桌球不限不同場次）。
-  const duplicates=new Map();
-  records.forEach(r=>{
-    const key=[r.member_key_hash,r.venue_type,r.day_of_week,r.time_slot].join('|');
-    const arr=duplicates.get(key)||[];arr.push(r);duplicates.set(key,arr);
-  });
-  for(const arr of duplicates.values()){
-    if(arr.length<2 || ['羽球','籃球'].includes(arr[0].venue_type))continue;
-    arr.sort((a,b)=>Date.parse(a.registered_at)-Date.parse(b.registered_at)||a.record_key.localeCompare(b.record_key));
-    for(const r of arr.slice(1))anomalies.push({type:'同一會員重複申請相同場次（後筆）',submissionKeys:[r.submission_key],recordKeys:[r.record_key]});
-  }
+  // 超過球場名額是正常抽籤情況。會員衝突以會員識別雜湊判斷，不使用共用聯絡手機。
   return{submissions,records,anomalies};
 }
 let pendingFormImport=null;
@@ -7924,7 +7951,20 @@ function renderGoogleFormImportPage(){
   document.getElementById('previewFormBtn').onclick=async()=>{try{const f=document.getElementById('formWorkbook').files[0];if(!f)throw new Error('請先選擇Excel檔案。');pendingFormImport=await parseGoogleFormWorkbook(f);renderFormImportPreview();}catch(e){pendingFormImport=null;document.getElementById('formImportPreview').innerHTML=`<div class="msg error">${escapeHtml(e.message||String(e))}</div>`;}};
   document.getElementById('refreshFormAnomalies').onclick=loadFormAnomalies;loadFormAnomalies();
 }
-function renderFormImportPreview(){const p=pendingFormImport,box=document.getElementById('formImportPreview');if(!p||!box)return;const counts={};p.anomalies.forEach(a=>counts[a.type]=(counts[a.type]||0)+1);box.innerHTML=`<div class="msg info">${p.submissions.length} 份回覆，拆分 ${p.records.length} 筆場次，${p.anomalies.length} 項異常。</div><div class="table-wrap"><table><thead><tr><th>異常類型</th><th>筆數</th><th>關聯資料</th></tr></thead><tbody>${Object.entries(counts).map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td>匯入後可逐項確認</td></tr>`).join('')||'<tr><td colspan="3">未發現匯入前異常</td></tr>'}</tbody></table></div><button id="commitFormImportBtn" class="btn btn-primary" style="margin-top:12px">確認匯入 ${p.records.length} 筆場次</button>`;document.getElementById('commitFormImportBtn').onclick=commitGoogleFormImport;}
+function renderFormImportPreview(){
+  const p=pendingFormImport,box=document.getElementById('formImportPreview');
+  if(!p||!box)return;
+  const counts={};
+  p.anomalies.forEach(a=>counts[a.type]=(counts[a.type]||0)+1);
+  const blocked=p.anomalies.some(a=>a.type==='基本資料格式或必填欄位異常');
+  const blockingNotice=blocked
+    ? '<div class="msg error">有回覆缺少必要會員資料或格式錯誤，請修正原始表單後重新匯入；本批資料不會寫入資料庫。</div>'
+    : '';
+  const rows=Object.entries(counts).map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td>匯入後可逐項確認</td></tr>`).join('')
+    || '<tr><td colspan="3">未發現匯入前異常</td></tr>';
+  box.innerHTML=`<div class="msg info">${p.submissions.length} 份回覆，拆分 ${p.records.length} 筆場次，${p.anomalies.length} 項異常。</div>${blockingNotice}<div class="table-wrap"><table><thead><tr><th>異常類型</th><th>筆數</th><th>關聯資料</th></tr></thead><tbody>${rows}</tbody></table></div><button id="commitFormImportBtn" class="btn btn-primary" style="margin-top:12px" ${blocked?'disabled title="請先修正會員基本資料"':''}>確認匯入 ${p.records.length} 筆場次</button>`;
+  if(!blocked)document.getElementById('commitFormImportBtn').onclick=commitGoogleFormImport;
+}
 async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data:userData,error:userError}=await importDb.auth.getUser();if(userError||!userData?.user){alert('請先登入已授權的 Supabase Auth 管理帳號。');return;}if(!confirm(`將匯入 ${pendingFormImport.submissions.length} 份回覆、${pendingFormImport.records.length} 筆場次。已匯入回覆會自動略過。繼續？`))return;const {data,error}=await importDb.rpc('import_google_form_batch',{p_payload:{batch_key:crypto.randomUUID(),submissions:pendingFormImport.submissions,records:pendingFormImport.records,anomalies:pendingFormImport.anomalies}});if(error){alert(`匯入失敗：${error.message}`);return;}const {error:recheckError}=await importDb.rpc('court_v16_reconcile_import_anomalies');if(recheckError){alert('場次已匯入，但跨批次異常檢核未完成；抽籤功能將暫停。原因：'+recheckError.message);}else{alert(`匯入完成。新增 ${data?.inserted_records||0} 筆場次，略過重複 ${data?.duplicate_submissions||0} 份回覆；已同步跨批次檢核。`);}pendingFormImport=null;await loadAllData();renderGoogleFormImportPage();}
 async function loadFormAnomalies(){const box=document.getElementById('formAnomalyList');if(!box)return;const {data:user}=await importDb.auth.getUser();if(!user?.user){box.innerHTML='<div class="msg info">登入資料庫管理帳號後載入異常清單。</div>';return;}const {data,error}=await importDb.from('lottery_import_anomalies').select('*').order('created_at',{ascending:false}).limit(200);if(error){box.innerHTML=`<div class="msg error">${escapeHtml(error.message)}</div>`;return;}if(!data?.length){box.innerHTML='<div class="msg info">目前沒有異常資料。</div>';return;}box.innerHTML=`<div class="table-wrap"><table><thead><tr><th>異常類型</th><th>狀態</th><th>關聯登記</th><th>處理</th></tr></thead><tbody>${data.map(a=>{const related=(a.record_keys||[]).map(k=>allRecords.find(r=>r.import_record_key===k)).filter(Boolean);const label=related.length?related.map(r=>`${r.name}｜${r.venue_type} ${r.day_of_week} ${r.time_slot}（${r.serial_number}）`).join('；'):((a.submission_keys||[]).length?`${a.submission_keys.length} 份回覆`:'-');return `<tr><td>${escapeHtml(a.anomaly_type)}${a.detail?`<div class="small">${escapeHtml(a.detail)}</div>`:''}</td><td>${escapeHtml(a.resolution_status)}</td><td>${escapeHtml(label)}</td><td><select data-anomaly="${a.id}"><option value="pending" ${a.resolution_status==='pending'?'selected':''}>待確認</option><option value="valid" ${a.resolution_status==='valid'?'selected':''}>確認有效</option><option value="invalid" ${a.resolution_status==='invalid'?'selected':''}>確認無效</option></select> <button class="btn btn-gray" data-save-anomaly="${a.id}">儲存</button></td></tr>`;}).join('')}</tbody></table></div>`;box.querySelectorAll('[data-save-anomaly]').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.saveAnomaly,status=box.querySelector(`[data-anomaly="${id}"]`).value,{error}=await importDb.rpc('resolve_google_form_anomaly',{p_anomaly_id:id,p_status:status});if(error)alert(`儲存失敗：${error.message}`);else loadFormAnomalies();});}
 document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage(btn.dataset.page));
