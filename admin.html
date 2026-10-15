@@ -3746,6 +3746,9 @@
         <p>請輸入管理者帳號與密碼。若系統尚無帳號，會自動顯示建立第一位超級管理員。</p>
         <div id="bootstrapBox" class="hidden">
           <div class="msg info">目前尚未建立後台帳號，請先建立第一位超級管理員。</div>
+          <div class="small" style="margin:10px 0">請先以已授權的 Supabase Auth 帳號驗證身分；此帳號需先加入匯入管理員名單。</div>
+          <div class="field"><label>Supabase Auth Email</label><input id="bootstrapAuthEmail" type="email" autocomplete="username"></div>
+          <div class="field"><label>Supabase Auth 密碼</label><input id="bootstrapAuthPassword" type="password" autocomplete="current-password"></div>
           <div class="field"><label>管理員帳號</label><input id="firstUsername" placeholder="例如 admin"></div>
           <div class="field"><label>顯示名稱</label><input id="firstDisplayName" placeholder="例如 Christina"></div>
           <div class="field"><label>密碼</label><input id="firstPassword" type="password" placeholder="請設定高強度密碼"></div>
@@ -7732,13 +7735,18 @@ function showModal(title,body,onOk,withInput=false,onCancel=null){
 document.getElementById('loginBtn').onclick=login;
 document.getElementById('createFirstAdminBtn').onclick=async()=>{
   const username=document.getElementById('firstUsername').value.trim(), display_name=document.getElementById('firstDisplayName').value.trim(), password=document.getElementById('firstPassword').value;
-  if(!username||!display_name||!password){showMsg('loginMsg','請填完整第一位管理員資料');return;}
+  const authEmail=document.getElementById('bootstrapAuthEmail').value.trim(), authPassword=document.getElementById('bootstrapAuthPassword').value;
+  if(!authEmail||!authPassword||!username||!display_name||!password){showMsg('loginMsg','請填寫 Supabase Auth 帳密及完整的後台管理員資料');return;}
   try{
-    await createAdminAccount({username,display_name,password,role:'super_admin'});
+    const {error:authError}=await db.auth.signInWithPassword({email:authEmail,password:authPassword});
+    if(authError) throw new Error(`Supabase Auth 登入失敗：${authError.message}`);
+    const salt=randomSalt(), password_hash=await makeHash(password,salt);
+    const {error}=await db.rpc('bootstrap_first_super_admin',{p_username:username,p_display_name:display_name,p_salt:salt,p_password_hash:password_hash});
+    if(error) throw error;
     showMsg('loginMsg','第一位管理員已建立，請登入。','ok');
     document.getElementById('bootstrapBox').classList.add('hidden');
     document.getElementById('loginBox').classList.remove('hidden');
-  }catch(e){ showMsg('loginMsg','建立失敗，請確認資料表與權限設定。'); console.error(e); }
+  }catch(e){ showMsg('loginMsg',`建立失敗：${e.message||'請確認 Supabase Auth 管理員授權及資料庫 SQL。'}`); console.error(e); }
 };
 document.getElementById('logoutBtn').onclick=logout;
 function normalizeFormDay(value){const m=String(value||'').match(/週([一二三四五六日])/);return m?`周${m[1]}`:'';}
