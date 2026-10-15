@@ -5854,7 +5854,17 @@ function maskPhoneForNotice(phone){
   return p;
 }
 
+// 安全閘門：表單匯入異常尚未經人工處理時，禁止產出正式抽籤名單。
+// 採 fail-closed：無法取得授權或讀取狀態，亦不得繞過檢核。
+async function verifyFormAnomaliesForLotteryExport(){
+  const {data:userData,error:userError}=await importDb.auth.getUser();
+  if(userError||!userData?.user) throw new Error('請先至「表單匯入／異常」登入 Supabase Auth 管理帳號，確認所有異常已處理，再匯出抽籤名單。');
+  const {count,error}=await importDb.from('lottery_import_anomalies').select('id',{count:'exact',head:true}).neq('resolution_status','valid');
+  if(error)throw new Error('無法查核表單異常狀態：'+error.message+'。為避免名單誤用，暫停輸出。');
+  if(count>0)throw new Error('尚有 '+count+' 項異常未確認有效（含待確認或確認無效）。請先完成逐筆複核並排除無效登記，才能輸出抽籤名單。');
+}
 async function exportPendingLotteryWorkbook(stages){
+  try { await verifyFormAnomaliesForLotteryExport(); } catch(e) { alert(e.message); return; }
   if(typeof XLSX==='undefined'){
     alert('Excel 元件尚未載入，請重新整理後再試。');
     return;
@@ -6182,7 +6192,8 @@ function renderLotteryPage(){
     };
   }
 
-  document.getElementById('exportDayCheckBtn').onclick=()=>{
+  document.getElementById('exportDayCheckBtn').onclick=async()=>{
+    try { await verifyFormAnomaliesForLotteryExport(); } catch(e) { alert(e.message); return; }
     const {records}=getDayCheckRecords();
     if(records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
     exportToCsv(records);
