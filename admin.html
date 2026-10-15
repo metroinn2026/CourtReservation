@@ -4263,7 +4263,9 @@ function normalizeRegistrationLimitRules(raw){
     venues:[...new Set((Array.isArray(g.venues)?g.venues:[]).filter(v=>REGISTRATION_VENUES.includes(v)))],
     max:Math.max(1,Math.floor(Number(g.max)||1))
   })).filter(g=>g.venues.length>=2):[];
-  return {single,groups};
+  // v16 fixed rules: badminton and basketball independently limited to one; table tennis unlimited.
+  single['羽球']=1; single['籃球']=1; single['B1桌球']=0; single['B2桌球']=0;
+  return {single,groups:[]};
 }
 function getRegistrationLimitRules(){
   return normalizeRegistrationLimitRules(systemSettings.registration_limit_rules);
@@ -4298,12 +4300,12 @@ function renderRegistrationLimitEditor(){
     <div class="registration-limit-head">
       <div>
         <div class="capacity-window-title">登記限制</div>
-        <div class="small">0 表示不限。羽球、籃球各限1場；不可設定羽球＋籃球合計限1場。跨不同球類的同星期時段衝突由匯入異常中心檢核。</div>
+        <div class="small">v16 固定規則：羽球限1場、籃球限1場、桌球不限場次；跨球類撞時段由匯入異常中心檢核。</div>
       </div>
-      <button type="button" id="addRegistrationLimitGroup" class="btn btn-gray">新增跨球類限制</button>
+      <button type="button" id="addRegistrationLimitGroup" class="btn btn-gray" disabled>固定規則，不開放新增跨球類限制</button>
     </div>
     <div class="single-limit-grid">
-      ${REGISTRATION_VENUES.map(v=>`<div class="field"><label>${v}</label><div class="limit-input-wrap"><input class="single-limit-input" data-venue="${v}" type="number" min="0" step="1" value="${Number(draft.single[v]||0)}"><span>筆</span></div></div>`).join('')}
+      ${REGISTRATION_VENUES.map(v=>`<div class="field"><label>${v}</label><div class="limit-input-wrap"><input class="single-limit-input" data-venue="${v}" type="number" min="0" disabled step="1" value="${Number(draft.single[v]||0)}"><span>筆</span></div></div>`).join('')}
     </div>
     <div class="cross-limit-list">
       ${draft.groups.length?draft.groups.map((g,i)=>`
