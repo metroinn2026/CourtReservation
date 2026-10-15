@@ -4,7 +4,7 @@
 1. 備份 Supabase 資料庫（包含 lottery_records、lottery_form_submissions、lottery_import_anomalies）。
 2. 使用獨立 Supabase 測試專案及測試 Vercel 環境進行測試。
 3. 在測試資料庫查驗 SQL 索引與 RLS、執行 v16_registration_unique_index_migration.sql。
-4. `v16_server_import_validation_DRAFT.sql` **尚未通過整合測試，不可於正式環境執行**。需要先驗證跨批次、逆序匯入和併發寫入。
+4. 在測試環境安裝 `sql/v16_reconcile_all_imports_STAGING.sql`。此 SQL 尚未連線驗證，請先測試跨批次、逆序匯入及併發寫入；不能直接套用正式環境。
 5. 匯入人工合成的 v16 Google 表單回覆檔；確認回覆和紀錄分開儲存、異常可人工確認。
 6. 驗證異常 pending 時所有抽籤/匯出入口都拒絕作業、invalid 已排除、valid 可納入。
 7. 驗證抽籤結果 Excel 匯入、候補順位、公告及前台查詢。
@@ -30,7 +30,7 @@
 
 ## 尚未解決的風險
 - Google 表單 v16 的實際回覆試算表欄位，需要與這版 parser 實際比對。
-- 目前的 SQL DRAFT 驗證逆序匯入、重試和一致性仍有缺口，不能直接部署。
+- `sql/v16_reconcile_all_imports_STAGING.sql` 是跨批次檢核候選版本，尚未在 Supabase staging 實際驗證，不可直接部署。
 - 既有抽籤結果匯入入口未完成資格檢核全覆蓋。
 - 正式 Supabase 沒有連線權限，無法宣稱已通過資料庫驗收。
 - 網站 HTML 中有歷史功能，須在測試環境做完整操作驗證。
