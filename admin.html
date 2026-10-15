@@ -7805,7 +7805,7 @@ async function parseGoogleFormWorkbook(file){
     const legacySport=formField(row,'是否申請羽球／籃球？');
     for(const [venue,question] of [['羽球','是否申請羽球？'],['籃球','是否申請籃球？']]){
       const choice=formField(row,question);
-      const wants=choice ? /^(是|申請|我要申請|要申請|申請${venue})/.test(choice) || (choice.includes('申請')&&!choice.includes('不申請')) : legacySport==='申請'+venue;
+      const wants=choice ? (choice==='是'||choice==='申請'+venue||choice==='我要申請'+venue||choice==='要申請'+venue||(choice.includes('申請')&&!choice.includes('不申請'))) : legacySport==='申請'+venue;
       if(!wants)continue;
       const day=normalizeFormDay(formField(row,venue+'：選擇星期（限選一日）'));
       const times=Object.keys(row).filter(k=>k.startsWith(venue+'：請選擇1個時段')).flatMap(k=>normalizeFormTime(row[k]));
@@ -7855,10 +7855,20 @@ async function parseGoogleFormWorkbook(file){
       if(Object.hasOwn(sportCount,r.venue_type))sportCount[r.venue_type]++;
     }
   }
-  const stages=new Map();records.forEach(r=>{const k=`${r.venue_type}|${r.day_of_week}|${r.time_slot}`;const a=stages.get(k)||[];a.push(r);stages.set(k,a);});
-  stages.forEach((g,key)=>{const [venue,day,time]=key.split('|'),cap=capacitySettings[settingKey(venue,day,time)],existing=allRecords.filter(r=>r.venue_type===venue&&r.day_of_week===day&&r.time_slot===time).length;if(cap!==undefined&&g.length+existing>Number(cap))anomalies.push({type:'超額登記',submissionKeys:[...new Set(g.map(r=>r.submission_key))],recordKeys:g.map(r=>r.record_key),detail:`${key}，超過名額 ${cap}`});});
+  // 申請人數超過球場容量屬正常抽籤情境，不列為登記異常。
   const contacts=new Map();submissions.forEach(s=>{const a=contacts.get(s.phone)||[];a.push(s);contacts.set(s.phone,a);});contacts.forEach(g=>{if(new Set(g.map(x=>x.member_type)).size>1){const keys=[...new Set(g.map(x=>x.submission_key))];anomalies.push({type:'跨會員身分疑似重複',submissionKeys:keys,recordKeys:records.filter(r=>keys.includes(r.submission_key)).map(r=>r.record_key)});}});
 
+  // 同一會員重複提交完全相同桌球場次，後筆列異常（桌球不限不同場次）。
+  const duplicates=new Map();
+  records.forEach(r=>{
+    const key=[r.member_key_hash,r.venue_type,r.day_of_week,r.time_slot].join('|');
+    const arr=duplicates.get(key)||[];arr.push(r);duplicates.set(key,arr);
+  });
+  for(const arr of duplicates.values()){
+    if(arr.length<2)continue;
+    arr.sort((a,b)=>Date.parse(a.registered_at)-Date.parse(b.registered_at)||a.record_key.localeCompare(b.record_key));
+    for(const r of arr.slice(1))anomalies.push({type:'同一會員重複申請相同場次（後筆）',submissionKeys:[r.submission_key],recordKeys:[r.record_key]});
+  }
   return{submissions,records,anomalies};
 }
 let pendingFormImport=null;
