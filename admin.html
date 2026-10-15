@@ -4168,9 +4168,27 @@ async function enterApp(){
 }
 function logout(){ sessionStorage.removeItem('venue_admin_session'); location.reload(); }
 
+async function loadAllRegistrationRows(){
+  const rows=[]; let expected=null;
+  try{
+    for(let offset=0;offset<100000;offset+=500){
+      const {data,error,count}=await db.from(RECORD_TABLE).select('*',{count:'exact'}).order('id').range(offset,offset+499);
+      if(error)throw error;
+      if(!Number.isInteger(count)||count<0)throw new Error('無法核對登記總筆數');
+      if(expected!==null&&count!==expected)throw new Error('登記資料正在變更，請重新載入');
+      expected=count; rows.push(...(data||[]));
+      if(rows.length===expected){
+        if(new Set(rows.map(r=>r.id)).size!==expected)throw new Error('登記資料分頁重複，請重新載入');
+        return {data:rows,error:null};
+      }
+      if((data||[]).length!==500)throw new Error('登記資料載入不完整，暫停抽籤');
+    }
+    throw new Error('登記筆數超過安全載入上限');
+  }catch(error){return {data:null,error};}
+}
 async function loadAllData(){
   const [recordsRes, capRes, settingsRes] = await Promise.all([
-    db.from(RECORD_TABLE).select('*').order('registered_at',{ascending:false}),
+    loadAllRegistrationRows(),
     db.from(CAPACITY_TABLE).select('*'),
     db.from(SETTINGS_TABLE).select('*')
   ]);
@@ -4387,10 +4405,10 @@ function getAutomationStageState(stage){
 }
 function stats(records=allRecords){
   const total=records.length;
-  const people=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+  const people=new Set(records.map(personRecordKey)).size;
   const hours=records.reduce((s,r)=>s+recordHours(r),0);
   const byVenue={};
-  records.forEach(r=>{ const v=r.venue_type||'未分類'; if(!byVenue[v]) byVenue[v]={count:0,people:new Set(),hours:0}; byVenue[v].count++; byVenue[v].people.add(`${normalizePhone(r.phone)}|${r.id_last4||''}`); byVenue[v].hours+=recordHours(r); });
+  records.forEach(r=>{ const v=r.venue_type||'未分類'; if(!byVenue[v]) byVenue[v]={count:0,people:new Set(),hours:0}; byVenue[v].count++; byVenue[v].people.add(personRecordKey(r)); byVenue[v].hours+=recordHours(r); });
   Object.keys(byVenue).forEach(v=>byVenue[v].people=byVenue[v].people.size);
   return {total,people,hours,byVenue};
 }
@@ -4708,7 +4726,7 @@ function renderRecordsScopeSummary(){
   if(!box) return;
   const records=getFilteredRecords();
   const c=buildPublishSummary(records);
-  const people=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+  const people=new Set(records.map(personRecordKey)).size;
   const scope=currentRecordsScopeLabel();
   box.innerHTML=`
     <div class="records-scope-card">
@@ -5863,24 +5881,33 @@ function maskPhoneForNotice(phone){
 async function getLotteryEligibility(){
   const {data:user,error:userError}=await importDb.auth.getUser();
   if(userError||!user?.user)throw new Error('請先在「表單匯入／異常」登入資料庫管理帳號。');
-  // Reconcile stored registrations across batches before every lottery operation.
-  const {error:reconcileError}=await importDb.rpc('court_v16_reconcile_import_anomalies');
-  if(reconcileError)throw new Error('跨批次會員規則檢核未完成：'+reconcileError.message+'。請先在測試資料庫安裝 v16 驗證 SQL。');
-  const unverified=(allRecords||[]).filter(r=>!r.member_key_hash||!r.import_submission_key||!r.import_record_key);
-  if(unverified.length)throw new Error(`目前有 ${unverified.length} 筆登記缺少伺服器產生的會員識別雜湊或表單來源鍵，無法依 v16 規則確認抽籤資格；請先完成來源資料核對。`);
-  const {data,error}=await importDb.from('lottery_import_anomalies').select('id,anomaly_type,resolution_status,record_keys,submission_keys').range(0,999);
-  if(error)throw new Error('異常資格檢核失敗：'+error.message);
-  if((data||[]).length===1000)throw new Error('異常筆數達單次安全檢核上限，請先處理或分批核對，不可直接匯出。');
-  const pending=data.filter(a=>a.resolution_status!=='valid'&&a.resolution_status!=='invalid');
-  if(pending.length)throw new Error('尚有 '+pending.length+' 項異常待人工確認；為避免誤抽籤，請先結案。');
-  const invalid=data.filter(a=>a.resolution_status==='invalid');
-  const blockedKeys=new Set();
-  const blockedSubmissions=new Set();
-  for(const a of invalid){
-    (a.record_keys||[]).forEach(k=>blockedKeys.add(String(k)));
-    if(!(a.record_keys||[]).length)(a.submission_keys||[]).forEach(k=>blockedSubmissions.add(String(k)));
+  const {data,error}=await importDb.rpc('court_v16_lottery_eligibility');
+  if(error)throw new Error('伺服器抽籤資格檢核失敗：'+error.message);
+  if(!data?.snapshot||!Array.isArray(data.records))throw new Error('伺服器資格回覆不完整');
+  const current=new Map((allRecords||[]).map(r=>[String(r.id),r]));
+  if(current.size!==data.records.length)throw new Error('名單筆數已變更或載入不完整，請重新載入後再操作');
+  const eligibleIds=new Set();
+  for(const server of data.records){
+    const local=current.get(String(server.id));
+    if(!local||local.import_record_key!==server.record_key||local.member_key_hash!==server.member_key_hash
+      ||['location_name','venue_type','day_of_week','time_slot','lottery_status'].some(k=>String(local[k]||'')!==String(server[k]||''))
+      ||['lottery_locked','result_published'].some(k=>(local[k]===true||local[k]==='true')!==server[k])){
+      throw new Error('名單內容已變更，請重新載入後再操作');
+    }
+    if(server.eligible===true)eligibleIds.add(String(server.id));
   }
-  return r=>!blockedKeys.has(String(r.import_record_key||''))&&!blockedSubmissions.has(String(r.import_submission_key||''));
+  const eligible=r=>eligibleIds.has(String(r.id));
+  eligible.snapshot=data.snapshot;
+  return eligible;
+}
+async function commitLotteryResults(rows,snapshot,batch){
+  if(!snapshot)throw new Error('缺少伺服器名單快照，請重新預覽');
+  const {data,error}=await importDb.rpc('court_v16_commit_lottery_results',{
+    p_rows:rows.map(r=>({id:r.id,status:r.status})),p_snapshot:snapshot,p_batch:batch
+  });
+  if(error)throw error;
+  if(data?.updated_count!==rows.length)throw new Error('結果筆數回覆不符，請重新載入確認，勿重複抽籤');
+  return data.updated_count;
 }
 async function verifyFormAnomaliesForLotteryExport(){return getLotteryEligibility();}
 async function exportPendingLotteryWorkbook(stages){
@@ -6361,14 +6388,12 @@ function renderLotteryPage(){
     const batchId=`excel-batch-${Date.now()}`;
     const successIds=[],failed=[];
     const items=batch.files.flatMap(f=>f.valid.map(x=>({...x,fileName:f.fileName})));
-    for(let i=0;i<items.length;i+=15){
-      const chunk=items.slice(i,i+15);
-      const results=await Promise.all(chunk.map(async item=>{
-        const {error,data}=await db.from(RECORD_TABLE).update({lottery_status:item.status,lottery_locked:true,lottery_batch:batchId,result_published:false,updated_at:new Date().toISOString()}).eq('id',item.record.id).select('id');
-        const noUpdate=!error && (!data || data.length===0);
-        return {item,error:noUpdate?new Error('資料未更新，請確認權限或資料狀態'):error};
-      }));
-      results.forEach(({item,error})=>{if(error)failed.push({serial:item.serial,fileName:item.fileName,error});else successIds.push(item.record.id);});
+    try{
+      await commitLotteryResults(items.map(item=>({id:item.record.id,status:item.status})),eligible.snapshot,batchId);
+      successIds.push(...items.map(item=>item.record.id));
+    }catch(error){
+      alert('批次匯入未完成，請重新載入確認：'+error.message);
+      if(btn){btn.disabled=false;btn.textContent='確認批次匯入並鎖定';} return;
     }
     await writeOperationLog('批次匯入 Excel 抽籤結果',{file_count:batch.totalFiles,imported_count:successIds.length,failed_count:failed.length,batch_id:batchId},successIds);
     if(failed.length){
@@ -6432,23 +6457,12 @@ async function applyPromotionSuggestion(stage){
     const successIds=[];
     const failed=[];
     const items=parsed.valid;
-    for(let i=0;i<items.length;i+=15){
-      const chunk=items.slice(i,i+15);
-      const results=await Promise.all(chunk.map(async item=>{
-        const {error,data}=await db.from(RECORD_TABLE).update({
-          lottery_status:item.status,
-          lottery_locked:true,
-          lottery_batch:batchId,
-          result_published:false,
-          updated_at:new Date().toISOString()
-        }).eq('id',item.record.id).select('id');
-        const noUpdate=!error && (!data || data.length===0);
-        return {item,error:noUpdate ? new Error('資料未更新，請確認權限或資料狀態') : error};
-      }));
-      results.forEach(({item,error})=>{
-        if(error) failed.push({serial:item.serial,error});
-        else successIds.push(item.record.id);
-      });
+    try{
+      await commitLotteryResults(items.map(item=>({id:item.record.id,status:item.status})),eligible.snapshot,batchId);
+      successIds.push(...items.map(item=>item.record.id));
+    }catch(error){
+      alert('匯入未完成，請重新載入確認：'+error.message);
+      if(btn){btn.disabled=false;btn.textContent='確認匯入並鎖定';} return;
     }
     await writeOperationLog('匯入 Excel 抽籤結果', {
       venue_type:parsed.venue,
@@ -6528,7 +6542,7 @@ async function applyPromotionSuggestion(stage){
     });
 
     const stages=Object.values(stageMap).map(s=>{
-      const people=new Set(s.records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+      const people=new Set(s.records.map(personRecordKey)).size;
       const withResult=s.records.filter(r=>String(r.lottery_status||'').trim()).length;
       const published=s.records.filter(r=>r.result_published).length;
       const configuredCapacity=Number(
@@ -6709,7 +6723,7 @@ async function applyPromotionSuggestion(stage){
       return;
     }
 
-    const selectedPeople=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+    const selectedPeople=new Set(records.map(personRecordKey)).size;
     const statusCounts={};
     records.forEach(r=>{
       const s=r.lottery_status || '未抽籤';
@@ -6868,7 +6882,7 @@ async function applyPromotionSuggestion(stage){
     document.getElementById('lotteryPreview').innerHTML=`
       <div class="msg ${locked?'error':'info'}">
         <strong>目前場次：</strong>${venue||'尚未選擇'}｜${day||'尚未選擇'}｜${time||'尚未選擇'}
-        <br><strong>符合資料：</strong>${records.length} 筆，${new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size} 人
+        <br><strong>符合資料：</strong>${records.length} 筆，${new Set(records.map(personRecordKey)).size} 人
         <br><strong>鎖定狀態：</strong>${locked ? '⚠️ 此場次已有正式抽籤結果' : '尚未鎖定'}
         ${statusSummary ? `<br><strong>結果統計：</strong>${statusSummary}` : ''}
       </div>
@@ -6994,14 +7008,14 @@ async function applyPromotionSuggestion(stage){
     if(n<=0||rec.length===0){alert('請確認場次名單與正取人數');return;}
     if(w<0){alert('備取人數不可小於 0');return;}
     if(rec.some(r=>r.lottery_locked === true || r.lottery_locked === 'true' || String(r.lottery_status||'').trim() !== '')){alert('此場次已有抽籤結果或已鎖定，不可直接重新抽籤。');return;}
-    const uniquePeople=new Set(rec.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+    const uniquePeople=new Set(rec.map(personRecordKey)).size;
     if(n>uniquePeople){alert(`正取人數不可超過本場次登記人數（${uniquePeople} 人）。`);return;}
     if(n+w>uniquePeople){
       const ok=confirm(`正取 ${n} 人＋備取 ${w} 人超過登記人數 ${uniquePeople} 人，備取將自動縮減至可用人數。是否繼續？`);
       if(!ok) return;
     }
     const result=performLotteryWithWaitlist(rec,n,w);
-    pendingBuiltInLottery={location,venue,day,time,result,sourceIds:rec.map(r=>r.id),createdAt:new Date().toISOString()};
+    pendingBuiltInLottery={location,venue,day,time,result,snapshot:eligible.snapshot,sourceIds:rec.map(r=>r.id),createdAt:new Date().toISOString()};
     renderLotteryResult(result,'抽籤結果預覽（尚未寫入）',false);
     const bar=document.getElementById('lotteryCommitBar');
     if(bar) bar.style.display='block';
@@ -7037,23 +7051,11 @@ async function applyPromotionSuggestion(stage){
     result.waitlist.forEach((r,idx)=>updateRows.push({id:r.id,status:`候補${idx+1}`}));
     result.losers.forEach(r=>updateRows.push({id:r.id,status:'未中籤'}));
 
-    const groups={};
-    updateRows.forEach(row=>{ if(!groups[row.status]) groups[row.status]=[]; groups[row.status].push(row.id); });
     let updatedCount=0;
-    for(const [status,ids] of Object.entries(groups)){
-      const {error,data}=await db.from(RECORD_TABLE).update({
-        lottery_status:status,
-        lottery_batch:batch,
-        lottery_locked:true,
-        result_published:false,
-        updated_at:new Date().toISOString()
-      }).in('id',ids).select('id');
-      if(error){
-        alert('寫入抽籤結果失敗：'+(error.message||'未知錯誤'));
-        if(btn){btn.disabled=false;btn.textContent='確認結果並批次寫入';}
-        return;
-      }
-      updatedCount+=(data||[]).length;
+    try{updatedCount=await commitLotteryResults(updateRows,pending.snapshot,batch);}
+    catch(error){
+      alert('寫入抽籤結果未完成，請重新載入確認：'+error.message);
+      if(btn){btn.disabled=false;btn.textContent='確認結果並批次寫入';} return;
     }
     if(updatedCount!==updateRows.length){
       alert(`抽籤結果寫入不完整：應更新 ${updateRows.length} 筆，實際更新 ${updatedCount} 筆。請檢查資料庫權限。`);
@@ -7210,7 +7212,7 @@ async function applyPromotionSuggestion(stage){
     });
 
     return Object.values(map).map(s=>{
-      const peopleCount=new Set(s.records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+      const peopleCount=new Set(s.records.map(personRecordKey)).size;
 
       const locked=s.records.some(r=>
         r.lottery_locked===true ||
@@ -7278,6 +7280,7 @@ async function applyPromotionSuggestion(stage){
     if(!okConfirm) return;
 
     let totalExpected=0, totalUpdated=0;
+    const allUpdates=[];
     for(const s of stages){
       const waitCount=Math.min(s.waitlistCount,Math.max(0,s.peopleCount-s.winnerCount));
       const result=performLotteryWithWaitlist(s.records,s.winnerCount,waitCount);
@@ -7287,14 +7290,10 @@ async function applyPromotionSuggestion(stage){
       result.waitlist.forEach((r,i)=>rows.push({id:r.id,status:`候補${i+1}`}));
       result.losers.forEach(r=>rows.push({id:r.id,status:'未中籤'}));
       totalExpected += rows.length;
-      const groups={};
-      rows.forEach(x=>{ if(!groups[x.status]) groups[x.status]=[]; groups[x.status].push(x.id); });
-      for(const [status,ids] of Object.entries(groups)){
-        const {error,data}=await db.from(RECORD_TABLE).update({lottery_status:status,lottery_batch:batch,lottery_locked:true}).in('id',ids).select('id');
-        if(error){alert('批次抽籤寫入失敗：'+(error.message||'未知錯誤'));console.error(error);return;}
-        totalUpdated += (data||[]).length;
-      }
+      allUpdates.push(...rows);
     }
+    try{totalUpdated=await commitLotteryResults(allUpdates,eligible.snapshot,`BATCH|${new Date().toISOString()}`);}
+    catch(error){alert('批次抽籤未完成，請重新載入確認：'+error.message);return;}
     await writeOperationLog('批次抽籤並鎖定', {stage_count:stages.length, total_updated:totalUpdated, total_expected:totalExpected}, []);
     alert(`批次抽籤完成，共更新 ${totalUpdated}/${totalExpected} 筆。`);
     await loadAllData();
@@ -7329,7 +7328,7 @@ function getLotteryStatusSummary(records){
 function performLotteryWithWaitlist(records,winnerCount,waitlistCount){
   const groups={};
   records.forEach(r=>{
-    const key=`${normalizePhone(r.phone)}|${r.id_last4||''}|${r.day_of_week}|${r.venue_type}`;
+    const key=`${personRecordKey(r)}|${r.day_of_week}|${r.venue_type}`;
     if(!groups[key]) groups[key]=[];
     groups[key].push(r);
   });
