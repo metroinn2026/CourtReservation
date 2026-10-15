@@ -62,12 +62,12 @@ BEGIN
         FOR v_prev IN SELECT value FROM jsonb_array_elements(v_accepted)
         LOOP
           IF v_prev->>'venue'=v_rec.venue_type
+             AND v_rec.venue_type IN ('羽球','籃球') THEN
+            v_type:=v_rec.venue_type||'每位會員超過1場（後筆）';
+          ELSIF v_prev->>'venue'=v_rec.venue_type
              AND v_prev->>'day'=v_rec.day_of_week
              AND v_prev->>'slot'=v_rec.time_slot THEN
             v_type:='同一會員重複申請相同場次（後筆）';
-          ELSIF v_prev->>'venue'=v_rec.venue_type
-             AND v_rec.venue_type IN ('羽球','籃球') THEN
-            v_type:=v_rec.venue_type||'每位會員超過1場（後筆）';
           ELSIF v_prev->>'venue'<>v_rec.venue_type
             AND v_prev->>'day'=v_rec.day_of_week
             AND public.court_v16_slots_overlap(v_prev->>'slot',v_rec.time_slot) IS NOT FALSE
