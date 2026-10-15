@@ -36,3 +36,12 @@
 - 網站 HTML 中有歷史功能，須在測試環境做完整操作驗證。
 
 > 請勿將草稿 PR 合併或將 SQL 草稿直接套用正式資料庫。
+
+## 2026-10-15 Supabase 唯讀實際查核
+- 目前連線專案 `metroinn2026's Project` 有 3 批歷史匯入、共 6 份原始回覆；批次統計曾記錄 12 筆場次，但 `lottery_records` 目前為 0 筆。
+- 沒有 Supabase development branches；正式專案未修改。
+- 舊唯一索引 `lottery_records_unique_limited_sports` 仍存在。
+- `import_record_key` 去重唯一索引存在。
+- **重新匯入同一份回覆時，現有 `import_google_form_batch` 會因為 submission_key 已存在而略過整份回覆；即使對應 `lottery_records` 已清空，也不會補回。** 這是 release blocker，必須在伺服器函式中修正或制定明確修復流程，不可刪除原始回覆來規避。
+- `resolve_google_form_anomaly` 目前只更新異常狀態，不會清除不合格申請。
+- 此次唯讀查詢未接觸會員姓名、完整身分識別或手機。
