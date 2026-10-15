@@ -2498,7 +2498,7 @@
           single[v]=Number.isFinite(n)&&n>=0?Math.floor(n):single[v];
         });
       }
-      const groups=Array.isArray(data?.groups)?data.groups.map((g,i)=>({
+      const groups=Array.isArray(data?.groups)?data.groups.filter(g=>!(Array.isArray(g?.venues)&&g.venues.includes('羽球')&&g.venues.includes('籃球'))).map((g,i)=>({
         id:String(g.id||`group_${i+1}`),
         venues:[...new Set((Array.isArray(g.venues)?g.venues:[]).filter(v=>REGISTRATION_VENUES.includes(v)))],
         max:Math.max(1,Math.floor(Number(g.max)||1))
