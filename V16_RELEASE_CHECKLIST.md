@@ -45,3 +45,11 @@
 - **重新匯入同一份回覆時，現有 `import_google_form_batch` 會因為 submission_key 已存在而略過整份回覆；即使對應 `lottery_records` 已清空，也不會補回。** 這是 release blocker，必須在伺服器函式中修正或制定明確修復流程，不可刪除原始回覆來規避。
 - `resolve_google_form_anomaly` 目前只更新異常狀態，不會清除不合格申請。
 - 此次唯讀查詢未接觸會員姓名、完整身分識別或手機。
+
+## 匯入 RPC 補修（最新）
+- 新增 `sql/v16_import_existing_submissions_STAGING.sql`：保留已有 `submission_key` 與來源批次，只補寫目前不存在的 `import_record_key`。
+- 同一提交識別若對應不同會員 HMAC，整批拒絕，避免借用舊 submission_key。
+- 用 advisory transaction lock 序列化匯入，維持單批交易一致性。
+- 必須在解除舊 UNIQUE limited sports 索引後才可測試；此檔目前尚未在 staging 執行。
+- 必測：6 份回覆已存在但 0 場次的情境，重新輸入正確原始回覆後補回 12 筆場次（實際筆數依測試檔）；二次重匯應為 0 筆。
+- **安全注意**：正式資料庫已有歷史提交與個資；不使用其內容製作測試資料，不做資料刪除或重置。
