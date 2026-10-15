@@ -4112,9 +4112,14 @@ async function loadAdmins(){
 }
 async function checkBootstrap(){
   sessionStorage.removeItem('venue_admin_session_bad');
-  const admins=await loadAdmins();
-  if(!admins) return;
-  if(admins.length===0){
+  const {data:hasAdmins,error}=await db.rpc('admin_users_exist');
+  if(error){
+    document.getElementById('bootstrapBox').classList.add('hidden');
+    document.getElementById('loginBox').classList.remove('hidden');
+    showMsg('loginMsg','無法確認後台帳號狀態，請重新整理；若仍出現此訊息，請先執行後台登入修正 SQL。','error');
+    console.error(error); return;
+  }
+  if(!hasAdmins){
     document.getElementById('bootstrapBox').classList.remove('hidden');
     document.getElementById('loginBox').classList.add('hidden');
   }else{
@@ -4133,11 +4138,9 @@ async function login(){
   const username=document.getElementById('loginUsername').value.trim();
   const password=document.getElementById('loginPassword').value;
   if(!username||!password){ showMsg('loginMsg','請輸入帳號與密碼'); return; }
-  const {data,error}=await db.from(ADMIN_TABLE).select('*').eq('username',username).maybeSingle();
-  if(error||!data){ showMsg('loginMsg','帳號或密碼錯誤'); return; }
-  if(!data.is_active){ showMsg('loginMsg','此帳號已停用'); return; }
-  const hash=await makeHash(password,data.salt);
-  if(hash!==data.password_hash){ showMsg('loginMsg','帳號或密碼錯誤'); return; }
+  const {data,error}=await db.rpc('admin_login',{p_username:username,p_password:password});
+  if(error){ showMsg('loginMsg',`登入失敗：${error.message||'請確認後台登入修正 SQL 已執行。'}`); console.error(error); return; }
+  if(!data){ showMsg('loginMsg','帳號或密碼錯誤，或帳號已停用'); return; }
   currentAdmin={id:data.id,username:data.username,display_name:data.display_name,role:data.role};
   sessionStorage.setItem('venue_admin_session', JSON.stringify(currentAdmin));
   await enterApp();
