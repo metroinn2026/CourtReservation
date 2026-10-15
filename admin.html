@@ -3966,7 +3966,7 @@ function memberIdentityCell(r){
   const kind=isGo?'綁定手機':(/北投會館/.test(type)?'身分證字號':'識別資料');
   return `<span class="tag ${tone}">${escapeHtml(label)}</span><div class="small">${last4?`${kind}末4碼 ${escapeHtml(last4)}`:'識別資料未記錄'}</div>`;
 }
-function personKey(r){ return `${normalizePhone(r.phone)}|${String(r.id_last4||'').trim()}`; }
+function personKey(r){ return personRecordKey(r); }
 function buildDataAnomalies(){
   const issues=[];
   const records=allRecords||[];
@@ -4168,9 +4168,27 @@ async function enterApp(){
 }
 function logout(){ sessionStorage.removeItem('venue_admin_session'); location.reload(); }
 
+async function loadAllRegistrationRows(){
+  const rows=[]; let expected=null;
+  try{
+    for(let offset=0;offset<100000;offset+=500){
+      const {data,error,count}=await db.from(RECORD_TABLE).select('*',{count:'exact'}).order('id').range(offset,offset+499);
+      if(error)throw error;
+      if(!Number.isInteger(count)||count<0)throw new Error('無法核對登記總筆數');
+      if(expected!==null&&count!==expected)throw new Error('登記資料正在變更，請重新載入');
+      expected=count; rows.push(...(data||[]));
+      if(rows.length===expected){
+        if(new Set(rows.map(r=>r.id)).size!==expected)throw new Error('登記資料分頁重複，請重新載入');
+        return {data:rows,error:null};
+      }
+      if((data||[]).length!==500)throw new Error('登記資料載入不完整，暫停抽籤');
+    }
+    throw new Error('登記筆數超過安全載入上限');
+  }catch(error){return {data:null,error};}
+}
 async function loadAllData(){
   const [recordsRes, capRes, settingsRes] = await Promise.all([
-    db.from(RECORD_TABLE).select('*').order('registered_at',{ascending:false}),
+    loadAllRegistrationRows(),
     db.from(CAPACITY_TABLE).select('*'),
     db.from(SETTINGS_TABLE).select('*')
   ]);
@@ -4258,17 +4276,19 @@ function normalizeRegistrationLimitRules(raw){
       single[v]=Number.isFinite(n)&&n>=0?Math.floor(n):single[v];
     });
   }
-  const groups=Array.isArray(data?.groups)?data.groups.map((g,i)=>({
+  const groups=Array.isArray(data?.groups)?data.groups.filter(g=>!(Array.isArray(g?.venues)&&g.venues.includes('羽球')&&g.venues.includes('籃球'))).map((g,i)=>({
     id:String(g.id||`group_${i+1}`),
     venues:[...new Set((Array.isArray(g.venues)?g.venues:[]).filter(v=>REGISTRATION_VENUES.includes(v)))],
     max:Math.max(1,Math.floor(Number(g.max)||1))
   })).filter(g=>g.venues.length>=2):[];
-  return {single,groups};
+  // v16 fixed rules: badminton and basketball independently limited to one; table tennis unlimited.
+  single['羽球']=1; single['籃球']=1; single['B1桌球']=0; single['B2桌球']=0;
+  return {single,groups:[]};
 }
 function getRegistrationLimitRules(){
   return normalizeRegistrationLimitRules(systemSettings.registration_limit_rules);
 }
-function personRecordKey(r){ return `${normalizePhone(r.phone)}|${r.id_last4||''}`; }
+function personRecordKey(r){ return r.member_key_hash ? `member:${r.member_key_hash}` : `${normalizePhone(r.phone)}|${r.id_last4||''}`; }
 function recordCountForLimit(records, personKeyValue, venue, location){
   return records.filter(r=>personRecordKey(r)===personKeyValue && recordLocation(r)===location && r.venue_type===venue).length;
 }
@@ -4298,12 +4318,12 @@ function renderRegistrationLimitEditor(){
     <div class="registration-limit-head">
       <div>
         <div class="capacity-window-title">登記限制</div>
-        <div class="small">0 表示不限。跨球類限制可自由勾選球類，例如「羽球＋籃球合計最多 1 筆」。</div>
+        <div class="small">v16 固定規則：羽球限1場、籃球限1場、桌球不限場次；跨球類撞時段由匯入異常中心檢核。</div>
       </div>
-      <button type="button" id="addRegistrationLimitGroup" class="btn btn-gray">新增跨球類限制</button>
+      <button type="button" id="addRegistrationLimitGroup" class="btn btn-gray" disabled>固定規則，不開放新增跨球類限制</button>
     </div>
     <div class="single-limit-grid">
-      ${REGISTRATION_VENUES.map(v=>`<div class="field"><label>${v}</label><div class="limit-input-wrap"><input class="single-limit-input" data-venue="${v}" type="number" min="0" step="1" value="${Number(draft.single[v]||0)}"><span>筆</span></div></div>`).join('')}
+      ${REGISTRATION_VENUES.map(v=>`<div class="field"><label>${v}</label><div class="limit-input-wrap"><input class="single-limit-input" data-venue="${v}" type="number" min="0" disabled step="1" value="${Number(draft.single[v]||0)}"><span>筆</span></div></div>`).join('')}
     </div>
     <div class="cross-limit-list">
       ${draft.groups.length?draft.groups.map((g,i)=>`
@@ -4337,7 +4357,8 @@ function renderRegistrationLimitEditor(){
   });
   const add=document.getElementById('addRegistrationLimitGroup');
   if(add) add.onclick=()=>{
-    draft.groups.push({id:`group_${Date.now()}`,venues:['羽球','籃球'],max:1});
+    alert('新版規則不再允許新增跨球類總量限制，請分別使用羽球／籃球的單項上限。');
+    return;
     renderRegistrationLimitEditor();
   };
   const save=document.getElementById('saveRegistrationLimits');
@@ -4345,6 +4366,7 @@ function renderRegistrationLimitEditor(){
     const invalid=draft.groups.find(g=>g.venues.length<2 || !Number.isFinite(Number(g.max)) || Number(g.max)<1);
     if(invalid){ alert('跨球類限制至少需勾選 2 種球類，且上限至少為 1。'); return; }
     const normalized=normalizeRegistrationLimitRules(draft);
+    normalized.groups=normalized.groups.filter(g=>!(g.venues.includes('羽球')&&g.venues.includes('籃球')));
     save.disabled=true; save.textContent='儲存中...';
     const ok=await saveSetting('registration_limit_rules',JSON.stringify(normalized));
     save.disabled=false; save.textContent='儲存登記限制';
@@ -4383,10 +4405,10 @@ function getAutomationStageState(stage){
 }
 function stats(records=allRecords){
   const total=records.length;
-  const people=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+  const people=new Set(records.map(personRecordKey)).size;
   const hours=records.reduce((s,r)=>s+recordHours(r),0);
   const byVenue={};
-  records.forEach(r=>{ const v=r.venue_type||'未分類'; if(!byVenue[v]) byVenue[v]={count:0,people:new Set(),hours:0}; byVenue[v].count++; byVenue[v].people.add(`${normalizePhone(r.phone)}|${r.id_last4||''}`); byVenue[v].hours+=recordHours(r); });
+  records.forEach(r=>{ const v=r.venue_type||'未分類'; if(!byVenue[v]) byVenue[v]={count:0,people:new Set(),hours:0}; byVenue[v].count++; byVenue[v].people.add(personRecordKey(r)); byVenue[v].hours+=recordHours(r); });
   Object.keys(byVenue).forEach(v=>byVenue[v].people=byVenue[v].people.size);
   return {total,people,hours,byVenue};
 }
@@ -4704,7 +4726,7 @@ function renderRecordsScopeSummary(){
   if(!box) return;
   const records=getFilteredRecords();
   const c=buildPublishSummary(records);
-  const people=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+  const people=new Set(records.map(personRecordKey)).size;
   const scope=currentRecordsScopeLabel();
   box.innerHTML=`
     <div class="records-scope-card">
@@ -5854,7 +5876,43 @@ function maskPhoneForNotice(phone){
   return p;
 }
 
+// 抽籤匯出安全檢核：待處理項目阻擋；確認無效者自名單排除。
+// 只查詢受限的 Supabase Auth 異常資料表；讀取失敗即停止。
+async function getLotteryEligibility(){
+  const {data:user,error:userError}=await importDb.auth.getUser();
+  if(userError||!user?.user)throw new Error('請先在「表單匯入／異常」登入資料庫管理帳號。');
+  const {data,error}=await importDb.rpc('court_v16_lottery_eligibility');
+  if(error)throw new Error('伺服器抽籤資格檢核失敗：'+error.message);
+  if(!data?.snapshot||!Array.isArray(data.records))throw new Error('伺服器資格回覆不完整');
+  const current=new Map((allRecords||[]).map(r=>[String(r.id),r]));
+  if(current.size!==data.records.length)throw new Error('名單筆數已變更或載入不完整，請重新載入後再操作');
+  const eligibleIds=new Set();
+  for(const server of data.records){
+    const local=current.get(String(server.id));
+    if(!local||local.import_record_key!==server.record_key||local.member_key_hash!==server.member_key_hash
+      ||['location_name','venue_type','day_of_week','time_slot','lottery_status'].some(k=>String(local[k]||'')!==String(server[k]||''))
+      ||['lottery_locked','result_published'].some(k=>(local[k]===true||local[k]==='true')!==server[k])){
+      throw new Error('名單內容已變更，請重新載入後再操作');
+    }
+    if(server.eligible===true)eligibleIds.add(String(server.id));
+  }
+  const eligible=r=>eligibleIds.has(String(r.id));
+  eligible.snapshot=data.snapshot;
+  return eligible;
+}
+async function commitLotteryResults(rows,snapshot,batch){
+  if(!snapshot)throw new Error('缺少伺服器名單快照，請重新預覽');
+  const {data,error}=await importDb.rpc('court_v16_commit_lottery_results',{
+    p_rows:rows.map(r=>({id:r.id,status:r.status})),p_snapshot:snapshot,p_batch:batch
+  });
+  if(error)throw error;
+  if(data?.updated_count!==rows.length)throw new Error('結果筆數回覆不符，請重新載入確認，勿重複抽籤');
+  return data.updated_count;
+}
+async function verifyFormAnomaliesForLotteryExport(){return getLotteryEligibility();}
 async function exportPendingLotteryWorkbook(stages){
+  let eligible; try { eligible=await verifyFormAnomaliesForLotteryExport(); } catch(e) { alert(e.message); return; }
+  stages=stages.map(stage=>({...stage,records:stage.records.filter(eligible)})).filter(stage=>stage.records.length);
   if(typeof XLSX==='undefined'){
     alert('Excel 元件尚未載入，請重新整理後再試。');
     return;
@@ -6182,8 +6240,10 @@ function renderLotteryPage(){
     };
   }
 
-  document.getElementById('exportDayCheckBtn').onclick=()=>{
-    const {records}=getDayCheckRecords();
+  document.getElementById('exportDayCheckBtn').onclick=async()=>{
+    let eligible; try { eligible=await verifyFormAnomaliesForLotteryExport(); } catch(e) { alert(e.message); return; }
+    const {records:allDayRecords}=getDayCheckRecords();
+    const records=allDayRecords.filter(eligible);
     if(records.length===0){ alert('請先選擇有資料的類型與星期'); return; }
     exportToCsv(records);
   };
@@ -6319,6 +6379,8 @@ function renderLotteryPage(){
 
   async function confirmLotteryBatchImport(batch){
     if(!batch || batch.totalValid===0 || batch.totalErrors>0) return;
+    let eligible; try{eligible=await getLotteryEligibility();}catch(e){alert(e.message);return;}
+    if(batch.files.some(f=>f.valid.some(x=>!eligible(x.record)))){alert('抽籤結果包含已判定無效的登記，不能匯入。');return;}
     const ok=await confirmModal('確認批次匯入抽籤結果',`確定一次匯入 <strong>${batch.totalFiles}</strong> 個檔案、共 <strong>${batch.totalValid}</strong> 筆抽籤結果並鎖定嗎？<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
     if(!ok) return;
     const btn=document.getElementById('confirmLotteryImportBtn');
@@ -6326,14 +6388,12 @@ function renderLotteryPage(){
     const batchId=`excel-batch-${Date.now()}`;
     const successIds=[],failed=[];
     const items=batch.files.flatMap(f=>f.valid.map(x=>({...x,fileName:f.fileName})));
-    for(let i=0;i<items.length;i+=15){
-      const chunk=items.slice(i,i+15);
-      const results=await Promise.all(chunk.map(async item=>{
-        const {error,data}=await db.from(RECORD_TABLE).update({lottery_status:item.status,lottery_locked:true,lottery_batch:batchId,result_published:false,updated_at:new Date().toISOString()}).eq('id',item.record.id).select('id');
-        const noUpdate=!error && (!data || data.length===0);
-        return {item,error:noUpdate?new Error('資料未更新，請確認權限或資料狀態'):error};
-      }));
-      results.forEach(({item,error})=>{if(error)failed.push({serial:item.serial,fileName:item.fileName,error});else successIds.push(item.record.id);});
+    try{
+      await commitLotteryResults(items.map(item=>({id:item.record.id,status:item.status})),eligible.snapshot,batchId);
+      successIds.push(...items.map(item=>item.record.id));
+    }catch(error){
+      alert('批次匯入未完成，請重新載入確認：'+error.message);
+      if(btn){btn.disabled=false;btn.textContent='確認批次匯入並鎖定';} return;
     }
     await writeOperationLog('批次匯入 Excel 抽籤結果',{file_count:batch.totalFiles,imported_count:successIds.length,failed_count:failed.length,batch_id:batchId},successIds);
     if(failed.length){
@@ -6387,6 +6447,8 @@ async function applyPromotionSuggestion(stage){
 
   async function confirmLotteryImport(parsed){
     if(!parsed || parsed.valid.length===0 || parsed.errors.length>0) return;
+    let eligible; try{eligible=await getLotteryEligibility();}catch(e){alert(e.message);return;}
+    if(parsed.valid.some(x=>!eligible(x.record))){alert('抽籤結果包含已判定無效的登記，不能匯入。');return;}
     const ok=await confirmModal('確認匯入抽籤結果',`確定匯入 <strong>${parsed.valid.length}</strong> 筆抽籤結果並鎖定嗎？<br><br>${escapeHtml(parsed.venue)}｜${escapeHtml(parsed.day)}<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
     if(!ok) return;
     const btn=document.getElementById('confirmLotteryImportBtn');
@@ -6395,23 +6457,12 @@ async function applyPromotionSuggestion(stage){
     const successIds=[];
     const failed=[];
     const items=parsed.valid;
-    for(let i=0;i<items.length;i+=15){
-      const chunk=items.slice(i,i+15);
-      const results=await Promise.all(chunk.map(async item=>{
-        const {error,data}=await db.from(RECORD_TABLE).update({
-          lottery_status:item.status,
-          lottery_locked:true,
-          lottery_batch:batchId,
-          result_published:false,
-          updated_at:new Date().toISOString()
-        }).eq('id',item.record.id).select('id');
-        const noUpdate=!error && (!data || data.length===0);
-        return {item,error:noUpdate ? new Error('資料未更新，請確認權限或資料狀態') : error};
-      }));
-      results.forEach(({item,error})=>{
-        if(error) failed.push({serial:item.serial,error});
-        else successIds.push(item.record.id);
-      });
+    try{
+      await commitLotteryResults(items.map(item=>({id:item.record.id,status:item.status})),eligible.snapshot,batchId);
+      successIds.push(...items.map(item=>item.record.id));
+    }catch(error){
+      alert('匯入未完成，請重新載入確認：'+error.message);
+      if(btn){btn.disabled=false;btn.textContent='確認匯入並鎖定';} return;
     }
     await writeOperationLog('匯入 Excel 抽籤結果', {
       venue_type:parsed.venue,
@@ -6491,7 +6542,7 @@ async function applyPromotionSuggestion(stage){
     });
 
     const stages=Object.values(stageMap).map(s=>{
-      const people=new Set(s.records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+      const people=new Set(s.records.map(personRecordKey)).size;
       const withResult=s.records.filter(r=>String(r.lottery_status||'').trim()).length;
       const published=s.records.filter(r=>r.result_published).length;
       const configuredCapacity=Number(
@@ -6672,7 +6723,7 @@ async function applyPromotionSuggestion(stage){
       return;
     }
 
-    const selectedPeople=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+    const selectedPeople=new Set(records.map(personRecordKey)).size;
     const statusCounts={};
     records.forEach(r=>{
       const s=r.lottery_status || '未抽籤';
@@ -6831,7 +6882,7 @@ async function applyPromotionSuggestion(stage){
     document.getElementById('lotteryPreview').innerHTML=`
       <div class="msg ${locked?'error':'info'}">
         <strong>目前場次：</strong>${venue||'尚未選擇'}｜${day||'尚未選擇'}｜${time||'尚未選擇'}
-        <br><strong>符合資料：</strong>${records.length} 筆，${new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size} 人
+        <br><strong>符合資料：</strong>${records.length} 筆，${new Set(records.map(personRecordKey)).size} 人
         <br><strong>鎖定狀態：</strong>${locked ? '⚠️ 此場次已有正式抽籤結果' : '尚未鎖定'}
         ${statusSummary ? `<br><strong>結果統計：</strong>${statusSummary}` : ''}
       </div>
@@ -6946,22 +6997,25 @@ async function applyPromotionSuggestion(stage){
     if(records.length===0) alert('此場次目前沒有登記資料。');
   };
 
-  document.getElementById('previewLot').onclick=()=>{
-    const {location,venue,day,time,selectedComplete,records:rec}=getSelectedRecords();
+  document.getElementById('previewLot').onclick=async()=>{
+    let eligible; try { eligible=await getLotteryEligibility(); } catch(e) { alert(e.message); return; }
+    const selected=getSelectedRecords();
+    const {location,venue,day,time,selectedComplete}=selected;
+    const rec=selected.records.filter(eligible);
     const n=parseInt(document.getElementById('lotWinnerCount').value,10)||0;
     const w=parseInt(document.getElementById('lotWaitlistCount').value,10)||0;
     if(!selectedComplete){alert('請先選擇完整的「場地＋球類＋星期＋時段」。');return;}
     if(n<=0||rec.length===0){alert('請確認場次名單與正取人數');return;}
     if(w<0){alert('備取人數不可小於 0');return;}
     if(rec.some(r=>r.lottery_locked === true || r.lottery_locked === 'true' || String(r.lottery_status||'').trim() !== '')){alert('此場次已有抽籤結果或已鎖定，不可直接重新抽籤。');return;}
-    const uniquePeople=new Set(rec.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+    const uniquePeople=new Set(rec.map(personRecordKey)).size;
     if(n>uniquePeople){alert(`正取人數不可超過本場次登記人數（${uniquePeople} 人）。`);return;}
     if(n+w>uniquePeople){
       const ok=confirm(`正取 ${n} 人＋備取 ${w} 人超過登記人數 ${uniquePeople} 人，備取將自動縮減至可用人數。是否繼續？`);
       if(!ok) return;
     }
     const result=performLotteryWithWaitlist(rec,n,w);
-    pendingBuiltInLottery={location,venue,day,time,result,sourceIds:rec.map(r=>r.id),createdAt:new Date().toISOString()};
+    pendingBuiltInLottery={location,venue,day,time,result,snapshot:eligible.snapshot,sourceIds:rec.map(r=>r.id),createdAt:new Date().toISOString()};
     renderLotteryResult(result,'抽籤結果預覽（尚未寫入）',false);
     const bar=document.getElementById('lotteryCommitBar');
     if(bar) bar.style.display='block';
@@ -6997,23 +7051,11 @@ async function applyPromotionSuggestion(stage){
     result.waitlist.forEach((r,idx)=>updateRows.push({id:r.id,status:`候補${idx+1}`}));
     result.losers.forEach(r=>updateRows.push({id:r.id,status:'未中籤'}));
 
-    const groups={};
-    updateRows.forEach(row=>{ if(!groups[row.status]) groups[row.status]=[]; groups[row.status].push(row.id); });
     let updatedCount=0;
-    for(const [status,ids] of Object.entries(groups)){
-      const {error,data}=await db.from(RECORD_TABLE).update({
-        lottery_status:status,
-        lottery_batch:batch,
-        lottery_locked:true,
-        result_published:false,
-        updated_at:new Date().toISOString()
-      }).in('id',ids).select('id');
-      if(error){
-        alert('寫入抽籤結果失敗：'+(error.message||'未知錯誤'));
-        if(btn){btn.disabled=false;btn.textContent='確認結果並批次寫入';}
-        return;
-      }
-      updatedCount+=(data||[]).length;
+    try{updatedCount=await commitLotteryResults(updateRows,pending.snapshot,batch);}
+    catch(error){
+      alert('寫入抽籤結果未完成，請重新載入確認：'+error.message);
+      if(btn){btn.disabled=false;btn.textContent='確認結果並批次寫入';} return;
     }
     if(updatedCount!==updateRows.length){
       alert(`抽籤結果寫入不完整：應更新 ${updateRows.length} 筆，實際更新 ${updatedCount} 筆。請檢查資料庫權限。`);
@@ -7170,7 +7212,7 @@ async function applyPromotionSuggestion(stage){
     });
 
     return Object.values(map).map(s=>{
-      const peopleCount=new Set(s.records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+      const peopleCount=new Set(s.records.map(personRecordKey)).size;
 
       const locked=s.records.some(r=>
         r.lottery_locked===true ||
@@ -7228,7 +7270,8 @@ async function applyPromotionSuggestion(stage){
   }
 
   async function runBatch(){
-    const stages=batchStages().filter(s=>s.canDraw);
+    let eligible; try { eligible=await getLotteryEligibility(); } catch(e) { alert(e.message); return; }
+    const stages=batchStages().filter(s=>s.canDraw).map(s=>({...s,records:s.records.filter(eligible)})).filter(s=>s.records.length);
     if(stages.length===0){alert('沒有可批次抽籤的場次。請確認範圍、正取人數或是否已鎖定。');return;}
     const okConfirm=await confirmModal('確認批次抽籤',`確定要批次抽籤並鎖定 ${stages.length} 個場次嗎？
 場地：${locationLabel(document.getElementById('batchLocation')?.value || DEFAULT_LOCATION)}
@@ -7237,6 +7280,7 @@ async function applyPromotionSuggestion(stage){
     if(!okConfirm) return;
 
     let totalExpected=0, totalUpdated=0;
+    const allUpdates=[];
     for(const s of stages){
       const waitCount=Math.min(s.waitlistCount,Math.max(0,s.peopleCount-s.winnerCount));
       const result=performLotteryWithWaitlist(s.records,s.winnerCount,waitCount);
@@ -7246,14 +7290,10 @@ async function applyPromotionSuggestion(stage){
       result.waitlist.forEach((r,i)=>rows.push({id:r.id,status:`候補${i+1}`}));
       result.losers.forEach(r=>rows.push({id:r.id,status:'未中籤'}));
       totalExpected += rows.length;
-      const groups={};
-      rows.forEach(x=>{ if(!groups[x.status]) groups[x.status]=[]; groups[x.status].push(x.id); });
-      for(const [status,ids] of Object.entries(groups)){
-        const {error,data}=await db.from(RECORD_TABLE).update({lottery_status:status,lottery_batch:batch,lottery_locked:true}).in('id',ids).select('id');
-        if(error){alert('批次抽籤寫入失敗：'+(error.message||'未知錯誤'));console.error(error);return;}
-        totalUpdated += (data||[]).length;
-      }
+      allUpdates.push(...rows);
     }
+    try{totalUpdated=await commitLotteryResults(allUpdates,eligible.snapshot,`BATCH|${new Date().toISOString()}`);}
+    catch(error){alert('批次抽籤未完成，請重新載入確認：'+error.message);return;}
     await writeOperationLog('批次抽籤並鎖定', {stage_count:stages.length, total_updated:totalUpdated, total_expected:totalExpected}, []);
     alert(`批次抽籤完成，共更新 ${totalUpdated}/${totalExpected} 筆。`);
     await loadAllData();
@@ -7288,7 +7328,7 @@ function getLotteryStatusSummary(records){
 function performLotteryWithWaitlist(records,winnerCount,waitlistCount){
   const groups={};
   records.forEach(r=>{
-    const key=`${normalizePhone(r.phone)}|${r.id_last4||''}|${r.day_of_week}|${r.venue_type}`;
+    const key=`${personRecordKey(r)}|${r.day_of_week}|${r.venue_type}`;
     if(!groups[key]) groups[key]=[];
     groups[key].push(r);
   });
@@ -7763,8 +7803,8 @@ document.getElementById('createFirstAdminBtn').onclick=async()=>{
   }catch(e){ showMsg('loginMsg',`建立失敗：${e.message||'請確認 Supabase Auth 管理員授權及資料庫 SQL。'}`); console.error(e); }
 };
 document.getElementById('logoutBtn').onclick=logout;
-function normalizeFormDay(value){const m=String(value||'').match(/週([一二三四五六日])/);return m?`周${m[1]}`:'';}
-function normalizeFormTime(value){return String(value||'').split(/[,，、\n]/).map(x=>x.trim()).filter(Boolean);}
+function normalizeFormDay(value){const m=String(value||'').match(/(?:週|周|星期)([一二三四五六日])/);return m?`周${m[1]}`:'';}
+function normalizeFormTime(value){return String(value||'').split(/[,，、\n]/).map(x=>x.trim().replace(/[：]/g,':').replace(/[–—－~～至到]/g,'-').replace(/\s*-\s*/g,'-')).filter(Boolean);}
 function formField(row,title){return String(row[title]??'').trim();}
 function normalizeFormTimestamp(value){
   if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString();
@@ -7791,7 +7831,7 @@ async function parseGoogleFormWorkbook(file){
     const name=formField(row,'申請人姓名'),email=formField(row,'電子郵件地址')||formField(row,'電子郵件信箱（Go會員）')||formField(row,'電子郵件信箱（會館會員）');
     const identifier=(isGo?formField(row,'台北捷運Go會員綁定手機（10碼）'):(isBeitou?formField(row,'北投會館會員身分證字號（10碼）'):'' )).replace(/\s/g,'').toUpperCase();
     const phone=(isGo?identifier:(isBeitou?formField(row,'聯絡手機號碼（會館會員，10碼）'):'' )).replace(/\D/g,'');
-    const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`),stamp=normalizeFormTimestamp(row['時間戳記']);
+    const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`),stamp=normalizeFormTimestamp(row['時間戳記']); // browser-only grouping; server derives authoritative HMAC
     const submissionKey=await sha256([stamp,email.toLowerCase(),memberType,identifier,name].join('|'));
     if(seenRow.has(submissionKey)){anomalies.push({type:'重複回覆資料',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});continue;}seenRow.add(submissionKey);
     const safePayload={...row};
@@ -7799,37 +7839,132 @@ async function parseGoogleFormWorkbook(file){
     if(Object.prototype.hasOwnProperty.call(safePayload,identifierField))safePayload[identifierField]=`末4碼 ${identifier.slice(-4)}`;
     const normalizedMemberType=isGo?'台北捷運Go會員':(isBeitou?'北投會館會員':'');
     const sub={submission_key:submissionKey,submitted_at:stamp,member_type:normalizedMemberType,member_key_hash:memberKeyHash,member_identifier:identifier,name,phone,email,raw_payload:safePayload,excel_row:excelRow};submissions.push(sub);
-    if(!name||!normalizedMemberType||!identifier||!phone||!email||(isBeitou&&!/^[A-Z][0-9]{9}$/.test(identifier))||(isGo&&!/^09\d{8}$/.test(phone)))anomalies.push({type:'基本資料格式或必填欄位異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});
+    if(!name||!normalizedMemberType||!identifier||!/^09\d{8}$/.test(phone)||!email||(isBeitou&&!/^[A-Z][0-9]{9}$/.test(identifier))||(isGo&&!/^09\d{8}$/.test(identifier)))anomalies.push({type:'基本資料格式或必填欄位異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});
     const selected=[];
-    const sportChoice=formField(row,'是否申請羽球／籃球？');
-    if(sportChoice==='申請羽球'){const day=normalizeFormDay(formField(row,'羽球：選擇星期（限選一日）')),times=Object.keys(row).filter(k=>/^羽球：請選擇1個時段/.test(k)).flatMap(k=>normalizeFormTime(row[k]));if(times.length!==1)anomalies.push({type:'羽球時段數量異常',submissionKeys:[submissionKey],recordKeys:[]});times.forEach(time=>selected.push({venue:'羽球',day,time}));}
-    if(sportChoice==='申請籃球'){const day=normalizeFormDay(formField(row,'籃球：選擇星期（限選一日）')),times=Object.keys(row).filter(k=>/^籃球：請選擇1個時段/.test(k)).flatMap(k=>normalizeFormTime(row[k]));if(times.length!==1)anomalies.push({type:'籃球時段數量異常',submissionKeys:[submissionKey],recordKeys:[]});times.forEach(time=>selected.push({venue:'籃球',day,time}));}
+    // v16: 羽球與籃球分別詢問是否申請；保留 v15 單選欄位向下相容。
+    const legacySport=formField(row,'是否申請羽球／籃球？');
+    for(const [venue,question] of [['羽球','是否申請羽球？'],['籃球','是否申請籃球？']]){
+      const choice=formField(row,question);
+      const wants=choice ? (choice==='是'||choice==='申請'+venue||choice==='我要申請'+venue||choice==='要申請'+venue||(choice.includes('申請')&&!choice.includes('不申請'))) : legacySport==='申請'+venue;
+      if(!wants)continue;
+      const day=normalizeFormDay(formField(row,venue+'：選擇星期（限選一日）'));
+      const times=Object.keys(row).filter(k=>k.startsWith(venue+'：請選擇1個時段')).flatMap(k=>normalizeFormTime(row[k]));
+      if(times.length!==1)anomalies.push({type:venue+'時段數量異常',submissionKeys:[submissionKey],recordKeys:[],detail:'第 '+excelRow+' 列'});
+      times.forEach(time=>selected.push({venue,day,time}));
+    }
     const tableSlots=new Set();for(const [header,value] of Object.entries(row)){const m=header.match(/^(B1|B2)桌球場｜週([一二三四五六日])｜/);if(!m||!String(value||'').trim())continue;normalizeFormTime(value).forEach(time=>tableSlots.add(`${m[1]}桌球|周${m[2]}|${time}`));}
     tableSlots.forEach(v=>{const [venue,day,time]=v.split('|');selected.push({venue,day,time});});
-    if(selected.filter(x=>x.venue==='羽球'||x.venue==='籃球').length>1)anomalies.push({type:'羽球／籃球合計超過一個時段',submissionKeys:[submissionKey],recordKeys:[]});
     if(!selected.length)anomalies.push({type:'未選擇任何場次',submissionKeys:[submissionKey],recordKeys:[]});
     const seenSlots=new Set();for(const slot of selected){if(!slot.day||!slot.time){anomalies.push({type:'場次欄位無法辨識',submissionKeys:[submissionKey],recordKeys:[]});continue;}
-      const key=[slot.venue,slot.day,slot.time].join('|');if(seenSlots.has(key)){anomalies.push({type:'同一回覆重複選擇場次',submissionKeys:[submissionKey],recordKeys:[key]});continue;}seenSlots.add(key);
+      const timeParts=slot.time.match(/^([0-9]{1,2}):([0-9]{2})\s*[-–~至]\s*([0-9]{1,2}):([0-9]{2})$/);
+      const validTime=timeParts&&Number(timeParts[1])<=23&&Number(timeParts[3])<=23&&Number(timeParts[2])<=59&&Number(timeParts[4])<=59&&(Number(timeParts[1])*60+Number(timeParts[2]))<(Number(timeParts[3])*60+Number(timeParts[4]));
+      if(!validTime){anomalies.push({type:'場次時間格式異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列：${slot.time}`});continue;}
+      const key=[slot.venue,slot.day,slot.time].join('|');if(seenSlots.has(key)){const duplicatedKey=await sha256(`${submissionKey}|${key}`);anomalies.push({type:'同一回覆重複選擇場次',submissionKeys:[submissionKey],recordKeys:[duplicatedKey]});continue;}seenSlots.add(key);
       const recordKey=await sha256(`${submissionKey}|${key}`);records.push({submission_key:submissionKey,record_key:recordKey,member_key_hash:memberKeyHash,member_type:sub.member_type,member_identifier_last4:identifier.slice(-4),name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:slot.time,serial_number:`GF-${recordKey.slice(0,12).toUpperCase()}`,registered_at:stamp||new Date().toISOString()});
     }
   }
-  const identities=new Map();submissions.forEach(s=>{const a=identities.get(s.member_key_hash)||[];a.push(s);identities.set(s.member_key_hash,a);});
-  identities.forEach(g=>{const keys=[...new Set(g.map(x=>x.submission_key))],related=records.filter(r=>keys.includes(r.submission_key)),rkeys=related.map(r=>r.record_key);if(new Set(g.map(x=>x.name.trim().toLowerCase())).size>1)anomalies.push({type:'相同識別資料對應不同姓名',submissionKeys:keys,recordKeys:rkeys});if(g.length>1&&g[0].member_type==='台北捷運Go會員')anomalies.push({type:'同一Go App綁定手機重複使用',submissionKeys:keys,recordKeys:rkeys});if(related.filter(r=>r.venue_type==='羽球'||r.venue_type==='籃球').length>1)anomalies.push({type:'同一會員羽球／籃球跨回覆超過一個時段',submissionKeys:keys,recordKeys:rkeys});});
-  const stages=new Map();records.forEach(r=>{const k=`${r.venue_type}|${r.day_of_week}|${r.time_slot}`;const a=stages.get(k)||[];a.push(r);stages.set(k,a);});
-  stages.forEach((g,key)=>{const [venue,day,time]=key.split('|'),cap=capacitySettings[settingKey(venue,day,time)],existing=allRecords.filter(r=>r.venue_type===venue&&r.day_of_week===day&&r.time_slot===time).length;if(cap!==undefined&&g.length+existing>Number(cap))anomalies.push({type:'超額登記',submissionKeys:[...new Set(g.map(r=>r.submission_key))],recordKeys:g.map(r=>r.record_key),detail:`${key}，超過名額 ${cap}`});});
-  const contacts=new Map();submissions.forEach(s=>{const a=contacts.get(s.phone)||[];a.push(s);contacts.set(s.phone,a);});contacts.forEach(g=>{if(new Set(g.map(x=>x.member_type)).size>1){const keys=[...new Set(g.map(x=>x.submission_key))];anomalies.push({type:'跨會員身分疑似重複',submissionKeys:keys,recordKeys:records.filter(r=>keys.includes(r.submission_key)).map(r=>r.record_key)});}});
-  const requested=new Map();records.forEach(r=>{const k=`${r.member_key_hash}|${r.venue_type}|${r.day_of_week}|${r.time_slot}`,a=requested.get(k)||[];a.push(r);requested.set(k,a);});requested.forEach(g=>{if(g.length>1)anomalies.push({type:'同一會員重複申請相同場次',submissionKeys:[...new Set(g.map(r=>r.submission_key))],recordKeys:g.map(r=>r.record_key)});});
+  const validSubmissionKeys=new Set(submissions.filter(s=>s.member_type&&s.member_identifier).map(s=>s.submission_key));
+  const validSubmissions=submissions.filter(s=>s.member_type&&s.member_identifier);
+  const identities=new Map();
+  validSubmissions.forEach(s=>{const a=identities.get(s.member_key_hash)||[];a.push(s);identities.set(s.member_key_hash,a);});
+  identities.forEach(g=>{
+    const keys=[...new Set(g.map(x=>x.submission_key))];
+    const related=records.filter(r=>keys.includes(r.submission_key));
+    if(new Set(g.map(x=>x.name.trim().toLowerCase())).size>1)
+      anomalies.push({type:'相同識別資料對應不同姓名',submissionKeys:keys,recordKeys:related.map(r=>r.record_key)});
+  });
+  function timeRange(t){
+    const parts=String(t||'').match(/(\d{1,2}):(\d{2})\s*[-–~至]\s*(\d{1,2}):(\d{2})/);
+    if(!parts||Number(parts[1])>23||Number(parts[3])>23||Number(parts[2])>59||Number(parts[4])>59)return null;
+    const start=Number(parts[1])*60+Number(parts[2]),end=Number(parts[3])*60+Number(parts[4]);
+    return start<end&&end<=1440?[start,end]:null;
+  }
+  function overlaps(a,b){const x=timeRange(a),y=timeRange(b);return !!(x&&y&&x[0]<y[1]&&y[0]<x[1]);}
+  const limitedSports=new Set(['羽球','籃球']);
+  function conflictReason(a,b){
+    if(a.venue_type===b.venue_type&&limitedSports.has(a.venue_type))return a.venue_type+'每位會員超過1場';
+    if(a.venue_type===b.venue_type&&a.day_of_week===b.day_of_week&&a.time_slot===b.time_slot)return '同一會員重複申請相同場次';
+    if(a.day_of_week===b.day_of_week&&a.venue_type!==b.venue_type&&overlaps(a.time_slot,b.time_slot))return '同會員同日期同時段跨球類重複';
+    return '';
+  }
+  function addRecordAnomaly(type,r,detail=''){
+    if(anomalies.some(a=>a.type===type&&(a.recordKeys||[]).includes(r.record_key)))return;
+    anomalies.push({type,submissionKeys:[r.submission_key],recordKeys:[r.record_key],...(detail?{detail}:{})});
+  }
+  const byMember=new Map();
+  records.filter(r=>validSubmissionKeys.has(r.submission_key)).forEach(r=>{const k=r.member_key_hash;const arr=byMember.get(k)||[];arr.push(r);byMember.set(k,arr);});
+  for(const memberRecords of byMember.values()){
+    const internal=new Map();
+    const sameSubmissionGroups=new Map();
+    memberRecords.forEach(r=>{const a=sameSubmissionGroups.get(r.submission_key)||[];a.push(r);sameSubmissionGroups.set(r.submission_key,a);});
+    for(const group of sameSubmissionGroups.values()){
+      for(let i=0;i<group.length;i++)for(let j=i+1;j<group.length;j++){
+        const a=group[i],b=group[j],reason=conflictReason(a,b);
+        if(!reason)continue;
+        const type=reason==='同會員同日期同時段跨球類重複'?'同一回覆跨球類時段衝突（雙方待人工確認）':'同一回覆登記衝突（雙方待人工確認）';
+        for(const [record,peer] of [[a,b],[b,a]]){
+          const key=record.record_key+'|'+type;
+          const entry=internal.get(key)||{record,type,peers:new Set()};
+          entry.peers.add(peer.venue_type+' '+peer.day_of_week+' '+peer.time_slot);
+          internal.set(key,entry);
+        }
+      }
+    }
+    const manualKeys=new Set();
+    internal.forEach(({record,type,peers})=>{
+      manualKeys.add(record.record_key);
+      addRecordAnomaly(type,record,'同一份回覆內無法判定申請先後；衝突場次：'+[...peers].join('；'));
+    });
+    memberRecords.sort((a,b)=>Date.parse(a.registered_at)-Date.parse(b.registered_at)||a.submission_key.localeCompare(b.submission_key)||a.record_key.localeCompare(b.record_key));
+    const byTimestamp=new Map();
+    memberRecords.forEach(r=>{const k=Date.parse(r.registered_at),a=byTimestamp.get(k)||[];a.push(r);byTimestamp.set(k,a);});
+    for(const sameTimeRecords of byTimestamp.values()){
+      for(let i=0;i<sameTimeRecords.length;i++)for(let j=i+1;j<sameTimeRecords.length;j++){
+        const a=sameTimeRecords[i],b=sameTimeRecords[j];
+        if(a.submission_key===b.submission_key||!conflictReason(a,b))continue;
+        manualKeys.add(a.record_key);manualKeys.add(b.record_key);
+        addRecordAnomaly('同時間提交衝突（雙方待人工確認）',a,'另一筆：'+b.venue_type+' '+b.day_of_week+' '+b.time_slot);
+        addRecordAnomaly('同時間提交衝突（雙方待人工確認）',b,'另一筆：'+a.venue_type+' '+a.day_of_week+' '+a.time_slot);
+      }
+    }
+    const accepted=[];
+    for(const r of memberRecords){
+      if(manualKeys.has(r.record_key))continue;
+      const previous=accepted.find(p=>conflictReason(p,r));
+      if(previous){
+        const reason=conflictReason(previous,r);
+        const type=reason+'（後筆）';
+        addRecordAnomaly(type,r,'較早登記：'+previous.venue_type+' '+previous.day_of_week+' '+previous.time_slot);
+        continue;
+      }
+      accepted.push(r);
+    }
+  }
+  // 超過球場名額是正常抽籤情況。會員衝突以會員識別雜湊判斷，不使用共用聯絡手機。
   return{submissions,records,anomalies};
 }
 let pendingFormImport=null;
 function renderGoogleFormImportPage(){
-  document.getElementById('content').innerHTML=`<div class="panel"><h3>資料庫授權</h3><div class="small">此功能需已授權的 Supabase Auth 管理帳號。原後台帳密不會自動取得資料庫權限。</div><div class="inline-form" style="margin-top:12px"><div class="field"><label>Supabase Auth Email</label><input id="formAuthEmail" type="email"></div><div class="field"><label>Supabase Auth 密碼</label><input id="formAuthPassword" type="password"></div><button id="formAuthBtn" class="btn btn-primary">登入資料庫</button><span id="formAuthState" class="small"></span></div></div><div class="panel"><h3>Google 表單回覆 Excel</h3><div class="alert">選擇原始回覆試算表即可解析，無須整理欄位。匯入前可檢視異常。完整表單回覆及會員識別資料儲存於後台受限資料表。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待處理異常</h3><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
+  document.getElementById('content').innerHTML=`<div class="panel"><h3>資料庫授權</h3><div class="small">此功能需已授權的 Supabase Auth 管理帳號。原後台帳密不會自動取得資料庫權限。</div><div class="inline-form" style="margin-top:12px"><div class="field"><label>Supabase Auth Email</label><input id="formAuthEmail" type="email"></div><div class="field"><label>Supabase Auth 密碼</label><input id="formAuthPassword" type="password"></div><button id="formAuthBtn" class="btn btn-primary">登入資料庫</button><span id="formAuthState" class="small"></span></div></div><div class="panel"><h3>Google 表單回覆 Excel</h3><div class="alert">支援 v15／v16 Google 表單回覆試算表。依同一會員、提交先後檢查跨球類撞時段與羽球／籃球各限1場；異常資料供人工檢核，匯入前請先預覽。完整表單回覆及會員識別資料儲存於後台受限資料表。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待處理異常</h3><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
   document.getElementById('formAuthBtn').onclick=async()=>{const {error}=await importDb.auth.signInWithPassword({email:document.getElementById('formAuthEmail').value.trim(),password:document.getElementById('formAuthPassword').value});document.getElementById('formAuthState').textContent=error?`登入失敗：${error.message}`:'已登入';};
   document.getElementById('previewFormBtn').onclick=async()=>{try{const f=document.getElementById('formWorkbook').files[0];if(!f)throw new Error('請先選擇Excel檔案。');pendingFormImport=await parseGoogleFormWorkbook(f);renderFormImportPreview();}catch(e){pendingFormImport=null;document.getElementById('formImportPreview').innerHTML=`<div class="msg error">${escapeHtml(e.message||String(e))}</div>`;}};
   document.getElementById('refreshFormAnomalies').onclick=loadFormAnomalies;loadFormAnomalies();
 }
-function renderFormImportPreview(){const p=pendingFormImport,box=document.getElementById('formImportPreview');if(!p||!box)return;const counts={};p.anomalies.forEach(a=>counts[a.type]=(counts[a.type]||0)+1);box.innerHTML=`<div class="msg info">${p.submissions.length} 份回覆，拆分 ${p.records.length} 筆場次，${p.anomalies.length} 項異常。</div><div class="table-wrap"><table><thead><tr><th>異常類型</th><th>筆數</th><th>關聯資料</th></tr></thead><tbody>${Object.entries(counts).map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td>匯入後可逐項確認</td></tr>`).join('')||'<tr><td colspan="3">未發現匯入前異常</td></tr>'}</tbody></table></div><button id="commitFormImportBtn" class="btn btn-primary" style="margin-top:12px">確認匯入 ${p.records.length} 筆場次</button>`;document.getElementById('commitFormImportBtn').onclick=commitGoogleFormImport;}
-async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data:userData,error:userError}=await importDb.auth.getUser();if(userError||!userData?.user){alert('請先登入已授權的 Supabase Auth 管理帳號。');return;}if(!confirm(`將匯入 ${pendingFormImport.submissions.length} 份回覆、${pendingFormImport.records.length} 筆場次。已匯入回覆會自動略過。繼續？`))return;const {data,error}=await importDb.rpc('import_google_form_batch',{p_payload:{batch_key:crypto.randomUUID(),submissions:pendingFormImport.submissions,records:pendingFormImport.records,anomalies:pendingFormImport.anomalies}});if(error){alert(`匯入失敗：${error.message}`);return;}alert(`匯入完成。新增 ${data?.inserted_records||0} 筆場次，略過重複 ${data?.duplicate_submissions||0} 份回覆。`);pendingFormImport=null;await loadAllData();renderGoogleFormImportPage();}
+function renderFormImportPreview(){
+  const p=pendingFormImport,box=document.getElementById('formImportPreview');
+  if(!p||!box)return;
+  const counts={};
+  p.anomalies.forEach(a=>counts[a.type]=(counts[a.type]||0)+1);
+  const blocked=p.anomalies.some(a=>a.type==='基本資料格式或必填欄位異常');
+  const blockingNotice=blocked
+    ? '<div class="msg error">有回覆缺少必要會員資料或格式錯誤，請修正原始表單後重新匯入；本批資料不會寫入資料庫。</div>'
+    : '';
+  const rows=Object.entries(counts).map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td>匯入後可逐項確認</td></tr>`).join('')
+    || '<tr><td colspan="3">未發現匯入前異常</td></tr>';
+  box.innerHTML=`<div class="msg info">${p.submissions.length} 份回覆，拆分 ${p.records.length} 筆場次，${p.anomalies.length} 項異常。</div>${blockingNotice}<div class="table-wrap"><table><thead><tr><th>異常類型</th><th>筆數</th><th>關聯資料</th></tr></thead><tbody>${rows}</tbody></table></div><button id="commitFormImportBtn" class="btn btn-primary" style="margin-top:12px" ${blocked?'disabled title="請先修正會員基本資料"':''}>確認匯入 ${p.records.length} 筆場次</button>`;
+  if(!blocked)document.getElementById('commitFormImportBtn').onclick=commitGoogleFormImport;
+}
+async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data:userData,error:userError}=await importDb.auth.getUser();if(userError||!userData?.user){alert('請先登入已授權的 Supabase Auth 管理帳號。');return;}if(!confirm(`將匯入 ${pendingFormImport.submissions.length} 份回覆、${pendingFormImport.records.length} 筆場次。已匯入回覆會自動略過。繼續？`))return;const {data,error}=await importDb.rpc('import_google_form_batch',{p_payload:{batch_key:crypto.randomUUID(),submissions:pendingFormImport.submissions,records:pendingFormImport.records,anomalies:pendingFormImport.anomalies}});if(error){alert(`匯入失敗：${error.message}`);return;}const {error:recheckError}=await importDb.rpc('court_v16_reconcile_import_anomalies');if(recheckError){alert('場次已匯入，但跨批次異常檢核未完成；抽籤功能將暫停。原因：'+recheckError.message);}else{alert(`匯入完成。新增 ${data?.inserted_records||0} 筆場次，略過重複 ${data?.duplicate_submissions||0} 份回覆；已同步跨批次檢核。`);}pendingFormImport=null;await loadAllData();renderGoogleFormImportPage();}
 async function loadFormAnomalies(){const box=document.getElementById('formAnomalyList');if(!box)return;const {data:user}=await importDb.auth.getUser();if(!user?.user){box.innerHTML='<div class="msg info">登入資料庫管理帳號後載入異常清單。</div>';return;}const {data,error}=await importDb.from('lottery_import_anomalies').select('*').order('created_at',{ascending:false}).limit(200);if(error){box.innerHTML=`<div class="msg error">${escapeHtml(error.message)}</div>`;return;}if(!data?.length){box.innerHTML='<div class="msg info">目前沒有異常資料。</div>';return;}box.innerHTML=`<div class="table-wrap"><table><thead><tr><th>異常類型</th><th>狀態</th><th>關聯登記</th><th>處理</th></tr></thead><tbody>${data.map(a=>{const related=(a.record_keys||[]).map(k=>allRecords.find(r=>r.import_record_key===k)).filter(Boolean);const label=related.length?related.map(r=>`${r.name}｜${r.venue_type} ${r.day_of_week} ${r.time_slot}（${r.serial_number}）`).join('；'):((a.submission_keys||[]).length?`${a.submission_keys.length} 份回覆`:'-');return `<tr><td>${escapeHtml(a.anomaly_type)}${a.detail?`<div class="small">${escapeHtml(a.detail)}</div>`:''}</td><td>${escapeHtml(a.resolution_status)}</td><td>${escapeHtml(label)}</td><td><select data-anomaly="${a.id}"><option value="pending" ${a.resolution_status==='pending'?'selected':''}>待確認</option><option value="valid" ${a.resolution_status==='valid'?'selected':''}>確認有效</option><option value="invalid" ${a.resolution_status==='invalid'?'selected':''}>確認無效</option></select> <button class="btn btn-gray" data-save-anomaly="${a.id}">儲存</button></td></tr>`;}).join('')}</tbody></table></div>`;box.querySelectorAll('[data-save-anomaly]').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.saveAnomaly,status=box.querySelector(`[data-anomaly="${id}"]`).value,{error}=await importDb.rpc('resolve_google_form_anomaly',{p_anomaly_id:id,p_status:status});if(error)alert(`儲存失敗：${error.message}`);else loadFormAnomalies();});}
 document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage(btn.dataset.page));
 

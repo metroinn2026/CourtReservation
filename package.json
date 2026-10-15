@@ -1,0 +1,10 @@
+{
+  "name": "court-reservation-v16-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.10"
+  }
+}
