@@ -7886,7 +7886,8 @@ async function parseGoogleFormWorkbook(file){
     }
   }
   // 申請人數超過球場容量屬正常抽籤情境，不列為登記異常。
-  const contacts=new Map();submissions.forEach(s=>{const a=contacts.get(s.phone)||[];a.push(s);contacts.set(s.phone,a);});contacts.forEach(g=>{if(new Set(g.map(x=>x.member_type)).size>1){const keys=[...new Set(g.map(x=>x.submission_key))];anomalies.push({type:'跨會員身分疑似重複',submissionKeys:keys,recordKeys:records.filter(r=>keys.includes(r.submission_key)).map(r=>r.record_key)});}});
+  // 聯絡手機可能由不同會員共用；不可單憑共用電話判定異常。
+
 
   // 同一會員重複提交完全相同桌球場次，後筆列異常（桌球不限不同場次）。
   const duplicates=new Map();
