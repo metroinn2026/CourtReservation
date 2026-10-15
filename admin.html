@@ -7801,12 +7801,19 @@ async function parseGoogleFormWorkbook(file){
     const sub={submission_key:submissionKey,submitted_at:stamp,member_type:normalizedMemberType,member_key_hash:memberKeyHash,member_identifier:identifier,name,phone,email,raw_payload:safePayload,excel_row:excelRow};submissions.push(sub);
     if(!name||!normalizedMemberType||!identifier||!phone||!email||(isBeitou&&!/^[A-Z][0-9]{9}$/.test(identifier))||(isGo&&!/^09\d{8}$/.test(phone)))anomalies.push({type:'基本資料格式或必填欄位異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});
     const selected=[];
-    const sportChoice=formField(row,'是否申請羽球／籃球？');
-    if(sportChoice==='申請羽球'){const day=normalizeFormDay(formField(row,'羽球：選擇星期（限選一日）')),times=Object.keys(row).filter(k=>/^羽球：請選擇1個時段/.test(k)).flatMap(k=>normalizeFormTime(row[k]));if(times.length!==1)anomalies.push({type:'羽球時段數量異常',submissionKeys:[submissionKey],recordKeys:[]});times.forEach(time=>selected.push({venue:'羽球',day,time}));}
-    if(sportChoice==='申請籃球'){const day=normalizeFormDay(formField(row,'籃球：選擇星期（限選一日）')),times=Object.keys(row).filter(k=>/^籃球：請選擇1個時段/.test(k)).flatMap(k=>normalizeFormTime(row[k]));if(times.length!==1)anomalies.push({type:'籃球時段數量異常',submissionKeys:[submissionKey],recordKeys:[]});times.forEach(time=>selected.push({venue:'籃球',day,time}));}
+    // v16: 羽球與籃球分別詢問是否申請；保留 v15 單選欄位向下相容。
+    const legacySport=formField(row,'是否申請羽球／籃球？');
+    for(const [venue,question] of [['羽球','是否申請羽球？'],['籃球','是否申請籃球？']]){
+      const choice=formField(row,question);
+      const wants=choice ? /^(是|申請|我要申請|要申請|申請${venue})/.test(choice) || (choice.includes('申請')&&!choice.includes('不申請')) : legacySport==='申請'+venue;
+      if(!wants)continue;
+      const day=normalizeFormDay(formField(row,venue+'：選擇星期（限選一日）'));
+      const times=Object.keys(row).filter(k=>k.startsWith(venue+'：請選擇1個時段')).flatMap(k=>normalizeFormTime(row[k]));
+      if(times.length!==1)anomalies.push({type:venue+'時段數量異常',submissionKeys:[submissionKey],recordKeys:[],detail:'第 '+excelRow+' 列'});
+      times.forEach(time=>selected.push({venue,day,time}));
+    }
     const tableSlots=new Set();for(const [header,value] of Object.entries(row)){const m=header.match(/^(B1|B2)桌球場｜週([一二三四五六日])｜/);if(!m||!String(value||'').trim())continue;normalizeFormTime(value).forEach(time=>tableSlots.add(`${m[1]}桌球|周${m[2]}|${time}`));}
     tableSlots.forEach(v=>{const [venue,day,time]=v.split('|');selected.push({venue,day,time});});
-    if(selected.filter(x=>x.venue==='羽球'||x.venue==='籃球').length>1)anomalies.push({type:'羽球／籃球合計超過一個時段',submissionKeys:[submissionKey],recordKeys:[]});
     if(!selected.length)anomalies.push({type:'未選擇任何場次',submissionKeys:[submissionKey],recordKeys:[]});
     const seenSlots=new Set();for(const slot of selected){if(!slot.day||!slot.time){anomalies.push({type:'場次欄位無法辨識',submissionKeys:[submissionKey],recordKeys:[]});continue;}
       const key=[slot.venue,slot.day,slot.time].join('|');if(seenSlots.has(key)){anomalies.push({type:'同一回覆重複選擇場次',submissionKeys:[submissionKey],recordKeys:[key]});continue;}seenSlots.add(key);
@@ -7814,16 +7821,49 @@ async function parseGoogleFormWorkbook(file){
     }
   }
   const identities=new Map();submissions.forEach(s=>{const a=identities.get(s.member_key_hash)||[];a.push(s);identities.set(s.member_key_hash,a);});
-  identities.forEach(g=>{const keys=[...new Set(g.map(x=>x.submission_key))],related=records.filter(r=>keys.includes(r.submission_key)),rkeys=related.map(r=>r.record_key);if(new Set(g.map(x=>x.name.trim().toLowerCase())).size>1)anomalies.push({type:'相同識別資料對應不同姓名',submissionKeys:keys,recordKeys:rkeys});if(g.length>1&&g[0].member_type==='台北捷運Go會員')anomalies.push({type:'同一Go App綁定手機重複使用',submissionKeys:keys,recordKeys:rkeys});if(related.filter(r=>r.venue_type==='羽球'||r.venue_type==='籃球').length>1)anomalies.push({type:'同一會員羽球／籃球跨回覆超過一個時段',submissionKeys:keys,recordKeys:rkeys});});
+  // 同會員分別最多羽球1場、籃球1場；桌球不設數量上限。
+  // 對不同會員不做跨會員時段衝突判斷。
+  identities.forEach(g=>{
+    const keys=[...new Set(g.map(x=>x.submission_key))];
+    const related=records.filter(r=>keys.includes(r.submission_key));
+    if(new Set(g.map(x=>x.name.trim().toLowerCase())).size>1)
+      anomalies.push({type:'相同識別資料對應不同姓名',submissionKeys:keys,recordKeys:related.map(r=>r.record_key)});
+  });
+  function timeRange(t){
+    const parts=String(t||'').match(/(\d{1,2}):(\d{2})\s*[-–~]\s*(\d{1,2}):(\d{2})/);
+    return parts?[Number(parts[1])*60+Number(parts[2]),Number(parts[3])*60+Number(parts[4])]:null;
+  }
+  function overlaps(a,b){const x=timeRange(a),y=timeRange(b);return x&&y&&x[0]<y[1]&&y[0]<x[1];}
+  const byMember=new Map();
+  records.forEach(r=>{const k=r.member_key_hash;const arr=byMember.get(k)||[];arr.push(r);byMember.set(k,arr);});
+  for(const memberRecords of byMember.values()){
+    memberRecords.sort((a,b)=>Date.parse(a.registered_at)-Date.parse(b.registered_at)||a.submission_key.localeCompare(b.submission_key)||a.record_key.localeCompare(b.record_key));
+    const accepted=[],sportCount={'羽球':0,'籃球':0};
+    for(const r of memberRecords){
+      const previous=accepted.find(p=>p.day_of_week===r.day_of_week && p.venue_type!==r.venue_type && overlaps(p.time_slot,r.time_slot));
+      if(previous){
+        const sameSubmit=previous.submission_key===r.submission_key;
+        anomalies.push({type:sameSubmit?'同一回覆跨球類時段衝突（待人工確認）':'同會員同日期同時段跨球類重複（後筆）',submissionKeys:[r.submission_key],recordKeys:[r.record_key],detail:'衝突較早資料：'+previous.venue_type+' '+previous.day_of_week+' '+previous.time_slot});
+        // 同一回覆無法判定先後，人工確認；不占用後續有效登記名額。
+        continue;
+      }
+      if((r.venue_type==='羽球'||r.venue_type==='籃球')&&sportCount[r.venue_type]>=1){
+        anomalies.push({type:r.venue_type+'每位會員超過1場（後筆）',submissionKeys:[r.submission_key],recordKeys:[r.record_key]});
+        continue;
+      }
+      accepted.push(r);
+      if(Object.hasOwn(sportCount,r.venue_type))sportCount[r.venue_type]++;
+    }
+  }
   const stages=new Map();records.forEach(r=>{const k=`${r.venue_type}|${r.day_of_week}|${r.time_slot}`;const a=stages.get(k)||[];a.push(r);stages.set(k,a);});
   stages.forEach((g,key)=>{const [venue,day,time]=key.split('|'),cap=capacitySettings[settingKey(venue,day,time)],existing=allRecords.filter(r=>r.venue_type===venue&&r.day_of_week===day&&r.time_slot===time).length;if(cap!==undefined&&g.length+existing>Number(cap))anomalies.push({type:'超額登記',submissionKeys:[...new Set(g.map(r=>r.submission_key))],recordKeys:g.map(r=>r.record_key),detail:`${key}，超過名額 ${cap}`});});
   const contacts=new Map();submissions.forEach(s=>{const a=contacts.get(s.phone)||[];a.push(s);contacts.set(s.phone,a);});contacts.forEach(g=>{if(new Set(g.map(x=>x.member_type)).size>1){const keys=[...new Set(g.map(x=>x.submission_key))];anomalies.push({type:'跨會員身分疑似重複',submissionKeys:keys,recordKeys:records.filter(r=>keys.includes(r.submission_key)).map(r=>r.record_key)});}});
-  const requested=new Map();records.forEach(r=>{const k=`${r.member_key_hash}|${r.venue_type}|${r.day_of_week}|${r.time_slot}`,a=requested.get(k)||[];a.push(r);requested.set(k,a);});requested.forEach(g=>{if(g.length>1)anomalies.push({type:'同一會員重複申請相同場次',submissionKeys:[...new Set(g.map(r=>r.submission_key))],recordKeys:g.map(r=>r.record_key)});});
+
   return{submissions,records,anomalies};
 }
 let pendingFormImport=null;
 function renderGoogleFormImportPage(){
-  document.getElementById('content').innerHTML=`<div class="panel"><h3>資料庫授權</h3><div class="small">此功能需已授權的 Supabase Auth 管理帳號。原後台帳密不會自動取得資料庫權限。</div><div class="inline-form" style="margin-top:12px"><div class="field"><label>Supabase Auth Email</label><input id="formAuthEmail" type="email"></div><div class="field"><label>Supabase Auth 密碼</label><input id="formAuthPassword" type="password"></div><button id="formAuthBtn" class="btn btn-primary">登入資料庫</button><span id="formAuthState" class="small"></span></div></div><div class="panel"><h3>Google 表單回覆 Excel</h3><div class="alert">選擇原始回覆試算表即可解析，無須整理欄位。匯入前可檢視異常。完整表單回覆及會員識別資料儲存於後台受限資料表。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待處理異常</h3><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
+  document.getElementById('content').innerHTML=`<div class="panel"><h3>資料庫授權</h3><div class="small">此功能需已授權的 Supabase Auth 管理帳號。原後台帳密不會自動取得資料庫權限。</div><div class="inline-form" style="margin-top:12px"><div class="field"><label>Supabase Auth Email</label><input id="formAuthEmail" type="email"></div><div class="field"><label>Supabase Auth 密碼</label><input id="formAuthPassword" type="password"></div><button id="formAuthBtn" class="btn btn-primary">登入資料庫</button><span id="formAuthState" class="small"></span></div></div><div class="panel"><h3>Google 表單回覆 Excel</h3><div class="alert">支援 v15／v16 Google 表單回覆試算表。依同一會員、提交先後檢查跨球類撞時段與羽球／籃球各限1場；異常資料供人工檢核，匯入前請先預覽。完整表單回覆及會員識別資料儲存於後台受限資料表。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待處理異常</h3><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
   document.getElementById('formAuthBtn').onclick=async()=>{const {error}=await importDb.auth.signInWithPassword({email:document.getElementById('formAuthEmail').value.trim(),password:document.getElementById('formAuthPassword').value});document.getElementById('formAuthState').textContent=error?`登入失敗：${error.message}`:'已登入';};
   document.getElementById('previewFormBtn').onclick=async()=>{try{const f=document.getElementById('formWorkbook').files[0];if(!f)throw new Error('請先選擇Excel檔案。');pendingFormImport=await parseGoogleFormWorkbook(f);renderFormImportPreview();}catch(e){pendingFormImport=null;document.getElementById('formImportPreview').innerHTML=`<div class="msg error">${escapeHtml(e.message||String(e))}</div>`;}};
   document.getElementById('refreshFormAnomalies').onclick=loadFormAnomalies;loadFormAnomalies();
