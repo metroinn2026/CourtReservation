@@ -6345,6 +6345,8 @@ function renderLotteryPage(){
 
   async function confirmLotteryBatchImport(batch){
     if(!batch || batch.totalValid===0 || batch.totalErrors>0) return;
+    let eligible; try{eligible=await getLotteryEligibility();}catch(e){alert(e.message);return;}
+    if(batch.files.some(f=>f.valid.some(x=>!eligible(x.record)))){alert('抽籤結果包含已判定無效的登記，不能匯入。');return;}
     const ok=await confirmModal('確認批次匯入抽籤結果',`確定一次匯入 <strong>${batch.totalFiles}</strong> 個檔案、共 <strong>${batch.totalValid}</strong> 筆抽籤結果並鎖定嗎？<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
     if(!ok) return;
     const btn=document.getElementById('confirmLotteryImportBtn');
@@ -6413,6 +6415,8 @@ async function applyPromotionSuggestion(stage){
 
   async function confirmLotteryImport(parsed){
     if(!parsed || parsed.valid.length===0 || parsed.errors.length>0) return;
+    let eligible; try{eligible=await getLotteryEligibility();}catch(e){alert(e.message);return;}
+    if(parsed.valid.some(x=>!eligible(x.record))){alert('抽籤結果包含已判定無效的登記，不能匯入。');return;}
     const ok=await confirmModal('確認匯入抽籤結果',`確定匯入 <strong>${parsed.valid.length}</strong> 筆抽籤結果並鎖定嗎？<br><br>${escapeHtml(parsed.venue)}｜${escapeHtml(parsed.day)}<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
     if(!ok) return;
     const btn=document.getElementById('confirmLotteryImportBtn');
