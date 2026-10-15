@@ -7830,7 +7830,7 @@ async function parseGoogleFormWorkbook(file){
     const name=formField(row,'申請人姓名'),email=formField(row,'電子郵件地址')||formField(row,'電子郵件信箱（Go會員）')||formField(row,'電子郵件信箱（會館會員）');
     const identifier=(isGo?formField(row,'台北捷運Go會員綁定手機（10碼）'):(isBeitou?formField(row,'北投會館會員身分證字號（10碼）'):'' )).replace(/\s/g,'').toUpperCase();
     const phone=(isGo?identifier:(isBeitou?formField(row,'聯絡手機號碼（會館會員，10碼）'):'' )).replace(/\D/g,'');
-    const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`),stamp=normalizeFormTimestamp(row['時間戳記']);
+    const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`),stamp=normalizeFormTimestamp(row['時間戳記']); // browser-only grouping; server derives authoritative HMAC
     const submissionKey=await sha256([stamp,email.toLowerCase(),memberType,identifier,name].join('|'));
     if(seenRow.has(submissionKey)){anomalies.push({type:'重複回覆資料',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});continue;}seenRow.add(submissionKey);
     const safePayload={...row};
@@ -7855,7 +7855,7 @@ async function parseGoogleFormWorkbook(file){
     tableSlots.forEach(v=>{const [venue,day,time]=v.split('|');selected.push({venue,day,time});});
     if(!selected.length)anomalies.push({type:'未選擇任何場次',submissionKeys:[submissionKey],recordKeys:[]});
     const seenSlots=new Set();for(const slot of selected){if(!slot.day||!slot.time){anomalies.push({type:'場次欄位無法辨識',submissionKeys:[submissionKey],recordKeys:[]});continue;}
-      const key=[slot.venue,slot.day,slot.time].join('|');if(seenSlots.has(key)){anomalies.push({type:'同一回覆重複選擇場次',submissionKeys:[submissionKey],recordKeys:[key]});continue;}seenSlots.add(key);
+      const key=[slot.venue,slot.day,slot.time].join('|');if(seenSlots.has(key)){const duplicatedKey=await sha256(`${submissionKey}|${key}`);anomalies.push({type:'同一回覆重複選擇場次',submissionKeys:[submissionKey],recordKeys:[duplicatedKey]});continue;}seenSlots.add(key);
       const recordKey=await sha256(`${submissionKey}|${key}`);records.push({submission_key:submissionKey,record_key:recordKey,member_key_hash:memberKeyHash,member_type:sub.member_type,member_identifier_last4:identifier.slice(-4),name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:slot.time,serial_number:`GF-${recordKey.slice(0,12).toUpperCase()}`,registered_at:stamp||new Date().toISOString()});
     }
   }
