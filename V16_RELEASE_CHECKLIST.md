@@ -1,55 +1,61 @@
 # v16 抽籤系統變更與驗收（草稿）
 
+## 2026-10-16 狀態
+
+- GitHub PR #1 仍在測試分支 `fix/form-v16-member-rules-20261015`，尚未合併。
+- 正式 Supabase `wsvsdwuksuzcjisnpyin` 未修改；唯讀查核仍為 3 批匯入、6 份原始回覆、0 筆 `lottery_records`、0 筆異常紀錄。批次歷史統計曾記錄 12 筆場次。
+- Supabase 專案目前沒有 development branches；未建立分支或執行資料庫變更。
+- 本分支已補修三份候選 SQL，並更新匯入 parser 與規則檢查。SQL 尚未連線安裝或執行，不能視為資料庫驗收完成。
+- 前後台仍有公開匿名資料表 CRUD 與後台用戶端登入問題，屬正式上線阻擋項目。不可合併或部署目前候選版本。
+
 ## 不可跳過的部署順序
-1. 備份 Supabase 資料庫（包含 lottery_records、lottery_form_submissions、lottery_import_anomalies）。
-2. 使用獨立 Supabase 測試專案及測試 Vercel 環境進行測試。
-3. 在測試資料庫查驗 SQL 索引與 RLS、執行 v16_registration_unique_index_migration.sql。
-4. 在測試環境安裝 `sql/v16_reconcile_all_imports_STAGING.sql`。此 SQL 尚未連線驗證，請先測試跨批次、逆序匯入及併發寫入；不能直接套用正式環境。
-5. 匯入人工合成的 v16 Google 表單回覆檔；確認回覆和紀錄分開儲存、異常可人工確認。
-6. 驗證異常 pending 時所有抽籤/匯出入口都拒絕作業、invalid 已排除、valid 可納入。
-7. 驗證抽籤結果 Excel 匯入、候補順位、公告及前台查詢。
-8. 再核對 staging DB 與 production DB 的 schema、auth 權限和 Vercel 環境變數。
-9. 主管或管理者核可後才可正式資料庫遷移與合併 PR，部署後再做只讀驗收。
 
-## 驗收情境
-- 會員 A 羽球一場+籃球一場，不同時段：皆有效
-- A 羽球兩場：後筆待人工確認
-- A 同週同時段羽球與籃球，先後兩次回覆：後筆待人工確認
-- A 同份回覆選到羽球與籃球相撞：兩筆待人工確認
-- A 羽球 18:00–20:00，桌球 19:00–20:00：後筆待人工確認
-- A 桌球不同場次：允許
-- A 同桌球場同星期同時段再送一份：後筆異常
-- A 與 B 同時段：都可以登記、等待正常抽籤
-- 會館會員 A/B 共用聯絡手機，但識別不同：不應當作同一會員
-- A 的第二次提交先匯入，第一次提交後匯入：應以原表單時間先後決定，不能依匯入先後
-- 重複匯入同一 Excel：應跳過重複資料
-- 多個管理員同時匯入：應維持一致性與批次交易原子性
-- 異常尚未完成複核：不得下載正式抽籤名單、不得內建抽籤
-- 無效異常結案：對應的登記不可進入抽籤名單
-- 正常資料的抽籤結果可以批次匯入、查詢和公布
+1. 取得獨立測試 Supabase 專案與測試 Vercel 環境；不得把正式會員回覆複製到測試資料庫。
+2. 在隔離環境核對 schema、index、function owner/ACL、RLS policies 及 table grants。
+3. 執行並驗證 `sql/v16_registration_unique_index_migration.sql`。
+4. 執行並驗證 `sql/v16_import_existing_submissions_STAGING.sql`。
+5. 執行並驗證 `sql/v16_reconcile_all_imports_STAGING.sql`，包含異常人工確認後的再次檢核。
+6. 使用合成回覆及真正的 v16 Google 表單匯出 XLSX 做匯入測試。真正 XLSX 尚未提供，因此欄位對應仍未驗證。
+7. 完成公開前台與管理後台的伺服器授權改造，再於 staging 同步驗證 RLS、table grants、RPC/Edge Function 權限。不得先刪除現有 policies。
+8. 驗證所有抽籤名單匯出、單場/批次抽籤、結果 Excel 匯入、候補順位、公告及前台查詢入口。
+9. 驗證匯入重試、逆序批次、同一 batch key 重試、併發匯入及 transaction rollback；不得刪除原始回覆來恢復紀錄。
+10. 備份正式資料庫並核對正式環境 schema、權限與網站部署設定。取得正式遷移及合併核准後，才可部署；部署後做唯讀驗收。
 
-## 尚未解決的風險
-- Google 表單 v16 的實際回覆試算表欄位，需要與這版 parser 實際比對。
-- `sql/v16_reconcile_all_imports_STAGING.sql` 是跨批次檢核候選版本，尚未在 Supabase staging 實際驗證，不可直接部署。
-- 既有抽籤結果匯入入口未完成資格檢核全覆蓋。
-- 正式 Supabase 沒有連線權限，無法宣稱已通過資料庫驗收。
-- 網站 HTML 中有歷史功能，須在測試環境做完整操作驗證。
+## 必測登記規則
 
-> 請勿將草稿 PR 合併或將 SQL 草稿直接套用正式資料庫。
+- 會員 A 羽球一場、籃球一場且時段不重疊：兩筆有效。
+- A 同一份回覆選羽球兩場：兩筆各自待人工確認。
+- A 同一份回覆選羽球與籃球重疊：兩筆各自待人工確認，可分別確認有效/無效。
+- A 同一週同時段跨運動類型：較早提交有效，後提交待人工確認。
+- 兩個不同回覆的提交時間相同且互相衝突：雙方各自待人工確認。
+- A 羽球與桌球同日重疊：依提交先後檢核，後筆待人工確認。
+- A 桌球不同場次：允許；同場次重複：後筆待人工確認。
+- 會員 A 與 B 同時段：均可登記並依名額抽籤。
+- 會館會員共用聯絡手機但會員識別不同：不得視為同一會員。
+- 第二次提交先匯入、第一次提交後匯入：依表單提交時間判斷，不依匯入順序。
+- 同一檔案、同一 batch key 重試：不重複新增；已保留回覆但缺少場次時要補回。
+- 異常待確認：不得匯出正式名單或執行任何抽籤入口。
+- 確認無效：該登記排除，且不得再占用該會員的有效名額。
+- 確認有效：只豁免該筆已確認的異常；新發現的其他衝突仍需另行確認。
+- 任何缺少伺服器 `member_key_hash` 或表單來源鍵的登記：不得進入 v16 抽籤名單。
 
-## 2026-10-15 Supabase 唯讀實際查核
-- 目前連線專案 `metroinn2026's Project` 有 3 批歷史匯入、共 6 份原始回覆；批次統計曾記錄 12 筆場次，但 `lottery_records` 目前為 0 筆。
-- 沒有 Supabase development branches；正式專案未修改。
-- 舊唯一索引 `lottery_records_unique_limited_sports` 仍存在。
-- `import_record_key` 去重唯一索引存在。
-- **重新匯入同一份回覆時，現有 `import_google_form_batch` 會因為 submission_key 已存在而略過整份回覆；即使對應 `lottery_records` 已清空，也不會補回。** 這是 release blocker，必須在伺服器函式中修正或制定明確修復流程，不可刪除原始回覆來規避。
-- `resolve_google_form_anomaly` 目前只更新異常狀態，不會清除不合格申請。
-- 此次唯讀查詢未接觸會員姓名、完整身分識別或手機。
+## 本分支離線驗證
 
-## 匯入 RPC 補修（最新）
-- 新增 `sql/v16_import_existing_submissions_STAGING.sql`：保留已有 `submission_key` 與來源批次，只補寫目前不存在的 `import_record_key`。
-- 同一提交識別若對應不同會員 HMAC，整批拒絕，避免借用舊 submission_key。
-- 用 advisory transaction lock 序列化匯入，維持單批交易一致性。
-- 必須在解除舊 UNIQUE limited sports 索引後才可測試；此檔目前尚未在 staging 執行。
-- 必測：6 份回覆已存在但 0 場次的情境，重新輸入正確原始回覆後補回 12 筆場次（實際筆數依測試檔）；二次重匯應為 0 筆。
-- **安全注意**：正式資料庫已有歷史提交與個資；不使用其內容製作測試資料，不做資料刪除或重置。
+- `node --test tests/v16_parser.test.cjs`：11 項合成資料測試通過，執行實際 `admin.html` parser，包含全形時間、星期標籤、桌球跨球類撞時段及超出時鐘範圍的時段。
+- 抽取前後台 inline JavaScript 後執行 `node --check`：通過。
+- 匯入 RPC 候選程式再加強重複 submission 欄位一致性及伺服器端 `id_last4` 衍生；尚未測試真實 Google Forms v16 XLSX、候選 SQL、Supabase transaction/RLS、後台完整操作及結果公告。
+
+## 未解除的正式上線阻擋
+
+- 正式 `lottery_records`、`admin_users`、`lottery_capacity_settings`、`system_settings`、`admin_operation_logs` 仍有匿名或 public 存取政策/權限；完整情形見 `V16_SECURITY_BLOCKERS.md`。
+- 主後台仍以瀏覽器讀取帳密雜湊並用 `sessionStorage` 保存登入狀態，且操作透過公開 client 直接寫表。
+- 前台仍以匿名 `.select('*')`、直接新增及刪除 `lottery_records`；停用後台 `replaceAll()` 不會停用 Data API 權限。
+- 需要設計並驗證前台安全登記/個人查詢與管理員授權 API，再配對調整資料庫 grants/RLS；目前尚未準備完成。
+- 三份候選 SQL 尚未在隔離資料庫執行。正式資料庫沒有 Supabase development branch，也未確認新建分支是否產生費用。
+- 真正的 v16 Google 表單匯出 XLSX 尚未完成端到端驗證。
+
+> PR #1 目前是未驗證草稿。不得合併、正式部署或把任何候選 SQL 直接套用正式專案。
+
+## 唯讀資料恢復備註
+
+正式資料庫保留 6 份原始回覆，但 `lottery_records` 為 0 筆。應在隔離 staging 用合成資料先證明既有 submission 可安全補建缺少的 record；正式資料不得刪除或重置。正式重匯/修復須先核准、備份並依單一執行方案辦理。
