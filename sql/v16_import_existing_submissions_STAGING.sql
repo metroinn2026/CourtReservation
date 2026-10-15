@@ -48,7 +48,6 @@ DECLARE
   v_rec_key text;
   v_submitted_at_text text;
   v_registered_at timestamptz;
-  v_existing_batch uuid;
   v_source record;
   v_existing_record record;
   v_time_parts text[];
@@ -243,8 +242,8 @@ BEGIN
          OR v_existing_record.member_key_hash IS DISTINCT FROM v_source.member_key_hash
          OR v_existing_record.member_type IS DISTINCT FROM v_source.member_type
          OR v_existing_record.member_identifier_last4 IS DISTINCT FROM v_source.member_identifier
-         OR v_existing_record.id_last4 IS DISTINCT FROM CASE
-              WHEN v_source.member_type = '北投會館會員' THEN v_source.member_identifier ELSE '' END
+         OR v_existing_record.id_last4 IS DISTINCT FROM (CASE
+              WHEN v_source.member_type = '北投會館會員' THEN v_source.member_identifier ELSE '' END)
          OR v_existing_record.location_name IS DISTINCT FROM COALESCE(NULLIF(v_rec->>'location_name', ''), '北投會館')
          OR v_existing_record.serial_number IS DISTINCT FROM v_rec->>'serial_number'
          OR v_existing_record.name IS DISTINCT FROM v_rec->>'name'
@@ -287,8 +286,8 @@ BEGIN
          OR v_existing_record.member_key_hash IS DISTINCT FROM v_source.member_key_hash
          OR v_existing_record.member_type IS DISTINCT FROM v_source.member_type
          OR v_existing_record.member_identifier_last4 IS DISTINCT FROM v_source.member_identifier
-         OR v_existing_record.id_last4 IS DISTINCT FROM CASE
-              WHEN v_source.member_type = '北投會館會員' THEN v_source.member_identifier ELSE '' END
+         OR v_existing_record.id_last4 IS DISTINCT FROM (CASE
+              WHEN v_source.member_type = '北投會館會員' THEN v_source.member_identifier ELSE '' END)
          OR v_existing_record.location_name IS DISTINCT FROM COALESCE(NULLIF(v_rec->>'location_name', ''), '北投會館')
          OR v_existing_record.serial_number IS DISTINCT FROM v_rec->>'serial_number'
          OR v_existing_record.name IS DISTINCT FROM v_rec->>'name'
@@ -340,6 +339,10 @@ BEGIN
       v_anomalies_added := v_anomalies_added + 1;
     END IF;
   END LOOP;
+
+  -- Classification is part of this import transaction, not a second browser RPC.
+  -- All three v16 scripts must be installed before accepting any imports.
+  PERFORM public.court_v16_reconcile_import_anomalies();
 
   -- Recompute counts from retained source rows. This repairs old batch counts
   -- when their submissions survived but corresponding lottery_records did not.
