@@ -18,7 +18,7 @@ BEGIN
 END $$;
 CREATE INDEX IF NOT EXISTS lottery_records_member_sport_lookup_idx
  ON public.lottery_records(phone,id_last4,venue_type);
-DROP INDEX public.lottery_records_unique_limited_sports;
+DROP INDEX IF EXISTS public.lottery_records_unique_limited_sports;
 COMMIT;
 -- 以下僅驗證，不修改
 SELECT indexname,indexdef FROM pg_indexes WHERE schemaname='public'
