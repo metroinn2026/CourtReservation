@@ -7873,8 +7873,14 @@ async function parseGoogleFormWorkbook(file){
       const previous=accepted.find(p=>p.day_of_week===r.day_of_week && p.venue_type!==r.venue_type && overlaps(p.time_slot,r.time_slot));
       if(previous){
         const sameSubmit=previous.submission_key===r.submission_key;
-        anomalies.push({type:sameSubmit?'同一回覆跨球類時段衝突（待人工確認）':'同會員同日期同時段跨球類重複（後筆）',submissionKeys:[r.submission_key],recordKeys:[r.record_key],detail:'衝突較早資料：'+previous.venue_type+' '+previous.day_of_week+' '+previous.time_slot});
-        // 同一回覆無法判定先後，人工確認；不占用後續有效登記名額。
+        if(sameSubmit){
+          // 同一回覆沒有跨題目的先後提交順序：兩筆一併待人工確認。
+          anomalies.push({type:'同一回覆跨球類時段衝突（雙方待人工確認）',submissionKeys:[r.submission_key],recordKeys:[previous.record_key,r.record_key],detail:previous.venue_type+' / '+r.venue_type+'｜'+r.day_of_week+'｜'+r.time_slot});
+          accepted.splice(accepted.indexOf(previous),1);
+          if(Object.hasOwn(sportCount,previous.venue_type))sportCount[previous.venue_type]--;
+        }else{
+          anomalies.push({type:'同會員同日期同時段跨球類重複（後筆）',submissionKeys:[r.submission_key],recordKeys:[r.record_key],detail:'衝突較早資料：'+previous.venue_type+' '+previous.day_of_week+' '+previous.time_slot});
+        }
         continue;
       }
       if((r.venue_type==='羽球'||r.venue_type==='籃球')&&sportCount[r.venue_type]>=1){
