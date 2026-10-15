@@ -3956,6 +3956,16 @@ function getStageStartTime(timeSlot){
   const m=String(timeSlot||'').match(/(\d{2}:\d{2})/);
   return m ? m[1] : String(timeSlot||'');
 }
+function memberIdentifierLast4(r){ return String(r.member_identifier_last4||r.id_last4||'').trim(); }
+function memberIdentityCell(r){
+  const type=String(r.member_type||'').trim();
+  const isGo=/Go會員/.test(type);
+  const label=type||'未記錄';
+  const tone=isGo?'blue':(type?'green':'gray');
+  const last4=memberIdentifierLast4(r);
+  const kind=isGo?'綁定手機':(/北投會館/.test(type)?'身分證字號':'識別資料');
+  return `<span class="tag ${tone}">${escapeHtml(label)}</span><div class="small">${last4?`${kind}末4碼 ${escapeHtml(last4)}`:'識別資料未記錄'}</div>`;
+}
 function personKey(r){ return `${normalizePhone(r.phone)}|${String(r.id_last4||'').trim()}`; }
 function buildDataAnomalies(){
   const issues=[];
@@ -4672,7 +4682,7 @@ function getFilteredRecords(){
     if(recordState.anomaly==='__normal__' && anomalyTypes.length>0) return false;
     if(recordState.anomaly && recordState.anomaly!=='__normal__' && !anomalyTypes.includes(recordState.anomaly)) return false;
     if(q){
-      const hay=`${r.name||''} ${r.phone||''} ${r.id_last4||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
+      const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -4728,7 +4738,7 @@ function renderRecordsPage(){
       <div class="records-fixed-filter">
         <div class="records-fixed-filter-title">篩選條件</div>
         <div class="toolbar records-shared-toolbar">
-          <input id="searchQ" placeholder="搜尋姓名／手機／末4碼／序號" value="${escapeHtml(recordState.q)}">
+          <input id="searchQ" placeholder="搜尋姓名／聯絡手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
           <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
           <select id="filterVenue"><option value="">全部球類</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
@@ -4949,7 +4959,7 @@ function renderRecordsTable(){
 
   html+=`<div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr>`;
   if(isBatch) html+=`<th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th>`;
-  html+=`<th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('手機','phone')}</th><th style="width:72px;">${sortHeader('末4碼','id_last4')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
+  html+=`<th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('聯絡手機','phone')}</th><th style="width:130px;">${sortHeader('會員身分／識別末4碼','member_type')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
 
   rows.forEach((r,i)=>{
     html+=`<tr>`;
@@ -4961,7 +4971,7 @@ function renderRecordsTable(){
       <td><strong>${escapeHtml(r.serial_number)}</strong></td>
       <td>${escapeHtml(r.name)}</td>
       <td>${escapeHtml(r.phone)}</td>
-      <td>${escapeHtml(r.id_last4||'')}</td>
+      <td>${memberIdentityCell(r)}</td>
       <td>${escapeHtml(shortLocationName(recordLocation(r)))}</td>
       <td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td>
       <td>${escapeHtml(r.day_of_week)}</td>
@@ -5174,12 +5184,12 @@ function renderRecordsTable(){
       儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
     </button>
   </div>
-  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('手機','phone')}</th><th style="width:72px;line-height:1.25;">${sortHeader('末4碼','id_last4')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
+  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('聯絡手機','phone')}</th><th style="width:130px;line-height:1.25;">${sortHeader('會員身分／識別末4碼','member_type')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(shortLocationName(recordLocation(r)))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
+    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${memberIdentityCell(r)}</td><td>${escapeHtml(shortLocationName(recordLocation(r)))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
@@ -5874,7 +5884,8 @@ async function exportPendingLotteryWorkbook(stages){
         '序號':r.serial_number||'',
         '姓名':r.name||'',
         '手機':r.phone||'',
-        '身分證後4碼':r.id_last4||'',
+        '會員身分':r.member_type||'未記錄',
+        '會員識別末4碼':memberIdentifierLast4(r),
         '場地':locationLabel(recordLocation(r)),
         '球類':r.venue_type||'',
         '星期':r.day_of_week||'',
@@ -6727,7 +6738,7 @@ async function applyPromotionSuggestion(stage){
           <table>
             <thead>
               <tr>
-                <th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>身分證後4碼</th><th>類型</th><th>星期</th><th>時段</th><th>登記時間</th>
+                <th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>聯絡手機</th><th>會員身分／識別末4碼</th><th>類型</th><th>星期</th><th>時段</th><th>登記時間</th>
               </tr>
             </thead>
             <tbody>
@@ -6750,7 +6761,7 @@ async function applyPromotionSuggestion(stage){
                   <td><strong>${escapeHtml(r.serial_number)}</strong></td>
                   <td>${escapeHtml(r.name)}</td>
                   <td>${escapeHtml(r.phone)}</td>
-                  <td>${escapeHtml(r.id_last4||'')}</td>
+                  <td>${memberIdentityCell(r)}</td>
                   <td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td>
                   <td>${escapeHtml(r.day_of_week)}</td>
                   <td>${escapeHtml(r.time_slot)}</td>
@@ -7703,10 +7714,10 @@ function confirmModal(title, body){
 
 function exportToCsv(records){
   if(!records.length){alert('沒有資料可以匯出');return;}
-  let csv='序號,抽籤狀態,公布狀態,鎖定,異常狀態,姓名,手機,身分證後4碼,地點,運動類型,星期,時段,登記時間\n';
+  let csv='序號,抽籤狀態,公布狀態,鎖定,異常狀態,姓名,聯絡手機,會員身分,會員識別末4碼,地點,運動類型,星期,時段,登記時間\n';
   records.forEach(r=>{
     const state=isSuspiciousPhone(r)?'手機重複':'正常';
-    csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.result_published?'已公布':'未公布'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${r.id_last4||''}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
+    csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.result_published?'已公布':'未公布'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${r.member_type||'未記錄'}","${memberIdentifierLast4(r)}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
   });
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`登記清單_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
@@ -7776,15 +7787,19 @@ async function parseGoogleFormWorkbook(file){
   if(missing.length)throw new Error(`找不到必要欄位：${missing.join('、')}`);
   const submissions=[],records=[],anomalies=[],seenRow=new Set();
   for(let i=0;i<rows.length;i++){
-    const row=rows[i],excelRow=i+2,memberType=formField(row,'申請會員身分（請擇一）'),isGo=/Go會員/.test(memberType);
+    const row=rows[i],excelRow=i+2,memberType=formField(row,'申請會員身分（請擇一）'),isGo=memberType==='台北捷運Go會員',isBeitou=memberType==='北投會館會員';
     const name=formField(row,'申請人姓名'),email=formField(row,'電子郵件地址')||formField(row,'電子郵件信箱（Go會員）')||formField(row,'電子郵件信箱（會館會員）');
-    const identifier=(isGo?formField(row,'台北捷運Go會員綁定手機（10碼）'):formField(row,'北投會館會員身分證字號（10碼）')).replace(/\s/g,'').toUpperCase();
-    const phone=(isGo?identifier:formField(row,'聯絡手機號碼（會館會員，10碼）')).replace(/\D/g,'');
+    const identifier=(isGo?formField(row,'台北捷運Go會員綁定手機（10碼）'):(isBeitou?formField(row,'北投會館會員身分證字號（10碼）'):'' )).replace(/\s/g,'').toUpperCase();
+    const phone=(isGo?identifier:(isBeitou?formField(row,'聯絡手機號碼（會館會員，10碼）'):'' )).replace(/\D/g,'');
     const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`),stamp=normalizeFormTimestamp(row['時間戳記']);
     const submissionKey=await sha256([stamp,email.toLowerCase(),memberType,identifier,name].join('|'));
     if(seenRow.has(submissionKey)){anomalies.push({type:'重複回覆資料',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});continue;}seenRow.add(submissionKey);
-    const sub={submission_key:submissionKey,submitted_at:stamp,member_type:isGo?'台北捷運Go會員':'北投會館會員',member_key_hash:memberKeyHash,member_identifier:identifier,name,phone,email,raw_payload:row,excel_row:excelRow};submissions.push(sub);
-    if(!name||!identifier||!phone||!email||(!isGo&&!/^\d{10}$/.test(identifier))||(isGo&&!/^09\d{8}$/.test(phone)))anomalies.push({type:'基本資料格式或必填欄位異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});
+    const safePayload={...row};
+    const identifierField=isGo?'台北捷運Go會員綁定手機（10碼）':'北投會館會員身分證字號（10碼）';
+    if(Object.prototype.hasOwnProperty.call(safePayload,identifierField))safePayload[identifierField]=`末4碼 ${identifier.slice(-4)}`;
+    const normalizedMemberType=isGo?'台北捷運Go會員':(isBeitou?'北投會館會員':'');
+    const sub={submission_key:submissionKey,submitted_at:stamp,member_type:normalizedMemberType,member_key_hash:memberKeyHash,member_identifier:identifier,name,phone,email,raw_payload:safePayload,excel_row:excelRow};submissions.push(sub);
+    if(!name||!normalizedMemberType||!identifier||!phone||!email||(isBeitou&&!/^[A-Z][0-9]{9}$/.test(identifier))||(isGo&&!/^09\d{8}$/.test(phone)))anomalies.push({type:'基本資料格式或必填欄位異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});
     const selected=[];
     const sportChoice=formField(row,'是否申請羽球／籃球？');
     if(sportChoice==='申請羽球'){const day=normalizeFormDay(formField(row,'羽球：選擇星期（限選一日）')),times=Object.keys(row).filter(k=>/^羽球：請選擇1個時段/.test(k)).flatMap(k=>normalizeFormTime(row[k]));if(times.length!==1)anomalies.push({type:'羽球時段數量異常',submissionKeys:[submissionKey],recordKeys:[]});times.forEach(time=>selected.push({venue:'羽球',day,time}));}
@@ -7795,7 +7810,7 @@ async function parseGoogleFormWorkbook(file){
     if(!selected.length)anomalies.push({type:'未選擇任何場次',submissionKeys:[submissionKey],recordKeys:[]});
     const seenSlots=new Set();for(const slot of selected){if(!slot.day||!slot.time){anomalies.push({type:'場次欄位無法辨識',submissionKeys:[submissionKey],recordKeys:[]});continue;}
       const key=[slot.venue,slot.day,slot.time].join('|');if(seenSlots.has(key)){anomalies.push({type:'同一回覆重複選擇場次',submissionKeys:[submissionKey],recordKeys:[key]});continue;}seenSlots.add(key);
-      const recordKey=await sha256(`${submissionKey}|${key}`);records.push({submission_key:submissionKey,record_key:recordKey,member_key_hash:memberKeyHash,member_type:sub.member_type,name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:slot.time,serial_number:`GF-${recordKey.slice(0,12).toUpperCase()}`,registered_at:stamp||new Date().toISOString()});
+      const recordKey=await sha256(`${submissionKey}|${key}`);records.push({submission_key:submissionKey,record_key:recordKey,member_key_hash:memberKeyHash,member_type:sub.member_type,member_identifier_last4:identifier.slice(-4),name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:slot.time,serial_number:`GF-${recordKey.slice(0,12).toUpperCase()}`,registered_at:stamp||new Date().toISOString()});
     }
   }
   const identities=new Map();submissions.forEach(s=>{const a=identities.get(s.member_key_hash)||[];a.push(s);identities.set(s.member_key_hash,a);});
