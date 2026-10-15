@@ -5,12 +5,12 @@
 - GitHub PR #1 仍在測試分支 `fix/form-v16-member-rules-20261015`，尚未合併。
 - 正式 Supabase `wsvsdwuksuzcjisnpyin` 未修改；唯讀查核仍為 3 批匯入、6 份原始回覆、0 筆 `lottery_records`、0 筆異常紀錄。批次歷史統計曾記錄 12 筆場次。
 - Supabase 專案目前沒有 development branches；未建立分支或執行資料庫變更。
-- 本分支已補修三份候選 SQL，並更新匯入 parser 與規則檢查。SQL 尚未連線安裝或執行，不能視為資料庫驗收完成。
+- 三份候選 SQL 已在免費本機 PGlite PostgreSQL 引擎以合成 schema 安裝並執行測試；尚未完成真正 Supabase 整合驗收。
 - 前後台仍有公開匿名資料表 CRUD 與後台用戶端登入問題，屬正式上線阻擋項目。不可合併或部署目前候選版本。
 
 ## 不可跳過的部署順序
 
-1. 取得獨立測試 Supabase 專案與測試 Vercel 環境；不得把正式會員回覆複製到測試資料庫。
+1. 先使用免費本機隔離環境；不得建立付費服務或雲端測試分支，也不得把正式會員回覆複製到測試資料庫。後續 Supabase 完整驗收環境須確認不產生費用。
 2. 在隔離環境核對 schema、index、function owner/ACL、RLS policies 及 table grants。
 3. 執行並驗證 `sql/v16_registration_unique_index_migration.sql`。
 4. 執行並驗證 `sql/v16_import_existing_submissions_STAGING.sql`。
@@ -36,14 +36,17 @@
 - 同一檔案、同一 batch key 重試：不重複新增；已保留回覆但缺少場次時要補回。
 - 異常待確認：不得匯出正式名單或執行任何抽籤入口。
 - 確認無效：該登記排除，且不得再占用該會員的有效名額。
-- 確認有效：只豁免該筆已確認的異常；新發現的其他衝突仍需另行確認。
+- 確認有效：不豁免登記硬性限制；若兩筆確認有效仍互相衝突，伺服器拒絕抽籤，需將不合資格的登記確認無效。
 - 任何缺少伺服器 `member_key_hash` 或表單來源鍵的登記：不得進入 v16 抽籤名單。
 
 ## 本分支離線驗證
 
 - `node --test tests/v16_parser.test.cjs`：11 項合成資料測試通過，執行實際 `admin.html` parser，包含全形時間、星期標籤、桌球跨球類撞時段及超出時鐘範圍的時段。
 - 抽取前後台 inline JavaScript 後執行 `node --check`：通過。
-- 匯入 RPC 候選程式再加強重複 submission 欄位一致性及伺服器端 `id_last4` 衍生；尚未測試真實 Google Forms v16 XLSX、候選 SQL、Supabase transaction/RLS、後台完整操作及結果公告。
+- `npm test`：42 項通過（23 項本機資料庫、8 項後台、11 項 parser）。本機執行捕捉並修正 PL/pgSQL CASE 比較語法錯誤。
+- 匯入與跨批次異常檢核現於同一交易執行；測試確認檢核失敗時整批回滾、重試不重複、可補回缺少場次而不刪原始回覆。
+- 初次結果匯入、單場及批次內建抽籤改走管理員 Auth RPC，核對名單快照、完整場次、名額、候補順位並原子寫入。人工修改、遞補及公告尚未遷移。
+- 本機 Auth 與會員 HMAC 使用測試替身；不代表 Supabase 真實 Auth、PostgREST、RLS、併發或瀏覽器端到端通過。詳見 `tests/README.md`。
 
 ## 未解除的正式上線阻擋
 
@@ -51,10 +54,10 @@
 - 主後台仍以瀏覽器讀取帳密雜湊並用 `sessionStorage` 保存登入狀態，且操作透過公開 client 直接寫表。
 - 前台仍以匿名 `.select('*')`、直接新增及刪除 `lottery_records`；停用後台 `replaceAll()` 不會停用 Data API 權限。
 - 需要設計並驗證前台安全登記/個人查詢與管理員授權 API，再配對調整資料庫 grants/RLS；目前尚未準備完成。
-- 三份候選 SQL 尚未在隔離資料庫執行。正式資料庫沒有 Supabase development branch，也未確認新建分支是否產生費用。
+- 三份 SQL 已通過本機合成資料測試，但尚未於完整 Supabase schema/API 驗收。未建立任何雲端 development branch 或付費服務。
 - 真正的 v16 Google 表單匯出 XLSX 尚未完成端到端驗證。
 
-> PR #1 目前是未驗證草稿。不得合併、正式部署或把任何候選 SQL 直接套用正式專案。
+> PR #1 已有本機測試，仍未完成上線驗收。不得合併、正式部署或把任何候選 SQL 直接套用正式專案。
 
 ## 唯讀資料恢復備註
 
