@@ -2503,7 +2503,9 @@
         venues:[...new Set((Array.isArray(g.venues)?g.venues:[]).filter(v=>REGISTRATION_VENUES.includes(v)))],
         max:Math.max(1,Math.floor(Number(g.max)||1))
       })).filter(g=>g.venues.length>=2):[];
-      return {single,groups};
+      // v16 fixed rules: badminton and basketball independently limited to one; table tennis unlimited.
+  single['羽球']=1; single['籃球']=1; single['B1桌球']=0; single['B2桌球']=0;
+  return {single,groups:[]};
     }
     function getRegistrationLimitRules(){
       return normalizeRegistrationLimitRules(systemSettings.registration_limit_rules);
