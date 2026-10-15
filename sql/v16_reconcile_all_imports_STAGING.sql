@@ -81,6 +81,22 @@ BEGIN
           END IF;
         END LOOP;
       END IF;
+      -- Reconciliation cannot silently override a human determination.
+      -- Existing pending/valid/invalid member-rule cases remain stable.
+      IF EXISTS (
+        SELECT 1 FROM public.lottery_import_anomalies a
+        WHERE a.record_keys @> ARRAY[v_rec.import_record_key]::text[]
+          AND a.resolution_status='valid'
+          AND a.anomaly_type IN (
+            '羽球每位會員超過1場（後筆）',
+            '籃球每位會員超過1場（後筆）',
+            '同一會員重複申請相同場次（後筆）',
+            '同會員同日期同時段跨球類重複（後筆）',
+            '同一回覆跨球類時段衝突（雙方待人工確認）'
+          )
+      ) THEN
+        v_type:=NULL;
+      END IF;
       IF v_type IS NOT NULL THEN
         IF NOT EXISTS (
           SELECT 1 FROM public.lottery_import_anomalies a
