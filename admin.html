@@ -5869,7 +5869,7 @@ async function getLotteryEligibility(){
   const {data,error}=await importDb.from('lottery_import_anomalies').select('id,anomaly_type,resolution_status,record_keys,submission_keys').range(0,999);
   if(error)throw new Error('異常資格檢核失敗：'+error.message);
   if((data||[]).length===1000)throw new Error('異常筆數達單次安全檢核上限，請先處理或分批核對，不可直接匯出。');
-  const pending=data.filter(a=>a.resolution_status==='pending'||!a.resolution_status);
+  const pending=data.filter(a=>a.resolution_status!=='valid'&&a.resolution_status!=='invalid');
   if(pending.length)throw new Error('尚有 '+pending.length+' 項異常待人工確認；為避免誤抽籤，請先結案。');
   const invalid=data.filter(a=>a.resolution_status==='invalid');
   const blockedKeys=new Set();
