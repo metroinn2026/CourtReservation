@@ -7909,7 +7909,7 @@ async function parseGoogleFormWorkbook(file){
     const arr=duplicates.get(key)||[];arr.push(r);duplicates.set(key,arr);
   });
   for(const arr of duplicates.values()){
-    if(arr.length<2)continue;
+    if(arr.length<2 || ['羽球','籃球'].includes(arr[0].venue_type))continue;
     arr.sort((a,b)=>Date.parse(a.registered_at)-Date.parse(b.registered_at)||a.record_key.localeCompare(b.record_key));
     for(const r of arr.slice(1))anomalies.push({type:'同一會員重複申請相同場次（後筆）',submissionKeys:[r.submission_key],recordKeys:[r.record_key]});
   }
