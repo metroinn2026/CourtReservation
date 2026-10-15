@@ -3966,7 +3966,7 @@ function memberIdentityCell(r){
   const kind=isGo?'綁定手機':(/北投會館/.test(type)?'身分證字號':'識別資料');
   return `<span class="tag ${tone}">${escapeHtml(label)}</span><div class="small">${last4?`${kind}末4碼 ${escapeHtml(last4)}`:'識別資料未記錄'}</div>`;
 }
-function personKey(r){ return `${normalizePhone(r.phone)}|${String(r.id_last4||'').trim()}`; }
+function personKey(r){ return personRecordKey(r); }
 function buildDataAnomalies(){
   const issues=[];
   const records=allRecords||[];
@@ -4258,7 +4258,7 @@ function normalizeRegistrationLimitRules(raw){
       single[v]=Number.isFinite(n)&&n>=0?Math.floor(n):single[v];
     });
   }
-  const groups=Array.isArray(data?.groups)?data.groups.map((g,i)=>({
+  const groups=Array.isArray(data?.groups)?data.groups.filter(g=>!(Array.isArray(g?.venues)&&g.venues.includes('羽球')&&g.venues.includes('籃球'))).map((g,i)=>({
     id:String(g.id||`group_${i+1}`),
     venues:[...new Set((Array.isArray(g.venues)?g.venues:[]).filter(v=>REGISTRATION_VENUES.includes(v)))],
     max:Math.max(1,Math.floor(Number(g.max)||1))
@@ -4268,7 +4268,7 @@ function normalizeRegistrationLimitRules(raw){
 function getRegistrationLimitRules(){
   return normalizeRegistrationLimitRules(systemSettings.registration_limit_rules);
 }
-function personRecordKey(r){ return `${normalizePhone(r.phone)}|${r.id_last4||''}`; }
+function personRecordKey(r){ return r.member_key_hash ? `member:${r.member_key_hash}` : `${normalizePhone(r.phone)}|${r.id_last4||''}`; }
 function recordCountForLimit(records, personKeyValue, venue, location){
   return records.filter(r=>personRecordKey(r)===personKeyValue && recordLocation(r)===location && r.venue_type===venue).length;
 }
@@ -4298,7 +4298,7 @@ function renderRegistrationLimitEditor(){
     <div class="registration-limit-head">
       <div>
         <div class="capacity-window-title">登記限制</div>
-        <div class="small">0 表示不限。跨球類限制可自由勾選球類，例如「羽球＋籃球合計最多 1 筆」。</div>
+        <div class="small">0 表示不限。羽球、籃球各限1場；不可設定羽球＋籃球合計限1場。跨不同球類的同星期時段衝突由匯入異常中心檢核。</div>
       </div>
       <button type="button" id="addRegistrationLimitGroup" class="btn btn-gray">新增跨球類限制</button>
     </div>
@@ -4337,7 +4337,8 @@ function renderRegistrationLimitEditor(){
   });
   const add=document.getElementById('addRegistrationLimitGroup');
   if(add) add.onclick=()=>{
-    draft.groups.push({id:`group_${Date.now()}`,venues:['B1桌球','B2桌球'],max:1});
+    alert('新版規則不再允許新增跨球類總量限制，請分別使用羽球／籃球的單項上限。');
+    return;
     renderRegistrationLimitEditor();
   };
   const save=document.getElementById('saveRegistrationLimits');
