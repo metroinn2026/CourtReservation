@@ -48,10 +48,13 @@
 5. 以匿名、一般已登入帳號、匯入管理員及管理員角色逐一測試讀取/新增/更新/刪除、匯入、異常確認、名單匯出、抽籤、結果匯入及公告查詢。
 6. 重新執行 Supabase Security Advisor，處理匿名可執行的 `SECURITY DEFINER`、密碼保護設定及敏感 secret 存取。
 
-## 未完成的功能驗收
+## 已完成的局部防護與未完成的功能驗收
 
-- 三份候選 v16 SQL 尚未在隔離資料庫執行；不得視為 PostgreSQL 整合測試通過。
-- 目前只有 11 項 parser 合成測試及前後台 JavaScript 語法檢查；真正的 v16 Google Forms XLSX、資料庫交易/重試、Excel 抽籤名單、結果匯入及公告流程尚未端到端驗證。
+- 三份候選 SQL 已於免費本機 PGlite PostgreSQL 以合成資料執行；42 項測試通過（23 資料庫、8 後台、11 parser）。這不是完整 Supabase 整合驗收。
+- 初次抽籤結果寫入已改走 allowlist Auth RPC，包含伺服器資格、快照、完整場次、容量及候補順位檢核，整批交易寫入及稽核。匯入與異常檢核也改為同一交易。
+- 新增的 SECURITY DEFINER 實作放在 private schema，公開 wrapper 使用 SECURITY INVOKER；private 不得列為 Data API exposed schema。authenticated 的 schema USAGE 不等於授予 secret 資料表讀取權限，部署時須再核對 ACL。
+- 這些防護沒有關閉既有匿名直接寫表通道；人工編輯、遞補、公告及主登入尚未遷移，仍可繞過新 RPC。正式安全阻擋未解除。
+- 真正的 v16 Google Forms XLSX、完整 Supabase Auth/PostgREST/RLS、多連線併發、Excel 與公告端到端流程尚未驗證。本機 fixture 的 Auth/HMAC 為測試替身，不得部署。
 - 6 份原始回覆仍保留。須先在隔離環境證明可安全補回缺少的場次；不得刪除原始回覆來解除重複判定。
 
 ## 參考
