@@ -5866,9 +5866,9 @@ async function getLotteryEligibility(){
   // Reconcile stored registrations across batches before every lottery operation.
   const {error:reconcileError}=await importDb.rpc('court_v16_reconcile_import_anomalies');
   if(reconcileError)throw new Error('跨批次會員規則檢核未完成：'+reconcileError.message+'。請先在測試資料庫安裝 v16 驗證 SQL。');
-  const {data,error}=await importDb.from('lottery_import_anomalies').select('id,anomaly_type,resolution_status,record_keys,submission_keys').limit(10000);
+  const {data,error}=await importDb.from('lottery_import_anomalies').select('id,anomaly_type,resolution_status,record_keys,submission_keys').range(0,999);
   if(error)throw new Error('異常資格檢核失敗：'+error.message);
-  if(data.length===10000)throw new Error('異常筆數已達查詢上限，請先分批檢核，避免漏掉資料。');
+  if((data||[]).length===1000)throw new Error('異常筆數達單次安全檢核上限，請先處理或分批核對，不可直接匯出。');
   const pending=data.filter(a=>a.resolution_status==='pending'||!a.resolution_status);
   if(pending.length)throw new Error('尚有 '+pending.length+' 項異常待人工確認；為避免誤抽籤，請先結案。');
   const invalid=data.filter(a=>a.resolution_status==='invalid');
