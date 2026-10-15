@@ -4112,14 +4112,9 @@ async function loadAdmins(){
 }
 async function checkBootstrap(){
   sessionStorage.removeItem('venue_admin_session_bad');
-  const {data:hasAdmins,error}=await db.rpc('admin_users_exist');
-  if(error){
-    document.getElementById('bootstrapBox').classList.add('hidden');
-    document.getElementById('loginBox').classList.remove('hidden');
-    showMsg('loginMsg','無法確認後台帳號狀態，請重新整理；若仍出現此訊息，請先執行後台登入修正 SQL。','error');
-    console.error(error); return;
-  }
-  if(!hasAdmins){
+  const admins=await loadAdmins();
+  if(!admins) return;
+  if(admins.length===0){
     document.getElementById('bootstrapBox').classList.remove('hidden');
     document.getElementById('loginBox').classList.add('hidden');
   }else{
@@ -4138,9 +4133,11 @@ async function login(){
   const username=document.getElementById('loginUsername').value.trim();
   const password=document.getElementById('loginPassword').value;
   if(!username||!password){ showMsg('loginMsg','請輸入帳號與密碼'); return; }
-  const {data,error}=await db.rpc('admin_login',{p_username:username,p_password:password});
-  if(error){ showMsg('loginMsg',`登入失敗：${error.message||'請確認後台登入修正 SQL 已執行。'}`); console.error(error); return; }
-  if(!data){ showMsg('loginMsg','帳號或密碼錯誤，或帳號已停用'); return; }
+  const {data,error}=await db.from(ADMIN_TABLE).select('*').eq('username',username).maybeSingle();
+  if(error||!data){ showMsg('loginMsg','帳號或密碼錯誤'); return; }
+  if(!data.is_active){ showMsg('loginMsg','此帳號已停用'); return; }
+  const hash=await makeHash(password,data.salt);
+  if(hash!==data.password_hash){ showMsg('loginMsg','帳號或密碼錯誤'); return; }
   currentAdmin={id:data.id,username:data.username,display_name:data.display_name,role:data.role};
   sessionStorage.setItem('venue_admin_session', JSON.stringify(currentAdmin));
   await enterApp();
@@ -7755,6 +7752,18 @@ document.getElementById('logoutBtn').onclick=logout;
 function normalizeFormDay(value){const m=String(value||'').match(/週([一二三四五六日])/);return m?`周${m[1]}`:'';}
 function normalizeFormTime(value){return String(value||'').split(/[,，、\n]/).map(x=>x.trim()).filter(Boolean);}
 function formField(row,title){return String(row[title]??'').trim();}
+function normalizeFormTimestamp(value){
+  if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString();
+  if(((typeof value==='number'&&Number.isFinite(value))||(typeof value==='string'&&/^\d{4,6}(?:\.\d+)?$/.test(value.trim())))&&window.XLSX?.SSF?.parse_date_code){
+    const p=XLSX.SSF.parse_date_code(Number(value));
+    if(p?.y&&p?.m&&p?.d)return `${String(p.y).padStart(4,'0')}-${String(p.m).padStart(2,'0')}-${String(p.d).padStart(2,'0')}T${String(p.H||0).padStart(2,'0')}:${String(p.M||0).padStart(2,'0')}:${String(Math.floor(p.S||0)).padStart(2,'0')}+08:00`;
+  }
+  const s=String(value??'').trim();if(!s)return '';
+  const local=s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T,]+(?:(上午|下午|AM|PM)\s*)?(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/i);
+  if(local){let h=Number(local[5]||0);const ap=(local[4]||'').toUpperCase();if(ap==='下午'&&h<12)h+=12;if((ap==='上午'||ap==='AM')&&h===12)h=0;return `${String(local[1]).padStart(4,'0')}-${String(local[2]).padStart(2,'0')}-${String(local[3]).padStart(2,'0')}T${String(h).padStart(2,'0')}:${String(local[6]||'00').padStart(2,'0')}:${String(local[7]||'00').padStart(2,'0')}+08:00`;}
+  const parsed=new Date(s);if(!Number.isNaN(parsed.getTime()))return parsed.toISOString();
+  throw new Error(`無法辨識表單時間戳記「${s}」，請確認「時間戳記」欄位。`);
+}
 async function parseGoogleFormWorkbook(file){
   if(typeof XLSX==='undefined')throw new Error('Excel 元件未載入，請重新整理後再試。');
   const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
@@ -7768,14 +7777,15 @@ async function parseGoogleFormWorkbook(file){
     const name=formField(row,'申請人姓名'),email=formField(row,'電子郵件地址')||formField(row,'電子郵件信箱（Go會員）')||formField(row,'電子郵件信箱（會館會員）');
     const identifier=(isGo?formField(row,'台北捷運Go會員綁定手機（10碼）'):formField(row,'北投會館會員身分證字號（10碼）')).replace(/\s/g,'').toUpperCase();
     const phone=(isGo?identifier:formField(row,'聯絡手機號碼（會館會員，10碼）')).replace(/\D/g,'');
-    const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`),stamp=formField(row,'時間戳記');
+    const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`),stamp=normalizeFormTimestamp(row['時間戳記']);
     const submissionKey=await sha256([stamp,email.toLowerCase(),memberType,identifier,name].join('|'));
     if(seenRow.has(submissionKey)){anomalies.push({type:'重複回覆資料',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});continue;}seenRow.add(submissionKey);
     const sub={submission_key:submissionKey,submitted_at:stamp,member_type:isGo?'台北捷運Go會員':'北投會館會員',member_key_hash:memberKeyHash,member_identifier:identifier,name,phone,email,raw_payload:row,excel_row:excelRow};submissions.push(sub);
     if(!name||!identifier||!phone||!email||(!isGo&&!/^\d{10}$/.test(identifier))||(isGo&&!/^09\d{8}$/.test(phone)))anomalies.push({type:'基本資料格式或必填欄位異常',submissionKeys:[submissionKey],recordKeys:[],detail:`試算表第 ${excelRow} 列`});
     const selected=[];
-    if(/申請羽球/.test(formField(row,'是否申請羽球／籃球？'))){const day=normalizeFormDay(formField(row,'羽球：選擇星期（限選一日）')),times=Object.keys(row).filter(k=>/^羽球：請選擇1個時段/.test(k)).flatMap(k=>normalizeFormTime(row[k]));if(times.length!==1)anomalies.push({type:'羽球時段數量異常',submissionKeys:[submissionKey],recordKeys:[]});times.forEach(time=>selected.push({venue:'羽球',day,time}));}
-    if(/申請籃球/.test(formField(row,'是否申請羽球／籃球？'))){const day=normalizeFormDay(formField(row,'籃球：選擇星期（限選一日）')),times=Object.keys(row).filter(k=>/^籃球：請選擇1個時段/.test(k)).flatMap(k=>normalizeFormTime(row[k]));if(times.length!==1)anomalies.push({type:'籃球時段數量異常',submissionKeys:[submissionKey],recordKeys:[]});times.forEach(time=>selected.push({venue:'籃球',day,time}));}
+    const sportChoice=formField(row,'是否申請羽球／籃球？');
+    if(sportChoice==='申請羽球'){const day=normalizeFormDay(formField(row,'羽球：選擇星期（限選一日）')),times=Object.keys(row).filter(k=>/^羽球：請選擇1個時段/.test(k)).flatMap(k=>normalizeFormTime(row[k]));if(times.length!==1)anomalies.push({type:'羽球時段數量異常',submissionKeys:[submissionKey],recordKeys:[]});times.forEach(time=>selected.push({venue:'羽球',day,time}));}
+    if(sportChoice==='申請籃球'){const day=normalizeFormDay(formField(row,'籃球：選擇星期（限選一日）')),times=Object.keys(row).filter(k=>/^籃球：請選擇1個時段/.test(k)).flatMap(k=>normalizeFormTime(row[k]));if(times.length!==1)anomalies.push({type:'籃球時段數量異常',submissionKeys:[submissionKey],recordKeys:[]});times.forEach(time=>selected.push({venue:'籃球',day,time}));}
     const tableSlots=new Set();for(const [header,value] of Object.entries(row)){const m=header.match(/^(B1|B2)桌球場｜週([一二三四五六日])｜/);if(!m||!String(value||'').trim())continue;normalizeFormTime(value).forEach(time=>tableSlots.add(`${m[1]}桌球|周${m[2]}|${time}`));}
     tableSlots.forEach(v=>{const [venue,day,time]=v.split('|');selected.push({venue,day,time});});
     if(selected.filter(x=>x.venue==='羽球'||x.venue==='籃球').length>1)anomalies.push({type:'羽球／籃球合計超過一個時段',submissionKeys:[submissionKey],recordKeys:[]});
