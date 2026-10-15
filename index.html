@@ -189,47 +189,9 @@
           },
 
           async replaceAll(records) {
-            const client = getSupabaseClient();
-            if (!client) return { isOk: false };
-
-            const { error: deleteError } = await client
-              .from(SUPABASE_TABLE)
-              .delete()
-              .neq('id', '00000000-0000-0000-0000-000000000000');
-
-            if (deleteError) {
-              console.error('清空 Supabase 資料失敗', deleteError);
-              return { isOk: false };
-            }
-
-            const cleanRecords = Array.isArray(records)
-              ? records.map((record) => ({
-                  name: record.name,
-                  phone: record.phone,
-                  id_last4: record.id_last4,
-                  id_last4: record.id_last4 || '',
-                  location_name: record.location_name,
-                  venue_type: record.venue_type,
-                  day_of_week: record.day_of_week,
-                  time_slot: record.time_slot,
-                  serial_number: record.serial_number,
-                  registered_at: record.registered_at || new Date().toISOString()
-                }))
-              : [];
-
-            if (cleanRecords.length > 0) {
-              const { error: insertError } = await client
-                .from(SUPABASE_TABLE)
-                .insert(cleanRecords);
-
-              if (insertError) {
-                console.error('批次寫入 Supabase 失敗', insertError);
-                return { isOk: false };
-              }
-            }
-
-            await refreshRecords();
-            return { isOk: true };
+            // v16: never expose a destructive whole-table replacement to anonymous visitors.
+            console.error('整批覆蓋登記資料已停用：請由授權後台辦理資料維護。');
+            return { isOk: false, error: 'bulk-replace-disabled' };
           }
         };
       }
