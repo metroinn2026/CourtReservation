@@ -4706,18 +4706,13 @@ function renderDashboard(){
   const anomalyCard=document.getElementById('dashAnomalyCard');
   if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
 
-  // v45: 將作業總覽「查看」確實連接到登記清單。
+  // v51: 首頁異常查看統一進入待確認資料分頁。
   document.querySelectorAll('.anomaly-text-action, .anomaly-go').forEach(b=>b.onclick=()=>{
-    recordState.anomaly=b.dataset.anomaly||'';
-    recordState.q='';
-    recordState.location=DEFAULT_LOCATION;
-    recordState.venue='';
-    recordState.usage='';
-    recordState.day='';
-    recordState.time='';
+    recordsActionTab='review';
+    recordState.anomaly='';
     recordState.page=1;
-    recordsActionTab='filter';
     renderPage('records');
+    document.querySelector('.records-function-tabs')?.scrollIntoView({behavior:'smooth',block:'start'});
   });
 
   document.querySelectorAll('.dashboard-action').forEach(btn=>{
@@ -4955,6 +4950,7 @@ function renderRecordsPage(){
 
       <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
         <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
+        <button class="records-function-tab ${recordsActionTab==='review'?'active':''}" data-action-tab="review">待確認資料</button>
         <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
       </div>
 
@@ -5018,6 +5014,7 @@ function renderRecordsPage(){
 
   document.querySelectorAll('.records-function-tab').forEach(btn=>{
     btn.onclick=()=>{
+      closeCourtImportModal();
       recordsActionTab=btn.dataset.actionTab;
       selectedRecordIds.clear();
       document.querySelectorAll('.records-function-tab').forEach(x=>x.classList.toggle('active',x===btn));
@@ -5034,6 +5031,10 @@ function renderRecordsPage(){
 function renderRecordsWorkspace(){
   const box=document.getElementById('recordsWorkspace');
   if(!box) return;
+  if(recordsActionTab==='review'){
+    renderGoogleFormImportPage(box,'review');
+    return;
+  }
   if(recordsActionTab==='publish'){
     box.innerHTML=`<div id="recordsPublishWorkspace"></div><div id="recordsTable"></div>`;
     renderRecordsPublishWorkspace();
@@ -8144,11 +8145,16 @@ function closeCourtImportModal(){
   document.removeEventListener('keydown',courtImportModalKeydown);
   if(courtImportModalReturnFocus?.isConnected)courtImportModalReturnFocus.focus();
 }
-function renderGoogleFormImportPage(mount){
+function renderGoogleFormImportPage(mount, mode='all'){
   const target=mount || document.getElementById('content');
   target.innerHTML=`<div class="panel" style="background:#f5f8ff"><div class="small">🔐 共用登記資料上方的 Supabase 授權帳號。請先於主畫面登入，再進行匯入或異常處理。</div><div id="formAuthState" class="small" style="margin-top:6px"></div></div><div class="panel"><h3>Google 表單回覆 Excel（v31 三張獨立表單）</h3><div class="alert">請一次選擇羽球、籃球或桌球其中一張表單的原始回覆 Excel；系統辨識來源、核對開放時段並於匯入前提示異常。重複申請會列為待審異常，不應因唯一性限制使整批失敗。完整會館會員證號僅存入受限資料表；Go會員不保存身分證字號。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待確認資料</h3><div class="small">異常提示不等於資格不合格；已完成審查的紀錄會保留且不重複出現在待處理清單。</div><select id="anomalyReviewFilter" aria-label="審查狀態篩選" style="margin:8px 10px 8px 0"><option value="open">待處理（待確認／待補正）</option><option value="done">已完成</option><option value="all">全部審查紀錄</option><option value="valid">已確認正常</option><option value="invalid">資格不符</option></select><span id="anomalyReviewCount" class="small"></span><br><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
+  if(mode==='review'){
+    const panels=target.querySelectorAll(':scope > .panel');
+    if(panels[0])panels[0].remove();
+    if(panels[1])panels[1].remove();
+  }
   importDb.auth.getUser().then(({data})=>{const x=document.getElementById('formAuthState');if(x)x.textContent=data?.user?'目前已登入資料庫管理帳號':'尚未登入資料庫，請先關閉視窗並在登記資料上方授權。';});
-  document.getElementById('previewFormBtn').onclick=async()=>{try{const f=document.getElementById('formWorkbook').files[0];if(!f)throw new Error('請先選擇Excel檔案。');pendingFormImport=await parseGoogleFormWorkbook(f);renderFormImportPreview();}catch(e){pendingFormImport=null;document.getElementById('formImportPreview').innerHTML=`<div class="msg error">${escapeHtml(e.message||String(e))}</div>`;}};
+  if(document.getElementById('previewFormBtn'))document.getElementById('previewFormBtn').onclick=async()=>{try{const f=document.getElementById('formWorkbook').files[0];if(!f)throw new Error('請先選擇Excel檔案。');pendingFormImport=await parseGoogleFormWorkbook(f);renderFormImportPreview();}catch(e){pendingFormImport=null;document.getElementById('formImportPreview').innerHTML=`<div class="msg error">${escapeHtml(e.message||String(e))}</div>`;}};
   document.getElementById('refreshFormAnomalies').onclick=loadFormAnomalies;document.getElementById('anomalyReviewFilter').onchange=loadFormAnomalies;loadFormAnomalies();
 }
 function renderFormImportPreview(){const p=pendingFormImport,box=document.getElementById('formImportPreview');if(!p||!box)return;const counts={};p.anomalies.forEach(a=>counts[a.type]=(counts[a.type]||0)+1);box.innerHTML=`<div class="msg info">來源：${escapeHtml(p.sourceType||'未辨識')}｜${p.submissions.length} 份回覆，拆分 ${p.records.length} 筆場次，${p.anomalies.length} 項異常。</div><div class="table-wrap"><table><thead><tr><th>異常類型</th><th>筆數</th><th>關聯資料</th></tr></thead><tbody>${Object.entries(counts).map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td>匯入後可逐項確認</td></tr>`).join('')||'<tr><td colspan="3">未發現匯入前異常</td></tr>'}</tbody></table></div><button id="commitFormImportBtn" class="btn btn-primary" style="margin-top:12px">覆蓋 ${escapeHtml(p.sourceType)}表單資料（${p.records.length} 筆場次）</button>`;document.getElementById('commitFormImportBtn').onclick=commitGoogleFormImport;}
