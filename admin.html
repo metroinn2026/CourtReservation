@@ -4018,9 +4018,9 @@ function sensitiveIdCell(r){
   const masked=maskMemberId(id,last4);
   const label=escapeHtml(masked);
   if(!secureIdentityAuthenticated) return `<span title="完整證號僅限授權人員查閱">${label}</span>`;
-  if(!id) return `<span title="目前僅有遮蔽識別資料">${label}</span> <button type="button" class="btn btn-gray" disabled title="目前資料庫只有末四碼；重新匯入原始表單後才可查看全碼" aria-label="目前無完整證號" style="opacity:.45;cursor:not-allowed;padding:3px 6px">👁</button>`;
+  if(!id) return `<span title="目前僅有遮蔽識別資料">${label}</span> <button type="button" class="btn btn-gray" disabled title="目前資料庫只有末四碼；重新匯入原始表單後才可查看全碼" aria-label="目前無完整證號" style="opacity:.40;cursor:not-allowed;border:0;background:transparent;box-shadow:none;padding:2px 4px;min-width:0;width:24px;height:24px;font-size:15px;line-height:1">👁</button>`;
   const visible=revealedSensitiveKeys.has(key);
-  return `<span class="identity-value">${escapeHtml(visible?id:masked)}</span> <button type="button" class="btn btn-gray identity-reveal" data-identity-key="${escapeHtml(key)}" aria-label="${visible?'隱藏':'查看'}完整身分證號" title="${visible?'隱藏':'查看'}完整身分證號">${visible?'隱藏':'👁 查看'}</button>`;
+  return `<span class="identity-value">${escapeHtml(visible?id:masked)}</span> <button type="button" class="identity-reveal" style="border:0;background:transparent;box-shadow:none;padding:2px 4px;min-width:0;width:24px;height:24px;font-size:15px;line-height:1;vertical-align:middle;cursor:pointer;color:#475569" data-identity-key="${escapeHtml(key)}" aria-label="${visible?'隱藏':'查看'}完整身分證號" title="${visible?'隱藏':'查看'}完整身分證號">${visible?'◉':'👁'}</button>`;
 }
 function bindIdentityReveal(){
   document.querySelectorAll('.identity-reveal').forEach(btn=>btn.onclick=()=>{
@@ -4861,7 +4861,7 @@ function renderRecordsPage(){
     <div class="panel records-main-panel">
       <h3>登記資料</h3>
       <div class="small" style="margin-bottom:14px;padding:10px 12px;background:#f5f7fb;border:1px solid #e4e9f1;line-height:1.7">
-        🔐 會館會員證號預設遮蔽；授權後可逐筆點選「👁 查看」，Go會員不蒐集身分證字號。<br>
+        🔐 會館會員證號預設遮蔽；授權後可點選眼睛圖示，Go會員不蒐集身分證字號。<br>
         <label>資料庫授權帳號 <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="Supabase Auth Email" style="max-width:200px" /></label>
         <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" style="max-width:160px" /></label>
         <button id="identityAuthBtn" type="button" class="btn btn-gray">授權</button>
@@ -8081,16 +8081,7 @@ async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data
     alert('資料庫仍套用舊版羽球／籃球「手機＋身分證末四碼」唯一限制，無法保留重複申請供異常審查。請先由資料庫管理人員執行隨附的 01_fix_unique_index.sql，再重新匯入。本次交易未成功，請勿重複亂改測試資料。');
   }else alert(`匯入失敗：${error.message}`);
   return;
- }
- // 若原始回覆已存在但登記場次曾被刪除，只補缺漏場次，不重複插入。
- const {data:repairData,error:repairError}=await importDb.rpc('restore_missing_lottery_records',{
-   p_payload:{records:pendingFormImport.records}
- });
- if(repairError){
-   alert('原始回覆已處理，但補回遺失場次失敗：'+repairError.message+'。請確認已執行 v40 SQL；不要刪除原始回覆。');
-   return;
- }
- alert(`匯入完成。一般新增 ${data?.inserted_records||0} 筆；補回缺少場次 ${repairData?.restored_records||0} 筆；略過重複回覆 ${data?.duplicate_submissions||0} 份。`);pendingFormImport=null;await loadAllData();if(document.getElementById('courtImportModal')?.hidden===false){renderGoogleFormImportPage(document.getElementById('courtImportModalBody'));}else if(currentPage==='records'){renderRecordsWorkspace();}else{renderGoogleFormImportPage();}}
+ }alert(`匯入完成。新增 ${data?.inserted_records||0} 筆場次，略過重複 ${data?.duplicate_submissions||0} 份回覆。`);pendingFormImport=null;await loadAllData();if(document.getElementById('courtImportModal')?.hidden===false){renderGoogleFormImportPage(document.getElementById('courtImportModalBody'));}else if(currentPage==='records'){renderRecordsWorkspace();}else{renderGoogleFormImportPage();}}
 async function loadFormAnomalies(){const box=document.getElementById('formAnomalyList');if(!box)return;const {data:user}=await importDb.auth.getUser();if(!user?.user){box.innerHTML='<div class="msg info">登入資料庫管理帳號後載入異常清單。</div>';return;}const {data,error}=await importDb.from('lottery_import_anomalies').select('*').order('created_at',{ascending:false}).limit(200);if(error){box.innerHTML=`<div class="msg error">${escapeHtml(error.message)}</div>`;return;}if(!data?.length){box.innerHTML='<div class="msg info">目前沒有異常資料。</div>';return;}box.innerHTML=`<div class="table-wrap"><table><thead><tr><th>異常類型</th><th>狀態</th><th>關聯登記</th><th>處理</th></tr></thead><tbody>${data.map(a=>{const related=(a.record_keys||[]).map(k=>allRecords.find(r=>r.import_record_key===k)).filter(Boolean);const label=related.length?related.map(r=>`${r.name}｜${r.venue_type} ${r.day_of_week} ${r.time_slot}（${r.serial_number}）`).join('；'):((a.submission_keys||[]).length?`${a.submission_keys.length} 份回覆`:'-');return `<tr><td>${escapeHtml(a.anomaly_type)}${a.detail?`<div class="small">${escapeHtml(a.detail)}</div>`:''}</td><td>${escapeHtml(a.resolution_status)}</td><td>${escapeHtml(label)}</td><td><select data-anomaly="${a.id}"><option value="pending" ${a.resolution_status==='pending'?'selected':''}>待確認</option><option value="valid" ${a.resolution_status==='valid'?'selected':''}>確認有效</option><option value="invalid" ${a.resolution_status==='invalid'?'selected':''}>確認無效</option></select> <button class="btn btn-gray" data-save-anomaly="${a.id}">儲存</button></td></tr>`;}).join('')}</tbody></table></div>`;box.querySelectorAll('[data-save-anomaly]').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.saveAnomaly,status=box.querySelector(`[data-anomaly="${id}"]`).value,{error}=await importDb.rpc('resolve_google_form_anomaly',{p_anomaly_id:id,p_status:status});if(error)alert(`儲存失敗：${error.message}`);else loadFormAnomalies();});}
 document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage(btn.dataset.page));
 
