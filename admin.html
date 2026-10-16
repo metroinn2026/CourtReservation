@@ -3982,7 +3982,7 @@ function sensitiveIdCell(r){
   const masked=maskMemberId(id,last4);
   const label=escapeHtml(masked);
   if(!secureIdentityAuthenticated) return `<span title="完整證號僅限授權人員查閱">${label}</span>`;
-  if(!id) return `<span title="既有回覆只保留末四碼，須重新匯入原始表單資料才可補存全碼">${label} <span class="small">（尚未保存全碼）</span></span>`;
+  if(!id) return `<span title="目前僅有遮蔽識別資料">${label}</span> <button type="button" class="btn btn-gray" disabled title="未有完整證號可供查閱" aria-label="目前無完整證號" style="opacity:.45;cursor:not-allowed;padding:3px 6px">👁</button>`;
   const visible=revealedSensitiveKeys.has(key);
   return `<span class="identity-value">${escapeHtml(visible?id:masked)}</span> <button type="button" class="btn btn-gray identity-reveal" data-identity-key="${escapeHtml(key)}" aria-label="${visible?'隱藏':'查看'}完整身分證號" title="${visible?'隱藏':'查看'}完整身分證號">${visible?'隱藏':'👁 查看'}</button>`;
 }
@@ -4021,7 +4021,7 @@ async function connectSensitiveRecordAccess(){
   document.getElementById('identityAuthPassword').value='';
   if(error){if(status)status.textContent='授權失敗，請確認帳號權限。';return;}
   await loadSensitiveIdentifiers();
-  if(status)status.textContent=secureIdentityAuthenticated?'已通過授權，可查閱會館會員證號。':'權限不足或尚未執行配套 SQL。';
+  if(status)status.textContent=secureIdentityAuthenticated?`已通過授權（可查閱 ${secureIdentityBySubmission.size} 筆完整證號）`:'權限不足或尚未執行配套 SQL。';
   renderRecordsWorkspace();
 }
 function memberIdentifierLast4(r){ return String(r.member_identifier_last4||r.id_last4||'').trim(); }
