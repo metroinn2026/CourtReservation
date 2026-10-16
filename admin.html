@@ -3793,6 +3793,55 @@
   .records-main-panel > .records-fixed-filter .records-shared-toolbar {min-width:1080px!important;}
 }
 </style>
+
+<style id="v55-ux-consistency">
+/* V55: single design layer; neutral defaults, color reserved for issues and active navigation. */
+:root{--ux-ink:#233247;--ux-muted:#64748b;--ux-border:#dce4ed;--ux-surface:#fff;--ux-accent:#285b9f;--ux-warning:#9b4d19;--ux-danger:#b42332}
+body .content{line-height:1.55}
+/* Consistent surface hierarchy; no unnecessary shadows or floating color cards. */
+body .panel,body .stat,body .records-main-panel .records-fixed-filter,body .dashboard-card{box-shadow:none!important;border-color:var(--ux-border)!important}
+body .panel h3{color:var(--ux-ink)!important;font-size:17px!important;font-weight:750!important}
+body .small,body .dashboard-card-note{color:var(--ux-muted)}
+/* Actions: primary is for submit/save, secondary for navigation, destructive red only when needed. */
+body .btn{min-height:40px;border-radius:9px!important;font-size:14px!important;font-weight:700!important;box-shadow:none!important;transition:background-color .15s,border-color .15s!important}
+body .btn-primary{background:var(--ux-accent)!important;border:1px solid var(--ux-accent)!important;color:white!important}
+body .btn-primary:hover{background:#204c86!important;border-color:#204c86!important}
+body .btn-gray{background:white!important;border:1px solid #cbd7e4!important;color:#33465d!important}
+body .btn-gray:hover{background:#f3f6fa!important;border-color:#9db1c9!important;color:#24364a!important}
+body .btn:disabled{background:#f0f2f5!important;color:#99a5b4!important;border-color:#e0e6ec!important;opacity:1!important;cursor:not-allowed!important}
+body .btn-danger{background:white!important;border:1px solid #d19da3!important;color:var(--ux-danger)!important}
+body .btn-danger:hover{background:#fff1f1!important}
+body button:focus-visible,body input:focus-visible,body select:focus-visible,body textarea:focus-visible{outline:2px solid #426fb4!important;outline-offset:2px!important}
+/* Status tags: success/normal/completed states do not consume attention. */
+body .tag.green,body .tag.gray,body .tag.blue:not(.anomaly-red){background:#f1f4f7!important;border:1px solid #dfe5eb!important;color:#526176!important;box-shadow:none!important}
+body .tag.anomaly-red,body .tag.warn{background:#fff0ed!important;border:1px solid #f0c3b9!important;color:#a13b2b!important}
+body .tag{font-weight:650!important}
+/* Dashboard: highlight only the exception count; all routine counts neutral. */
+body .dashboard-card{border-top:2px solid #d8e1eb!important}
+body .dashboard-card .dashboard-card-num,body .dashboard-card-num{color:var(--ux-ink)!important}
+body .dashboard-card:last-child:has(.dashboard-card-label) .dashboard-card-num{color:var(--ux-danger)!important}
+/* All tabs follow one same underline pattern. */
+body .records-function-tabs,body .admin-tabs{gap:6px!important;border-bottom:1px solid var(--ux-border)!important;background:transparent!important}
+body .records-function-tab,body .admin-tab{border-radius:0!important;background:transparent!important;border-bottom:2px solid transparent!important;color:#64748b!important;padding:11px 15px!important}
+body .records-function-tab:hover,body .admin-tab:hover{color:#254a7f!important;background:#f6f8fb!important}
+body .records-function-tab.active,body .admin-tab.active{background:transparent!important;color:#234f89!important;border-bottom-color:#234f89!important}
+/* Registration workspace: one clear header, not tab title repeated in card. */
+body .ux-review-panel{padding-top:15px!important}
+body .ux-review-panel>.small:first-child{margin-bottom:11px!important;line-height:1.65!important}
+body #recordsWorkspace .table-wrap table thead th{background:#f0f4f8!important;color:#425269!important;border-bottom:1px solid var(--ux-border)!important}
+body #recordsWorkspace table tbody tr:hover{background:#f8fafc!important}
+body select,body input,body textarea{border-radius:9px!important}
+/* Buttons in filter row distinguish operation instead of all looking primary */
+body #clearRecordFiltersBtn,body #exportBtn,body #exportQualifiedBtn{background:white!important;border:1px solid #cbd7e4!important;color:#33465d!important}
+body #clearRecordFiltersBtn:hover,body #exportBtn:hover,body #exportQualifiedBtn:hover{background:#f3f6fa!important}
+body #applyFilterBtn{background:var(--ux-accent)!important;color:#fff!important}
+/* Priority is conveyed by warning labels, not every routine 'normal' chip. */
+body .anomaly-text-action{color:#9b3a30!important}
+/* More readable modal: compact header and enough space for forms. */
+body .court-import-head{border-bottom:1px solid var(--ux-border)!important}
+body .court-import-dialog{border-radius:12px!important}
+@media(max-width:800px){body .records-function-tab,body .admin-tab{padding:10px 11px!important}}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5084,7 +5133,7 @@ async function renderQualificationReview(container){
   const focus=window.qualificationFocusId;
   const displayed=focus?allRecords.filter(r=>String(r.id)===focus):rows;
   const options=[['qualified','合格'],['pending','待審查'],['correction','待補正'],['invalid','審查不合格']];
-  container.innerHTML=`<div class="panel"><h3>異常清單</h3><div class="small">僅列出未取得抽籤資格的申請：待審查、待補正、審查不合格。審查改為合格並儲存後，即從本清單移除；所有申請可回到「登記清單」查閱。</div>
+  container.innerHTML=`<div class="panel ux-review-panel"><div class="small">僅列出未取得抽籤資格的申請：待審查、待補正、審查不合格。審查改為合格並儲存後，即從本清單移除；所有申請可回到「登記清單」查閱。</div>
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0"><select id="qualificationFilterV52"><option value="open">待處理（待審查／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回異常清單</button>':''}<button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
   <div class="table-wrap"><table><thead><tr><th>申請人／登記時段</th><th>系統提示</th><th>資格審查</th><th>審查紀錄</th><th>操作</th></tr></thead><tbody>${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);return `<tr><td><strong>${escapeHtml(r.name)}</strong><div class="small">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}｜${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="small">序號 ${escapeHtml(r.serial_number||'')}</div></td><td>${qualificationIssueTypes(r).map(escapeHtml).join('、')||'已完成查核'}</td><td><select data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><textarea data-qnote="${r.id}" maxlength="1000" placeholder="審查備註" style="display:block;width:190px;min-height:45px;margin-top:6px">${escapeHtml(saved.review_note||'')}</textarea></td><td class="small">${escapeHtml(saved.reviewer_email||'—')}<div>${saved.reviewed_at?escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW')):'—'}</div></td><td><button class="btn btn-gray" data-qsave="${r.id}">儲存</button></td></tr>`}).join('')||'<tr><td colspan="5">此條件目前沒有資料。</td></tr>'}</tbody></table></div></div>`;
   const sel=container.querySelector('#qualificationFilterV52');sel.value=currentFilter;sel.onchange=()=>{window.qualificationFocusId=null;window.qualificationFilterV52=sel.value;renderQualificationReview(container);};
@@ -8222,7 +8271,7 @@ function openCourtImportModal(mode='import'){
   overlay.hidden=false;
   renderGoogleFormImportPage(mount);
   const title=document.getElementById('courtImportModalTitle');
-  if(title)title.textContent=mode==='anomaly'?'待確認資料':'Google 表單匯入';
+  if(title)title.textContent=mode==='anomaly'?'匯入異常紀錄':'匯入 Google 表單';
   if(mode==='anomaly')setTimeout(()=>mount.querySelector('#formAnomalyList')?.scrollIntoView({block:'nearest'}),30);
   document.querySelector('.court-import-dialog')?.focus();
   document.addEventListener('keydown',courtImportModalKeydown);
