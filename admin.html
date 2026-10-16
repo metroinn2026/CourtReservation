@@ -4045,7 +4045,7 @@ function maskMemberId(id,last4){
 function sensitiveIdCell(r){
   const t=memberIdentityType(r);
   if(/Go會員/.test(t))return '<span class="small">不適用</span>';
-  if(!/北投會館/.test(t))return '<span class="small">—</span>';
+  if(!/會館會員/.test(t))return '<span class="small">—</span>';
   const key=String(r.import_submission_key||'');
   const id=secureIdentityBySubmission.get(key);
   const last4=memberIdentifierLast4(r);
