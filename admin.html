@@ -8151,13 +8151,28 @@ function renderGoogleFormImportPage(mount){
   document.getElementById('previewFormBtn').onclick=async()=>{try{const f=document.getElementById('formWorkbook').files[0];if(!f)throw new Error('請先選擇Excel檔案。');pendingFormImport=await parseGoogleFormWorkbook(f);renderFormImportPreview();}catch(e){pendingFormImport=null;document.getElementById('formImportPreview').innerHTML=`<div class="msg error">${escapeHtml(e.message||String(e))}</div>`;}};
   document.getElementById('refreshFormAnomalies').onclick=loadFormAnomalies;document.getElementById('anomalyReviewFilter').onchange=loadFormAnomalies;loadFormAnomalies();
 }
-function renderFormImportPreview(){const p=pendingFormImport,box=document.getElementById('formImportPreview');if(!p||!box)return;const counts={};p.anomalies.forEach(a=>counts[a.type]=(counts[a.type]||0)+1);box.innerHTML=`<div class="msg info">來源：${escapeHtml(p.sourceType||'未辨識')}｜${p.submissions.length} 份回覆，拆分 ${p.records.length} 筆場次，${p.anomalies.length} 項異常。</div><div class="table-wrap"><table><thead><tr><th>異常類型</th><th>筆數</th><th>關聯資料</th></tr></thead><tbody>${Object.entries(counts).map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td>匯入後可逐項確認</td></tr>`).join('')||'<tr><td colspan="3">未發現匯入前異常</td></tr>'}</tbody></table></div><button id="commitFormImportBtn" class="btn btn-primary" style="margin-top:12px">確認匯入 ${p.records.length} 筆場次</button>`;document.getElementById('commitFormImportBtn').onclick=commitGoogleFormImport;}
-async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data:userData,error:userError}=await importDb.auth.getUser();if(userError||!userData?.user){alert('請先登入已授權的 Supabase Auth 管理帳號。');return;}if(!confirm(`將匯入 ${pendingFormImport.submissions.length} 份回覆、${pendingFormImport.records.length} 筆場次。已匯入回覆會自動略過。繼續？`))return;const {data,error}=await importDb.rpc('import_google_form_batch_v3',{p_payload:{batch_key:crypto.randomUUID(),submissions:pendingFormImport.submissions,records:pendingFormImport.records,anomalies:pendingFormImport.anomalies}});if(error){
-  if(String(error.message||'').includes('lottery_records_unique_limited_sports')){
-    alert('資料庫仍套用舊版羽球／籃球「手機＋身分證末四碼」唯一限制，無法保留重複申請供異常審查。請先由資料庫管理人員執行隨附的 01_fix_unique_index.sql，再重新匯入。本次交易未成功，請勿重複亂改測試資料。');
-  }else alert(`匯入失敗：${error.message}`);
-  return;
- }alert(`匯入完成。新增 ${data?.inserted_records||0} 筆場次，略過重複 ${data?.duplicate_submissions||0} 份回覆。`);pendingFormImport=null;await loadAllData();if(document.getElementById('courtImportModal')?.hidden===false){renderGoogleFormImportPage(document.getElementById('courtImportModalBody'));}else if(currentPage==='records'){renderRecordsWorkspace();}else{renderGoogleFormImportPage();}}
+function renderFormImportPreview(){const p=pendingFormImport,box=document.getElementById('formImportPreview');if(!p||!box)return;const counts={};p.anomalies.forEach(a=>counts[a.type]=(counts[a.type]||0)+1);box.innerHTML=`<div class="msg info">來源：${escapeHtml(p.sourceType||'未辨識')}｜${p.submissions.length} 份回覆，拆分 ${p.records.length} 筆場次，${p.anomalies.length} 項異常。</div><div class="table-wrap"><table><thead><tr><th>異常類型</th><th>筆數</th><th>關聯資料</th></tr></thead><tbody>${Object.entries(counts).map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td>匯入後可逐項確認</td></tr>`).join('')||'<tr><td colspan="3">未發現匯入前異常</td></tr>'}</tbody></table></div><button id="commitFormImportBtn" class="btn btn-primary" style="margin-top:12px">覆蓋 ${escapeHtml(p.sourceType)}表單資料（${p.records.length} 筆場次）</button>`;document.getElementById('commitFormImportBtn').onclick=commitGoogleFormImport;}
+async function commitGoogleFormImport(){
+  const p=pendingFormImport;
+  if(!p)return;
+  if(!['羽球','籃球','桌球'].includes(p.sourceType)){alert('無法確認表單類型，已停止匯入。');return;}
+  if(!p.submissions.length||!p.records.length){alert('匯入檔案沒有有效的登記場次，為保護資料不允許空檔覆蓋。');return;}
+  const {data:userData,error:userError}=await importDb.auth.getUser();
+  if(userError||!userData?.user){alert('請先登入已授權的 Supabase Auth 管理帳號。');return;}
+  const warning=`即將覆蓋「${p.sourceType}」表單資料：\n${p.submissions.length}份回覆／${p.records.length}筆登記場次。\n\n此動作會移除該場地舊的 Google 表單匯入場次並依本次檔案重建（包括既有中籤、備取、公告狀態）；其他場地及人工建立的資料不會刪除。\n\n確認已備份，並繼續？`;
+  if(!confirm(warning))return;
+  const btn=document.getElementById('commitFormImportBtn');if(btn){btn.disabled=true;btn.textContent='覆蓋匯入中…';}
+  try{
+    const {data,error}=await importDb.rpc('replace_google_form_source_v50',{p_payload:{batch_key:crypto.randomUUID(),source_type:p.sourceType,submissions:p.submissions,records:p.records,anomalies:p.anomalies}});
+    if(error)throw error;
+    pendingFormImport=null;
+    await loadAllData();
+    alert(`覆蓋完成：${p.sourceType}表單。已重建 ${data?.replaced_records??0} 筆登記場次，清除原匯入場次 ${data?.removed_records??0} 筆。請確認清單後再操作抽籤。`);
+    if(document.getElementById('courtImportModal')?.hidden===false){renderGoogleFormImportPage(document.getElementById('courtImportModalBody'));}
+    else if(currentPage==='records')renderRecordsWorkspace();else renderGoogleFormImportPage();
+  }catch(e){alert('覆蓋匯入失敗：'+(e.message||String(e))+'\n資料庫交易應已回滾，請勿再手動清空資料。');}
+  finally{if(btn){btn.disabled=false;btn.textContent='確認覆蓋匯入';}}
+}
 async function loadFormAnomalies(){
  const box=document.getElementById('formAnomalyList');if(!box)return;
  const {data:user}=await importDb.auth.getUser();
