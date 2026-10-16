@@ -3764,6 +3764,35 @@
 #recordsWorkspace .records-table-wrap::-webkit-scrollbar-track {background:#e2e8f0;border-radius:8px;}
 #recordsWorkspace .records-table-wrap::-webkit-scrollbar-thumb {background:#94a3b8;border-radius:8px;border:2px solid #e2e8f0;}
 </style>
+
+<style id="records-v43-single-row">
+/* v43: eight filters on a single desktop row; horizontal scroll instead of wrapping on narrow screens. */
+.records-main-panel > .records-fixed-filter .records-shared-toolbar {
+  display:grid!important;
+  grid-template-columns: minmax(175px,1.65fr) minmax(95px,1fr) minmax(120px,1.15fr) minmax(120px,1.15fr) minmax(92px,.9fr) minmax(105px,1fr) minmax(75px,.72fr) minmax(92px,.88fr)!important;
+  column-gap:8px!important;
+  row-gap:0!important;
+  width:100%!important;
+  min-width:0!important;
+  align-items:center!important;
+}
+.records-main-panel > .records-fixed-filter .records-shared-toolbar > * {
+  min-width:0!important;
+  width:100%!important;
+  max-width:100%!important;
+  box-sizing:border-box!important;
+  margin:0!important;
+}
+.records-main-panel > .records-fixed-filter #perPage {
+  min-width:0!important;
+  width:100%!important;
+  justify-self:stretch!important;
+}
+@media(max-width:1100px) {
+  .records-main-panel > .records-fixed-filter {overflow-x:auto!important;}
+  .records-main-panel > .records-fixed-filter .records-shared-toolbar {min-width:1080px!important;}
+}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
