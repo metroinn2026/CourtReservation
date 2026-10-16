@@ -3959,26 +3959,49 @@ function getStageStartTime(timeSlot){
 // 完整身分證號僅由經 Supabase Auth 授權的管理員查閱，不存入可匿名讀取的 lottery_records。
 let secureIdentityBySubmission = new Map();
 let secureIdentityAuthenticated = false;
+const revealedSensitiveKeys = new Set();
 function compactRecordCode(r){
   const raw=String(r.serial_number||'');
   const m=raw.match(/^GF-([A-F0-9]{10,})$/i);
   return m ? ('#'+m[1].slice(0,10)) : (raw || '—');
 }
 function memberIdentityType(r){return String(r.member_type||'未記錄').trim();}
+function maskMemberId(id,last4){
+  // 原始資料僅保存末四碼時，無法推算首字母，不能製造假的遮罩。
+  if(/^[A-Z][0-9]{9}$/.test(String(id||'')))return id[0]+'******'+id.slice(-3);
+  const last=String(last4||'').trim();
+  return last ? '••••••'+last : '未有證號資料';
+}
 function sensitiveIdCell(r){
   const t=memberIdentityType(r);
   if(/Go會員/.test(t))return '<span class="small">不適用</span>';
   if(!/北投會館/.test(t))return '<span class="small">—</span>';
-  const id=secureIdentityBySubmission.get(String(r.import_submission_key||''));
-  if(id)return `<span style="font-family:monospace;font-size:13px">${escapeHtml(id)}</span>`;
-  return `<span class="small" title="請先以資料庫授權管理員登入；舊資料需從原表單重新匯入才能補齊證號">${secureIdentityAuthenticated?'尚未保存':'需授權查看'}</span>`;
+  const key=String(r.import_submission_key||'');
+  const id=secureIdentityBySubmission.get(key);
+  const last4=memberIdentifierLast4(r);
+  const masked=maskMemberId(id,last4);
+  const label=escapeHtml(masked);
+  if(!secureIdentityAuthenticated) return `<span title="完整證號僅限授權人員查閱">${label}</span>`;
+  if(!id) return `<span title="既有回覆只保留末四碼，須重新匯入原始表單資料才可補存全碼">${label} <span class="small">（尚未保存全碼）</span></span>`;
+  const visible=revealedSensitiveKeys.has(key);
+  return `<span class="identity-value">${escapeHtml(visible?id:masked)}</span> <button type="button" class="btn btn-gray identity-reveal" data-identity-key="${escapeHtml(key)}" aria-label="${visible?'隱藏':'查看'}完整身分證號" title="${visible?'隱藏':'查看'}完整身分證號">${visible?'隱藏':'👁 查看'}</button>`;
 }
+function bindIdentityReveal(){
+  document.querySelectorAll('.identity-reveal').forEach(btn=>btn.onclick=()=>{
+    if(!secureIdentityAuthenticated)return;
+    const key=btn.dataset.identityKey;
+    if(revealedSensitiveKeys.has(key))revealedSensitiveKeys.delete(key);
+    else revealedSensitiveKeys.add(key);
+    renderRecordsTable();
+  });
+}
+
 function adminPhoneCell(r){
   // Go會員=會員綁定手機；會館會員=表單填寫的聯絡手機。
   return escapeHtml(String(r.phone||''));
 }
 async function loadSensitiveIdentifiers(){
-  secureIdentityBySubmission=new Map(); secureIdentityAuthenticated=false;
+  secureIdentityBySubmission=new Map(); secureIdentityAuthenticated=false; revealedSensitiveKeys.clear();
   const {data:auth,error:authError}=await importDb.auth.getUser();
   if(authError||!auth?.user)return;
   const keys=[...new Set(allRecords.map(r=>r.import_submission_key).filter(Boolean))];
@@ -4781,7 +4804,7 @@ function renderRecordsPage(){
     <div class="panel records-main-panel">
       <h3>登記資料</h3>
       <div class="small" style="margin-bottom:14px;padding:10px 12px;background:#f5f7fb;border:1px solid #e4e9f1;line-height:1.7">
-        🔐 會館會員完整身分證字號僅供授權管理員查核，Go會員不蒐集身分證字號。<br>
+        🔐 會館會員證號預設遮蔽；授權後可逐筆點選「👁 查看」，Go會員不蒐集身分證字號。<br>
         <label>資料庫授權帳號 <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="Supabase Auth Email" style="max-width:200px" /></label>
         <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" style="max-width:160px" /></label>
         <button id="identityAuthBtn" type="button" class="btn btn-gray">授權查閱證號</button>
@@ -5037,6 +5060,7 @@ function renderRecordsTable(){
 
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
+  bindIdentityReveal();
 
   bindSortHeaders();
   const anomalyHelpBtn=document.getElementById('anomalyHelpBtn');
@@ -5247,6 +5271,7 @@ function renderRecordsTable(){
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
+  bindIdentityReveal();
   bindSortHeaders();
   const anomalyHelpBtn=document.getElementById('anomalyHelpBtn'); if(anomalyHelpBtn) anomalyHelpBtn.onclick=showAnomalyDefinitionModal;
   document.getElementById('prevPage').disabled=recordState.page<=1;
