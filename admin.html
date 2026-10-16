@@ -117,6 +117,7 @@
 .court-import-dialog .table-wrap{max-width:100%;overflow-x:auto}
 .court-import-dialog button:focus-visible{outline:3px solid #7c9dff;outline-offset:2px}
 @media(max-width:600px){.court-import-modal{padding:8px}.court-import-dialog{width:100%;max-height:95vh;padding:14px}.court-import-head{top:-14px}}
+#openFormImportModal:disabled,#openFormAnomaliesModal:disabled{background:#d6dce5!important;color:#8d98a7!important;border-color:#d6dce5!important;cursor:not-allowed!important;opacity:1!important;box-shadow:none!important}
 </style>
 
 <style id="minimal-admin-refresh">
@@ -4049,7 +4050,7 @@ async function loadSensitiveIdentifiers(){
   const {data:auth,error:authError}=await importDb.auth.getUser();
   if(authError||!auth?.user)return;
   const keys=[...new Set(allRecords.map(r=>r.import_submission_key).filter(Boolean))];
-  for(let i=0;i<keys.length;i+=150){
+  for(let i=0;i<Math.max(1,keys.length);i+=150){
     const {data,error}=await importDb.rpc('admin_get_member_identifiers',{p_keys:keys.slice(i,i+150)});
     if(error){console.warn('受限證號查閱未啟用或未授權：',error.code);secureIdentityBySubmission.clear();return;}
     (data||[]).forEach(x=>secureIdentityBySubmission.set(String(x.submission_key),String(x.id_number)));
@@ -4063,10 +4064,21 @@ async function connectSensitiveRecordAccess(){
   if(!email||!password){if(status)status.textContent='請輸入資料庫授權帳號及密碼。';return;}
   const {error}=await importDb.auth.signInWithPassword({email,password});
   document.getElementById('identityAuthPassword').value='';
-  if(error){if(status)status.textContent='授權失敗，請確認帳號權限。';return;}
+  if(error){secureIdentityAuthenticated=false;updateCourtImportAuthorizationUI();if(status)status.textContent='授權失敗，請確認帳號權限。';return;}
   await loadSensitiveIdentifiers();
   if(status)status.textContent=secureIdentityAuthenticated?`已授權｜已有全碼 ${secureIdentityBySubmission.size} 筆（其他舊資料需補匯）`:'權限不足或尚未執行配套 SQL。';
+  updateCourtImportAuthorizationUI();
   renderRecordsWorkspace();
+}
+function updateCourtImportAuthorizationUI(){
+  const allowed=secureIdentityAuthenticated===true;
+  for(const id of ['openFormImportModal','openFormAnomaliesModal']){
+    const btn=document.getElementById(id);
+    if(!btn)continue;
+    btn.disabled=!allowed;
+    btn.setAttribute('aria-disabled',String(!allowed));
+    btn.title=allowed?'':'請先完成資料庫授權';
+  }
 }
 function memberIdentifierLast4(r){ return String(r.member_identifier_last4||r.id_last4||'').trim(); }
 function memberIdentityCell(r){
@@ -4852,10 +4864,10 @@ function renderRecordsPage(){
         🔐 會館會員證號預設遮蔽；授權後可逐筆點選「👁 查看」，Go會員不蒐集身分證字號。<br>
         <label>資料庫授權帳號 <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="Supabase Auth Email" style="max-width:200px" /></label>
         <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" style="max-width:160px" /></label>
-        <button id="identityAuthBtn" type="button" class="btn btn-gray">授權查閱證號</button>
+        <button id="identityAuthBtn" type="button" class="btn btn-gray">授權</button>
         <span id="identityAuthState">${secureIdentityAuthenticated?'已通過授權':'未授權時不顯示完整證號'}</span>
-        <button id="openFormImportModal" type="button" class="btn btn-primary">匯入 Google 表單</button>
-        <button id="openFormAnomaliesModal" type="button" class="btn btn-gray">待處理異常</button>
+        <button id="openFormImportModal" type="button" class="btn btn-primary" disabled aria-disabled="true" title="請先完成資料庫授權">匯入 Google 表單</button>
+        <button id="openFormAnomaliesModal" type="button" class="btn btn-primary" disabled aria-disabled="true" title="請先完成資料庫授權">待處理異常</button>
       </div>
 
       <div class="records-fixed-filter">
@@ -4893,6 +4905,7 @@ function renderRecordsPage(){
       </div>
     </div>`;
 
+  updateCourtImportAuthorizationUI();
   document.getElementById('identityAuthBtn').onclick=connectSensitiveRecordAccess;
   document.getElementById('openFormImportModal').onclick=()=>openCourtImportModal('import');
   document.getElementById('openFormAnomaliesModal').onclick=()=>openCourtImportModal('anomaly');
@@ -8024,6 +8037,7 @@ async function parseGoogleFormWorkbook(file){
 let pendingFormImport=null;
 let courtImportModalReturnFocus=null;
 function openCourtImportModal(mode='import'){
+  if(!secureIdentityAuthenticated){const status=document.getElementById('identityAuthState');if(status)status.textContent='請先完成資料庫授權。';return;}
   const overlay=document.getElementById('courtImportModal');
   const mount=document.getElementById('courtImportModalBody');
   if(!overlay||!mount)return;
