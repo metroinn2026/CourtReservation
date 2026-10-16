@@ -3956,6 +3956,51 @@ function getStageStartTime(timeSlot){
   const m=String(timeSlot||'').match(/(\d{2}:\d{2})/);
   return m ? m[1] : String(timeSlot||'');
 }
+// 完整身分證號僅由經 Supabase Auth 授權的管理員查閱，不存入可匿名讀取的 lottery_records。
+let secureIdentityBySubmission = new Map();
+let secureIdentityAuthenticated = false;
+function compactRecordCode(r){
+  const raw=String(r.serial_number||'');
+  const m=raw.match(/^GF-([A-F0-9]{10,})$/i);
+  return m ? ('#'+m[1].slice(0,10)) : (raw || '—');
+}
+function memberIdentityType(r){return String(r.member_type||'未記錄').trim();}
+function sensitiveIdCell(r){
+  const t=memberIdentityType(r);
+  if(/Go會員/.test(t))return '<span class="small">不適用</span>';
+  if(!/北投會館/.test(t))return '<span class="small">—</span>';
+  const id=secureIdentityBySubmission.get(String(r.import_submission_key||''));
+  if(id)return `<span style="font-family:monospace;font-size:13px">${escapeHtml(id)}</span>`;
+  return `<span class="small" title="請先以資料庫授權管理員登入；舊資料需從原表單重新匯入才能補齊證號">${secureIdentityAuthenticated?'尚未保存':'需授權查看'}</span>`;
+}
+function adminPhoneCell(r){
+  // Go會員=會員綁定手機；會館會員=表單填寫的聯絡手機。
+  return escapeHtml(String(r.phone||''));
+}
+async function loadSensitiveIdentifiers(){
+  secureIdentityBySubmission=new Map(); secureIdentityAuthenticated=false;
+  const {data:auth,error:authError}=await importDb.auth.getUser();
+  if(authError||!auth?.user)return;
+  const keys=[...new Set(allRecords.map(r=>r.import_submission_key).filter(Boolean))];
+  for(let i=0;i<keys.length;i+=150){
+    const {data,error}=await importDb.rpc('admin_get_member_identifiers',{p_keys:keys.slice(i,i+150)});
+    if(error){console.warn('受限證號查閱未啟用或未授權：',error.code);secureIdentityBySubmission.clear();return;}
+    (data||[]).forEach(x=>secureIdentityBySubmission.set(String(x.submission_key),String(x.id_number)));
+  }
+  secureIdentityAuthenticated=true;
+}
+async function connectSensitiveRecordAccess(){
+  const email=document.getElementById('identityAuthEmail')?.value?.trim();
+  const password=document.getElementById('identityAuthPassword')?.value;
+  const status=document.getElementById('identityAuthState');
+  if(!email||!password){if(status)status.textContent='請輸入資料庫授權帳號及密碼。';return;}
+  const {error}=await importDb.auth.signInWithPassword({email,password});
+  document.getElementById('identityAuthPassword').value='';
+  if(error){if(status)status.textContent='授權失敗，請確認帳號權限。';return;}
+  await loadSensitiveIdentifiers();
+  if(status)status.textContent=secureIdentityAuthenticated?'已通過授權，可查閱會館會員證號。':'權限不足或尚未執行配套 SQL。';
+  renderRecordsWorkspace();
+}
 function memberIdentifierLast4(r){ return String(r.member_identifier_last4||r.id_last4||'').trim(); }
 function memberIdentityCell(r){
   const type=String(r.member_type||'').trim();
@@ -4181,6 +4226,7 @@ async function loadAllData(){
   }
 
   allRecords=(recordsRes.data||[]).map(r=>({...r,__backendId:r.id}));
+  await loadSensitiveIdentifiers();
 
   const logsRes = await db.from(LOG_TABLE).select('*').order('created_at',{ascending:false}).limit(200);
   allLogs = logsRes.error ? [] : (logsRes.data || []);
@@ -4682,7 +4728,7 @@ function getFilteredRecords(){
     if(recordState.anomaly==='__normal__' && anomalyTypes.length>0) return false;
     if(recordState.anomaly && recordState.anomaly!=='__normal__' && !anomalyTypes.includes(recordState.anomaly)) return false;
     if(q){
-      const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
+      const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${secureIdentityBySubmission.get(String(r.import_submission_key||''))||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -4734,6 +4780,13 @@ function renderRecordsPage(){
   document.getElementById('content').innerHTML=`${renderCards(stats())}
     <div class="panel records-main-panel">
       <h3>登記資料</h3>
+      <div class="small" style="margin-bottom:14px;padding:10px 12px;background:#f5f7fb;border:1px solid #e4e9f1;line-height:1.7">
+        🔐 會館會員完整身分證字號僅供授權管理員查核，Go會員不蒐集身分證字號。<br>
+        <label>資料庫授權帳號 <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="Supabase Auth Email" style="max-width:200px" /></label>
+        <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" style="max-width:160px" /></label>
+        <button id="identityAuthBtn" type="button" class="btn btn-gray">授權查閱證號</button>
+        <span id="identityAuthState">${secureIdentityAuthenticated?'已通過授權':'未授權時不顯示完整證號'}</span>
+      </div>
 
       <div class="records-fixed-filter">
         <div class="records-fixed-filter-title">篩選條件</div>
@@ -4764,6 +4817,7 @@ function renderRecordsPage(){
       <div id="recordsWorkspace"></div>
     </div>`;
 
+  document.getElementById('identityAuthBtn').onclick=connectSensitiveRecordAccess;
   document.getElementById('perPage').value=String(recordState.perPage);
 
   const applyRecordFilters=()=>{
@@ -5184,12 +5238,12 @@ function renderRecordsTable(){
       儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
     </button>
   </div>
-  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('聯絡手機','phone')}</th><th style="width:130px;line-height:1.25;">${sortHeader('會員身分／識別末4碼','member_type')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
+  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:98px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:110px;">${sortHeader('會員身分','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${memberIdentityCell(r)}</td><td>${escapeHtml(shortLocationName(recordLocation(r)))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
+    <td>${anomalyTags(r)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'blue':'green'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${escapeHtml(shortLocationName(recordLocation(r)))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
@@ -7888,13 +7942,13 @@ async function parseGoogleFormWorkbook(file){
 
 let pendingFormImport=null;
 function renderGoogleFormImportPage(){
-  document.getElementById('content').innerHTML=`<div class="panel"><h3>資料庫授權</h3><div class="small">此功能需已授權的 Supabase Auth 管理帳號。原後台帳密不會自動取得資料庫權限。</div><div class="inline-form" style="margin-top:12px"><div class="field"><label>Supabase Auth Email</label><input id="formAuthEmail" type="email"></div><div class="field"><label>Supabase Auth 密碼</label><input id="formAuthPassword" type="password"></div><button id="formAuthBtn" class="btn btn-primary">登入資料庫</button><span id="formAuthState" class="small"></span></div></div><div class="panel"><h3>Google 表單回覆 Excel（v31 三張獨立表單）</h3><div class="alert">請一次選擇羽球、籃球或桌球其中一張表單的原始回覆 Excel；系統辨識來源、核對開放時段並於匯入前提示異常。重複申請會列為待審異常，不應因唯一性限制使整批失敗。完整表單回覆及會員識別資料儲存於後台受限資料表。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待處理異常</h3><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
+  document.getElementById('content').innerHTML=`<div class="panel"><h3>資料庫授權</h3><div class="small">此功能需已授權的 Supabase Auth 管理帳號。原後台帳密不會自動取得資料庫權限。</div><div class="inline-form" style="margin-top:12px"><div class="field"><label>Supabase Auth Email</label><input id="formAuthEmail" type="email"></div><div class="field"><label>Supabase Auth 密碼</label><input id="formAuthPassword" type="password"></div><button id="formAuthBtn" class="btn btn-primary">登入資料庫</button><span id="formAuthState" class="small"></span></div></div><div class="panel"><h3>Google 表單回覆 Excel（v31 三張獨立表單）</h3><div class="alert">請一次選擇羽球、籃球或桌球其中一張表單的原始回覆 Excel；系統辨識來源、核對開放時段並於匯入前提示異常。重複申請會列為待審異常，不應因唯一性限制使整批失敗。完整會館會員證號僅存入受限資料表；Go會員不保存身分證字號。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待處理異常</h3><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
   document.getElementById('formAuthBtn').onclick=async()=>{const {error}=await importDb.auth.signInWithPassword({email:document.getElementById('formAuthEmail').value.trim(),password:document.getElementById('formAuthPassword').value});document.getElementById('formAuthState').textContent=error?`登入失敗：${error.message}`:'已登入';};
   document.getElementById('previewFormBtn').onclick=async()=>{try{const f=document.getElementById('formWorkbook').files[0];if(!f)throw new Error('請先選擇Excel檔案。');pendingFormImport=await parseGoogleFormWorkbook(f);renderFormImportPreview();}catch(e){pendingFormImport=null;document.getElementById('formImportPreview').innerHTML=`<div class="msg error">${escapeHtml(e.message||String(e))}</div>`;}};
   document.getElementById('refreshFormAnomalies').onclick=loadFormAnomalies;loadFormAnomalies();
 }
 function renderFormImportPreview(){const p=pendingFormImport,box=document.getElementById('formImportPreview');if(!p||!box)return;const counts={};p.anomalies.forEach(a=>counts[a.type]=(counts[a.type]||0)+1);box.innerHTML=`<div class="msg info">來源：${escapeHtml(p.sourceType||'未辨識')}｜${p.submissions.length} 份回覆，拆分 ${p.records.length} 筆場次，${p.anomalies.length} 項異常。</div><div class="table-wrap"><table><thead><tr><th>異常類型</th><th>筆數</th><th>關聯資料</th></tr></thead><tbody>${Object.entries(counts).map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td>匯入後可逐項確認</td></tr>`).join('')||'<tr><td colspan="3">未發現匯入前異常</td></tr>'}</tbody></table></div><button id="commitFormImportBtn" class="btn btn-primary" style="margin-top:12px">確認匯入 ${p.records.length} 筆場次</button>`;document.getElementById('commitFormImportBtn').onclick=commitGoogleFormImport;}
-async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data:userData,error:userError}=await importDb.auth.getUser();if(userError||!userData?.user){alert('請先登入已授權的 Supabase Auth 管理帳號。');return;}if(!confirm(`將匯入 ${pendingFormImport.submissions.length} 份回覆、${pendingFormImport.records.length} 筆場次。已匯入回覆會自動略過。繼續？`))return;const {data,error}=await importDb.rpc('import_google_form_batch',{p_payload:{batch_key:crypto.randomUUID(),submissions:pendingFormImport.submissions,records:pendingFormImport.records,anomalies:pendingFormImport.anomalies}});if(error){
+async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data:userData,error:userError}=await importDb.auth.getUser();if(userError||!userData?.user){alert('請先登入已授權的 Supabase Auth 管理帳號。');return;}if(!confirm(`將匯入 ${pendingFormImport.submissions.length} 份回覆、${pendingFormImport.records.length} 筆場次。已匯入回覆會自動略過。繼續？`))return;const {data,error}=await importDb.rpc('import_google_form_batch_v2',{p_payload:{batch_key:crypto.randomUUID(),submissions:pendingFormImport.submissions,records:pendingFormImport.records,anomalies:pendingFormImport.anomalies}});if(error){
   if(String(error.message||'').includes('lottery_records_unique_limited_sports')){
     alert('資料庫仍套用舊版羽球／籃球「手機＋身分證末四碼」唯一限制，無法保留重複申請供異常審查。請先由資料庫管理人員執行隨附的 01_fix_unique_index.sql，再重新匯入。本次交易未成功，請勿重複亂改測試資料。');
   }else alert(`匯入失敗：${error.message}`);
