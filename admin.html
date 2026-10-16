@@ -4230,7 +4230,7 @@ function renderAnomalyCenter(issues){
       <div class="panel anomaly-center-clean flat-section" id="anomalyCenter">
         <div class="anomaly-center-head"><h3>異常檢核中心</h3></div>
         <div class="anomaly-info-row">
-          <div class="small">系統自動檢查可能需要人工確認的資料，僅提醒，不會自動修改。</div>
+          <div class="small">這裡是登記清單的即時檢核提示；審查進度請至「登記資料 → 待確認資料」處理。已審查資料不需重新匯入。</div>
           <div class="anomaly-total-line">0 項待確認</div>
         </div>
         <div class="flat-empty">目前未發現需人工確認的資料異常。</div>
@@ -4252,7 +4252,7 @@ function renderAnomalyCenter(issues){
         <div class="anomaly-flat-type">${escapeHtml(type)}</div>
         <div class="anomaly-flat-count">${list.length} 項 / ${total} 筆</div>
         <div class="anomaly-flat-detail">${examples}${more}</div>
-        <button class="anomaly-text-action" data-target="records" data-anomaly="${escapeHtml(type)}">查看</button>
+        <button class="anomaly-text-action" data-target="records" data-anomaly="${escapeHtml(type)}" title="在登記清單查看相關紀錄">查看</button>
       </div>`;
   }).join('');
 
@@ -4260,8 +4260,8 @@ function renderAnomalyCenter(issues){
     <div class="panel anomaly-center-clean flat-section" id="anomalyCenter">
       <div class="anomaly-center-head"><h3>異常檢核中心</h3></div>
       <div class="anomaly-info-row">
-        <div class="small">系統自動檢查可能需要人工確認的資料，僅提醒，不會自動修改。</div>
-        <div class="anomaly-total-line">${issues.length} 項待確認</div>
+        <div class="small">這裡是登記清單的即時檢核提示；審查進度請至「登記資料 → 待確認資料」處理。已審查資料不需重新匯入。</div>
+        <div class="anomaly-total-line">${issues.length} 項檢核提示</div>
       </div>
       <div class="anomaly-flat-list">${rows}</div>
     </div>`;
@@ -4657,9 +4657,9 @@ function renderDashboard(){
         <div class="dashboard-card-note">目前已完成結果公告</div>
       </div>
       <button type="button" class="stat dashboard-status-card anomaly" id="dashAnomalyCard">
-        <div class="dashboard-card-label">異常待確認</div>
+        <div class="dashboard-card-label">系統檢核提示</div>
         <div class="dashboard-card-num">${anomalyIssues.length}</div>
-        <div class="dashboard-card-note">點擊查看系統檢核項目</div>
+        <div class="dashboard-card-note">原始檢核提示（非未審數量）</div>
       </button>
     </div>
 
@@ -4689,7 +4689,8 @@ function renderDashboard(){
   const anomalyCard=document.getElementById('dashAnomalyCard');
   if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
 
-  document.querySelectorAll('.anomaly-go').forEach(b=>b.onclick=()=>{
+  // v45: 將作業總覽「查看」確實連接到登記清單。
+  document.querySelectorAll('.anomaly-text-action, .anomaly-go').forEach(b=>b.onclick=()=>{
     recordState.anomaly=b.dataset.anomaly||'';
     recordState.q='';
     recordState.location=DEFAULT_LOCATION;
