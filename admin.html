@@ -4030,7 +4030,12 @@ function compactRecordCode(r){
   const m=raw.match(/^GF-([A-F0-9]{10,})$/i);
   return m ? ('#'+m[1].slice(0,10)) : (raw || '—');
 }
-function memberIdentityType(r){return String(r.member_type||'未記錄').trim();}
+function memberIdentityType(r){
+  const type=String(r.member_type||'').trim();
+  if(/Go會員/i.test(type)) return 'Go會員';
+  if(/北投會館會員|會館會員/.test(type)) return '會館會員';
+  return type||'未記錄';
+}
 function maskMemberId(id,last4){
   // 原始資料僅保存末四碼時，無法推算首字母，不能製造假的遮罩。
   if(/^[A-Z][0-9]{9}$/.test(String(id||'')))return id[0]+'******'+id.slice(-3);
@@ -4695,6 +4700,7 @@ function renderDashboard(){
     recordState.q='';
     recordState.location=DEFAULT_LOCATION;
     recordState.venue='';
+    recordState.usage='';
     recordState.day='';
     recordState.time='';
     recordState.page=1;
@@ -4930,6 +4936,7 @@ function renderRecordsPage(){
         </div>
         <div class="records-filter-actions">
           <button id="applyFilterBtn" class="btn btn-primary">套用條件</button>
+          <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray">顯示全部登記</button>
           <button id="exportBtn" class="btn btn-primary">匯出目前名單</button>
         </div>
       </div>
@@ -4971,6 +4978,18 @@ function renderRecordsPage(){
   };
 
   document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
+  document.getElementById('clearRecordFiltersBtn').onclick=()=>{
+    recordState.q='';
+    recordState.location=DEFAULT_LOCATION;
+    recordState.venue='';
+    recordState.usage='';
+    recordState.day='';
+    recordState.time='';
+    recordState.anomaly='';
+    recordState.page=1;
+    selectedRecordIds.clear();
+    renderPage('records');
+  };
   const recordVenueSelect=document.getElementById('filterVenue');
   if(recordVenueSelect){
     recordVenueSelect.onchange=()=>{
