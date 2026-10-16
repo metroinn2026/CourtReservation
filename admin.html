@@ -3856,7 +3856,7 @@ let allLogs = [];
 let capacitySettings = {};
 let closedSlotSettings = {};
 let systemSettings = {};
-let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
+let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', usage:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let recordsActionTab = 'filter';
 let selectedRecordIds = new Set();
 let pendingRecordStatusChanges = new Map();
@@ -4802,6 +4802,7 @@ function getFilteredRecords(){
   const filteredRecords = allRecords.filter(r=>{
     if(recordState.location && recordLocation(r)!==recordState.location) return false;
     if(recordState.venue && r.venue_type!==recordState.venue) return false;
+    if(recordState.usage && courtUsage(r)!==recordState.usage) return false;
     if(recordState.day && r.day_of_week!==recordState.day) return false;
     if(recordState.time && r.time_slot!==recordState.time) return false;
     const anomalyTypes=getRecordAnomalyTypes(r);
@@ -4819,7 +4820,8 @@ function getFilteredRecords(){
 function currentRecordsScopeLabel(){
   const parts=[];
   if(recordState.location) parts.push(locationLabel(recordState.location));
-  if(recordState.venue) parts.push(recordState.venue);
+  if(recordState.venue) parts.push(courtVenueLabel({venue_type:recordState.venue}));
+  if(recordState.usage) parts.push(recordState.usage);
   if(recordState.day) parts.push(recordState.day);
   if(recordState.time) parts.push(recordState.time);
   return parts.join('｜') || '全部資料';
@@ -4849,6 +4851,16 @@ function renderRecordsScopeSummary(){
     </div>`;
 }
 
+function availableCourtUsages(venue){
+  if(venue==='羽球') return ['羽球','匹克球'];
+  if(venue==='籃球') return ['籃球','匹克球'];
+  if(/桌球/.test(venue)) return ['桌球'];
+  return ['羽球','籃球','匹克球','桌球'];
+}
+function renderCourtUsageOptions(venue, selected=''){
+  return '<option value="">全部使用項目</option>'+availableCourtUsages(venue).map(u=>
+    `<option value="${escapeHtml(u)}" ${u===selected?'selected':''}>${escapeHtml(u)}</option>`).join('');
+}
 function renderRecordsPage(){
   if(recordsActionTab==='batch'||recordsActionTab==='import') recordsActionTab='filter';
   selectedRecordIds.clear();
@@ -4875,7 +4887,8 @@ function renderRecordsPage(){
         <div class="toolbar records-shared-toolbar">
           <input id="searchQ" placeholder="搜尋姓名／聯絡手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
           <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
-          <select id="filterVenue"><option value="">全部球類</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
+          <select id="filterVenue" title="篩選運動場地"><option value="">全部場地類別</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
+          <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
           <select id="filterTime" title="未選球類：每小時；羽球/桌球：每1小時；籃球：每2小時">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
           <select id="filterAnomaly" title="篩選正常或指定異常狀態">
@@ -4917,6 +4930,7 @@ function renderRecordsPage(){
     recordState.q=document.getElementById('searchQ').value;
     recordState.location=document.getElementById('filterLocation').value || DEFAULT_LOCATION;
     recordState.venue=document.getElementById('filterVenue').value;
+    recordState.usage=document.getElementById('filterUsage').value;
     recordState.day=document.getElementById('filterDay').value;
     recordState.time=document.getElementById('filterTime').value;
     recordState.anomaly=document.getElementById('filterAnomaly').value;
@@ -4933,6 +4947,8 @@ function renderRecordsPage(){
       const timeSelect=document.getElementById('filterTime');
       const currentTime=timeSelect?.value || '';
       refreshRuleTimeSelect('filterTime',recordVenueSelect.value,currentTime);
+      const usageSelect=document.getElementById('filterUsage');
+      if(usageSelect){const prior=usageSelect.value;usageSelect.innerHTML=renderCourtUsageOptions(recordVenueSelect.value,availableCourtUsages(recordVenueSelect.value).includes(prior)?prior:'');}
     };
   }
   document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
