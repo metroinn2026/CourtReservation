@@ -3865,6 +3865,16 @@ body .ux-review-field label{margin-bottom:5px}
 body .ux-review-history{margin-top:9px;padding-top:7px}
 @media(max-width:900px){body .ux-review-edit{gap:8px}}
 
+
+/* v58: 異常原因置頂，僅紅字警示，不使用大面積色塊 */
+body .ux-review-case{padding:13px 18px}
+body .ux-review-reasons{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:0 0 8px;background:transparent;border-left:0;border-bottom:1px solid #e6eaf0;color:#b42318;font-size:13px;line-height:1.5}
+body .ux-review-reasons strong{display:inline;margin:0;white-space:nowrap;color:#b42318;font-weight:700}
+body .ux-review-reasons>div{display:inline;color:#b42318}
+body .ux-review-issue{display:inline;margin:0 8px 0 0;color:#b42318}
+body .ux-review-case-head{margin-bottom:10px}
+body .ux-review-edit{align-items:end}
+@media(max-width:650px){body .ux-review-reasons{align-items:flex-start;flex-wrap:wrap;gap:4px}}
 </style>
 </head>
 <body>
@@ -5161,8 +5171,8 @@ async function renderQualificationReview(container){
     <p class="ux-review-help">這裡只顯示目前不能列入抽籤的申請。請先確認申請資料及原因，再選擇審查結果並儲存；改為「合格」後，該筆就能列入合格抽籤名單。</p>
     <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待審查／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
     <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
-      <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(String(r.serial_number||'').slice(0,6))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
       <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):'此筆原有審查狀態尚未完成，請核對登記內容。'}</div></div>
+      <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(String(r.serial_number||'').slice(0,6))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
       <div class="ux-review-edit"><div class="ux-review-field"><label for="qstate-${r.id}">資格審查結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><div class="ux-review-field-help">只有「合格」可列入抽籤名單。</div></div><div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">審查說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="填寫審查原因或處理說明">${escapeHtml(saved.review_note||'')}</textarea></div><div class="ux-review-save"><button class="btn btn-primary" data-qsave="${r.id}">儲存審查結果</button></div></div>
       ${saved.reviewed_at?`<div class="ux-review-history">最近處理：${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</div>`:''}
     </article>`}).join('')||'<div class="ux-review-empty">目前沒有符合此篩選條件的申請。</div>'}</div></div>`;
