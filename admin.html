@@ -3845,6 +3845,26 @@ body .court-import-dialog{border-radius:12px!important}
 <style>
 /* v56 資格審查：以初次使用者為中心的單筆判定流程 */
 .ux-review-simple{max-width:none}.ux-review-help{color:#48586c;font-size:14px;line-height:1.75;margin:0 0 16px}.ux-review-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}.ux-review-filter-label{font-weight:600;font-size:13px;white-space:nowrap}.ux-review-toolbar select{max-width:245px}.ux-review-cases{display:grid;gap:12px}.ux-review-case{border:1px solid #dce3ec;border-radius:10px;background:#fff;padding:18px 20px}.ux-review-case-head{display:flex;justify-content:space-between;gap:15px;align-items:start}.ux-review-case-head strong{font-size:16px}.ux-review-meta{font-size:13px;color:#63748a;line-height:1.7}.ux-review-current{border:1px solid #dce3ec;background:#f3f5f7;color:#36465a;border-radius:6px;padding:5px 10px;white-space:nowrap;font-size:12px}.ux-review-current.ux-review-invalid{border-color:#edc4c4;background:#fff1f1;color:#a52626}.ux-review-reasons{padding:12px 14px;margin:14px 0;background:#fff7ef;border-left:3px solid #cf7830;color:#593b20;font-size:13px;line-height:1.7}.ux-review-reasons strong{display:block;margin-bottom:4px}.ux-review-issue{display:inline-block;margin:2px 8px 2px 0}.ux-review-edit{display:grid;grid-template-columns:minmax(170px,220px) minmax(220px,1fr) auto;gap:14px;align-items:end}.ux-review-field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}.ux-review-field select,.ux-review-field textarea{width:100%;max-width:none;box-sizing:border-box}.ux-review-field textarea{min-height:70px;resize:vertical}.ux-review-field-help{font-size:12px;color:#6b7787;margin-top:5px}.ux-review-save{align-self:end}.ux-review-save .btn{white-space:nowrap}.ux-review-history{border-top:1px solid #eef1f5;margin-top:15px;padding-top:10px;font-size:12px;color:#677789}.ux-review-empty{padding:30px;text-align:center;color:#677789;background:#f6f8fa;border-radius:8px}@media(max-width:900px){.ux-review-edit{grid-template-columns:1fr}.ux-review-save .btn{width:100%}.ux-review-case{padding:15px}.ux-review-toolbar select{max-width:none}}
+
+/* v57 | Compact qualification reviews: three controls share one baseline */
+@media (min-width:901px){
+  body .ux-review-edit{grid-template-columns:minmax(175px,235px) minmax(300px,1fr) auto;align-items:end;gap:12px}
+  body .ux-review-field select,body .ux-review-field textarea{height:44px;min-height:44px;max-height:44px;line-height:1.3;margin:0}
+  body .ux-review-save{align-self:end}
+  body .ux-review-save .btn{height:44px;min-height:44px;margin:0}
+  body .ux-review-field-help{display:none}
+}
+body .ux-review-case{padding:12px 16px}
+body .ux-review-case-head{align-items:center}
+body .ux-review-meta{line-height:1.45}
+body .ux-review-reasons{margin:8px 0 10px;padding:7px 11px;line-height:1.45;background:#fffaf5}
+body .ux-review-reasons strong{display:inline;margin:0 10px 0 0}
+body .ux-review-reasons>div{display:inline}
+body .ux-review-issue{margin:0 7px 0 0}
+body .ux-review-field label{margin-bottom:5px}
+body .ux-review-history{margin-top:9px;padding-top:7px}
+@media(max-width:900px){body .ux-review-edit{gap:8px}}
+
 </style>
 </head>
 <body>
@@ -5143,7 +5163,7 @@ async function renderQualificationReview(container){
     <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
       <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(String(r.serial_number||'').slice(0,6))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
       <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):'此筆原有審查狀態尚未完成，請核對登記內容。'}</div></div>
-      <div class="ux-review-edit"><div class="ux-review-field"><label for="qstate-${r.id}">資格審查結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><div class="ux-review-field-help">只有「合格」可列入抽籤名單。</div></div><div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">審查說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="2" placeholder="例如：電話確認為同一人重複申請，保留此筆資料">${escapeHtml(saved.review_note||'')}</textarea></div><div class="ux-review-save"><button class="btn btn-primary" data-qsave="${r.id}">儲存審查結果</button></div></div>
+      <div class="ux-review-edit"><div class="ux-review-field"><label for="qstate-${r.id}">資格審查結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><div class="ux-review-field-help">只有「合格」可列入抽籤名單。</div></div><div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">審查說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="填寫審查原因或處理說明">${escapeHtml(saved.review_note||'')}</textarea></div><div class="ux-review-save"><button class="btn btn-primary" data-qsave="${r.id}">儲存審查結果</button></div></div>
       ${saved.reviewed_at?`<div class="ux-review-history">最近處理：${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</div>`:''}
     </article>`}).join('')||'<div class="ux-review-empty">目前沒有符合此篩選條件的申請。</div>'}</div></div>`;
   const sel=container.querySelector('#qualificationFilterV52');sel.value=currentFilter;sel.onchange=()=>{window.qualificationFocusId=null;window.qualificationFilterV52=sel.value;renderQualificationReview(container);};
