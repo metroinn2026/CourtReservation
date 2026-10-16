@@ -108,6 +108,15 @@
 #recordsImportWorkspace { padding-top: 14px; min-width: 0; }
 #recordsImportWorkspace .panel { margin: 0 0 18px; }
 #recordsImportWorkspace .table-wrap { max-width: 100%; overflow-x: auto; }
+/* v38: 登記資料之表單匯入彈窗 */
+.court-import-modal[hidden]{display:none!important}
+.court-import-modal{position:fixed;inset:0;z-index:11000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(12,25,45,.57)}
+.court-import-dialog{width:min(950px,96vw);max-height:92vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 18px 52px rgba(0,0,0,.20);padding:22px;position:relative}
+.court-import-head{position:sticky;top:-22px;background:white;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0 14px;border-bottom:1px solid #e6eaf1;margin-bottom:16px}
+.court-import-dialog .panel{margin:0 0 14px;padding:16px}
+.court-import-dialog .table-wrap{max-width:100%;overflow-x:auto}
+.court-import-dialog button:focus-visible{outline:3px solid #7c9dff;outline-offset:2px}
+@media(max-width:600px){.court-import-modal{padding:8px}.court-import-dialog{width:100%;max-height:95vh;padding:14px}.court-import-head{top:-14px}}
 </style>
 
 <style id="minimal-admin-refresh">
@@ -4524,7 +4533,7 @@ function renderPage(page){
   if(page==='settings') renderSettingsPage();
   if(page==='logs') renderLogsPage();
   if(page==='accounts') renderAccountsPage();
-  if(page==='form-import'){ recordsActionTab='import'; renderPage('records'); return; }
+  if(page==='form-import'){ recordsActionTab='filter'; renderPage('records'); setTimeout(()=>openCourtImportModal('import'),0); return; }
 }
 function renderDashboard(){
   const stageMap={};
@@ -4829,7 +4838,7 @@ function renderRecordsScopeSummary(){
 }
 
 function renderRecordsPage(){
-  if(recordsActionTab==='batch') recordsActionTab='filter';
+  if(recordsActionTab==='batch'||recordsActionTab==='import') recordsActionTab='filter';
   selectedRecordIds.clear();
   const locations=getAdminLocations();
   if(!recordState.location) recordState.location=DEFAULT_LOCATION;
@@ -4845,6 +4854,8 @@ function renderRecordsPage(){
         <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" style="max-width:160px" /></label>
         <button id="identityAuthBtn" type="button" class="btn btn-gray">授權查閱證號</button>
         <span id="identityAuthState">${secureIdentityAuthenticated?'已通過授權':'未授權時不顯示完整證號'}</span>
+        <button id="openFormImportModal" type="button" class="btn btn-primary">匯入 Google 表單</button>
+        <button id="openFormAnomaliesModal" type="button" class="btn btn-gray">待處理異常</button>
       </div>
 
       <div class="records-fixed-filter">
@@ -4869,15 +4880,24 @@ function renderRecordsPage(){
       </div>
 
       <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
-        <button class="records-function-tab ${recordsActionTab!=='publish'?'active':''}" data-action-tab="filter">登記清單</button>
+        <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
         <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
-        <button class="records-function-tab ${recordsActionTab==='import'?'active':''}" data-action-tab="import">表單匯入／異常</button>
       </div>
 
       <div id="recordsWorkspace"></div>
+    </div>
+    <div id="courtImportModal" class="court-import-modal" hidden role="dialog" aria-modal="true" aria-labelledby="courtImportModalTitle">
+      <div class="court-import-dialog" tabindex="-1">
+        <div class="court-import-head"><h3 id="courtImportModalTitle">Google 表單匯入</h3><button id="closeCourtImportModal" type="button" class="btn btn-gray" aria-label="關閉視窗">關閉 ✕</button></div>
+        <div id="courtImportModalBody"></div>
+      </div>
     </div>`;
 
   document.getElementById('identityAuthBtn').onclick=connectSensitiveRecordAccess;
+  document.getElementById('openFormImportModal').onclick=()=>openCourtImportModal('import');
+  document.getElementById('openFormAnomaliesModal').onclick=()=>openCourtImportModal('anomaly');
+  document.getElementById('closeCourtImportModal').onclick=closeCourtImportModal;
+  document.getElementById('courtImportModal').addEventListener('click',e=>{if(e.target.id==='courtImportModal')closeCourtImportModal();});
   document.getElementById('perPage').value=String(recordState.perPage);
 
   const applyRecordFilters=()=>{
@@ -4924,11 +4944,6 @@ function renderRecordsPage(){
 function renderRecordsWorkspace(){
   const box=document.getElementById('recordsWorkspace');
   if(!box) return;
-  if(recordsActionTab==='import'){
-    box.innerHTML='<div id="recordsImportWorkspace"></div>';
-    renderGoogleFormImportPage(document.getElementById('recordsImportWorkspace'));
-    return;
-  }
   if(recordsActionTab==='publish'){
     box.innerHTML=`<div id="recordsPublishWorkspace"></div><div id="recordsTable"></div>`;
     renderRecordsPublishWorkspace();
@@ -8007,10 +8022,42 @@ async function parseGoogleFormWorkbook(file){
 }
 
 let pendingFormImport=null;
+let courtImportModalReturnFocus=null;
+function openCourtImportModal(mode='import'){
+  const overlay=document.getElementById('courtImportModal');
+  const mount=document.getElementById('courtImportModalBody');
+  if(!overlay||!mount)return;
+  courtImportModalReturnFocus=document.activeElement;
+  overlay.hidden=false;
+  renderGoogleFormImportPage(mount);
+  const title=document.getElementById('courtImportModalTitle');
+  if(title)title.textContent=mode==='anomaly'?'待處理異常':'Google 表單匯入';
+  if(mode==='anomaly')setTimeout(()=>mount.querySelector('#formAnomalyList')?.scrollIntoView({block:'nearest'}),30);
+  document.querySelector('.court-import-dialog')?.focus();
+  document.addEventListener('keydown',courtImportModalKeydown);
+}
+function courtImportModalKeydown(e){
+  if(e.key==='Escape')closeCourtImportModal();
+  if(e.key==='Tab'){
+    const box=document.querySelector('.court-import-dialog');
+    if(!box)return;
+    const els=[...box.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href],textarea:not([disabled])')].filter(x=>x.getClientRects().length);
+    if(!els.length)return;
+    if(e.shiftKey&&document.activeElement===els[0]){e.preventDefault();els[els.length-1].focus();}
+    else if(!e.shiftKey&&document.activeElement===els[els.length-1]){e.preventDefault();els[0].focus();}
+  }
+}
+function closeCourtImportModal(){
+  const overlay=document.getElementById('courtImportModal');
+  if(!overlay)return;
+  overlay.hidden=true;
+  document.removeEventListener('keydown',courtImportModalKeydown);
+  if(courtImportModalReturnFocus?.isConnected)courtImportModalReturnFocus.focus();
+}
 function renderGoogleFormImportPage(mount){
   const target=mount || document.getElementById('content');
-  target.innerHTML=`<div class="panel"><h3>資料庫授權</h3><div class="small">此功能需已授權的 Supabase Auth 管理帳號。原後台帳密不會自動取得資料庫權限。</div><div class="inline-form" style="margin-top:12px"><div class="field"><label>Supabase Auth Email</label><input id="formAuthEmail" type="email"></div><div class="field"><label>Supabase Auth 密碼</label><input id="formAuthPassword" type="password"></div><button id="formAuthBtn" class="btn btn-primary">登入資料庫</button><span id="formAuthState" class="small"></span></div></div><div class="panel"><h3>Google 表單回覆 Excel（v31 三張獨立表單）</h3><div class="alert">請一次選擇羽球、籃球或桌球其中一張表單的原始回覆 Excel；系統辨識來源、核對開放時段並於匯入前提示異常。重複申請會列為待審異常，不應因唯一性限制使整批失敗。完整會館會員證號僅存入受限資料表；Go會員不保存身分證字號。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待處理異常</h3><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
-  document.getElementById('formAuthBtn').onclick=async()=>{const {error}=await importDb.auth.signInWithPassword({email:document.getElementById('formAuthEmail').value.trim(),password:document.getElementById('formAuthPassword').value});document.getElementById('formAuthState').textContent=error?`登入失敗：${error.message}`:'已登入';};
+  target.innerHTML=`<div class="panel" style="background:#f5f8ff"><div class="small">🔐 共用登記資料上方的 Supabase 授權帳號。請先於主畫面登入，再進行匯入或異常處理。</div><div id="formAuthState" class="small" style="margin-top:6px"></div></div><div class="panel"><h3>Google 表單回覆 Excel（v31 三張獨立表單）</h3><div class="alert">請一次選擇羽球、籃球或桌球其中一張表單的原始回覆 Excel；系統辨識來源、核對開放時段並於匯入前提示異常。重複申請會列為待審異常，不應因唯一性限制使整批失敗。完整會館會員證號僅存入受限資料表；Go會員不保存身分證字號。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待處理異常</h3><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
+  importDb.auth.getUser().then(({data})=>{const x=document.getElementById('formAuthState');if(x)x.textContent=data?.user?'目前已登入資料庫管理帳號':'尚未登入資料庫，請先關閉視窗並在登記資料上方授權。';});
   document.getElementById('previewFormBtn').onclick=async()=>{try{const f=document.getElementById('formWorkbook').files[0];if(!f)throw new Error('請先選擇Excel檔案。');pendingFormImport=await parseGoogleFormWorkbook(f);renderFormImportPreview();}catch(e){pendingFormImport=null;document.getElementById('formImportPreview').innerHTML=`<div class="msg error">${escapeHtml(e.message||String(e))}</div>`;}};
   document.getElementById('refreshFormAnomalies').onclick=loadFormAnomalies;loadFormAnomalies();
 }
@@ -8020,7 +8067,7 @@ async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data
     alert('資料庫仍套用舊版羽球／籃球「手機＋身分證末四碼」唯一限制，無法保留重複申請供異常審查。請先由資料庫管理人員執行隨附的 01_fix_unique_index.sql，再重新匯入。本次交易未成功，請勿重複亂改測試資料。');
   }else alert(`匯入失敗：${error.message}`);
   return;
- }alert(`匯入完成。新增 ${data?.inserted_records||0} 筆場次，略過重複 ${data?.duplicate_submissions||0} 份回覆。`);pendingFormImport=null;await loadAllData();if(currentPage==='records'){renderRecordsWorkspace();}else{renderGoogleFormImportPage();}}
+ }alert(`匯入完成。新增 ${data?.inserted_records||0} 筆場次，略過重複 ${data?.duplicate_submissions||0} 份回覆。`);pendingFormImport=null;await loadAllData();if(document.getElementById('courtImportModal')?.hidden===false){renderGoogleFormImportPage(document.getElementById('courtImportModalBody'));}else if(currentPage==='records'){renderRecordsWorkspace();}else{renderGoogleFormImportPage();}}
 async function loadFormAnomalies(){const box=document.getElementById('formAnomalyList');if(!box)return;const {data:user}=await importDb.auth.getUser();if(!user?.user){box.innerHTML='<div class="msg info">登入資料庫管理帳號後載入異常清單。</div>';return;}const {data,error}=await importDb.from('lottery_import_anomalies').select('*').order('created_at',{ascending:false}).limit(200);if(error){box.innerHTML=`<div class="msg error">${escapeHtml(error.message)}</div>`;return;}if(!data?.length){box.innerHTML='<div class="msg info">目前沒有異常資料。</div>';return;}box.innerHTML=`<div class="table-wrap"><table><thead><tr><th>異常類型</th><th>狀態</th><th>關聯登記</th><th>處理</th></tr></thead><tbody>${data.map(a=>{const related=(a.record_keys||[]).map(k=>allRecords.find(r=>r.import_record_key===k)).filter(Boolean);const label=related.length?related.map(r=>`${r.name}｜${r.venue_type} ${r.day_of_week} ${r.time_slot}（${r.serial_number}）`).join('；'):((a.submission_keys||[]).length?`${a.submission_keys.length} 份回覆`:'-');return `<tr><td>${escapeHtml(a.anomaly_type)}${a.detail?`<div class="small">${escapeHtml(a.detail)}</div>`:''}</td><td>${escapeHtml(a.resolution_status)}</td><td>${escapeHtml(label)}</td><td><select data-anomaly="${a.id}"><option value="pending" ${a.resolution_status==='pending'?'selected':''}>待確認</option><option value="valid" ${a.resolution_status==='valid'?'selected':''}>確認有效</option><option value="invalid" ${a.resolution_status==='invalid'?'selected':''}>確認無效</option></select> <button class="btn btn-gray" data-save-anomaly="${a.id}">儲存</button></td></tr>`;}).join('')}</tbody></table></div>`;box.querySelectorAll('[data-save-anomaly]').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.saveAnomaly,status=box.querySelector(`[data-anomaly="${id}"]`).value,{error}=await importDb.rpc('resolve_google_form_anomaly',{p_anomaly_id:id,p_status:status});if(error)alert(`儲存失敗：${error.message}`);else loadFormAnomalies();});}
 document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage(btn.dataset.page));
 
