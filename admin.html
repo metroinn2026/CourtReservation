@@ -94,8 +94,8 @@
   .records-compact-table .tag{padding:3px 7px;font-size:12px;line-height:1.2}
   .records-compact-table .status-select-compact{min-width:104px;max-width:104px;font-size:13px}
   .records-compact-table .row-mini-btn{min-height:34px;padding:6px 10px;font-size:12px;border-radius:10px}
-  .records-compact-table td:nth-child(6) strong{font-size:12.5px;letter-spacing:.1px}
-  .records-compact-table td:nth-child(15), .records-compact-table th:nth-child(15){text-align:center}
+  .records-compact-table td:nth-child(7) strong{font-size:12.5px;letter-spacing:.1px}
+  .records-compact-table td:nth-child(17), .records-compact-table th:nth-child(17){text-align:center}
   .records-compact-table td:nth-child(16), .records-compact-table th:nth-child(16){text-align:center}
   .records-table-wrap{overflow-x:auto}
 
@@ -583,8 +583,8 @@
 <style id="records-batch-cleanup-fix">
   .records-compact-table th:nth-child(3),
   .records-compact-table td:nth-child(3){width:76px!important;min-width:76px!important;max-width:76px!important;text-align:center!important;}
-  .records-compact-table th:nth-child(9){white-space:normal!important;text-align:center!important;}
-  .records-compact-table td:nth-child(9){text-align:center!important;}
+  .records-compact-table th:nth-child(10){white-space:normal!important;text-align:center!important;}
+  .records-compact-table td:nth-child(10){text-align:center!important;}
   .records-compact-table .tag{white-space:nowrap!important;}
   #recordsPanelBatch .records-action-row{align-items:center!important;}
   #batchLotteryStatus{min-width:180px!important;max-width:220px!important;}
@@ -4029,7 +4029,7 @@ const revealedSensitiveKeys = new Set();
 function compactRecordCode(r){
   const raw=String(r.serial_number||'');
   const m=raw.match(/^GF-([A-F0-9]{10,})$/i);
-  return m ? ('#'+m[1].slice(0,10)) : (raw || '—');
+  return m ? m[1].slice(0,6).toUpperCase() : (raw ? (raw.replace(/[^A-Za-z0-9]/g,'').slice(-6).toUpperCase() || '—') : '—');
 }
 function memberIdentityType(r){
   const type=String(r.member_type||'').trim();
@@ -5201,9 +5201,7 @@ function renderRecordsTable(){
       <td><span class="tag blue">${escapeHtml(courtUsage(r))}</span></td>
       <td>${escapeHtml(r.day_of_week)}</td>
       <td>${escapeHtml(r.time_slot)}</td>
-      <td>${recordHours(r)}h</td>
-      <td>${formatCompactDateTime(r.registered_at)}</td>
-    </tr>`;
+      <td>${recordHours(r)}h</td></tr>`;
   });
 
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
@@ -5409,12 +5407,12 @@ function renderRecordsTable(){
       儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
     </button>
   </div>
-  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:98px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:110px;">${sortHeader('會員身分','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
+  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:110px;">${sortHeader('會員身分','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'blue':'green'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag blue">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
+    <td>${anomalyTags(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'blue':'green'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag blue">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
