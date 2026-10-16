@@ -4352,6 +4352,7 @@ async function loadAllData(){
 
   allRecords=(recordsRes.data||[]).map(r=>({...r,__backendId:r.id}));
   await loadSensitiveIdentifiers();
+  await loadQualificationReviews();
 
   const logsRes = await db.from(LOG_TABLE).select('*').order('created_at',{ascending:false}).limit(200);
   allLogs = logsRes.error ? [] : (logsRes.data || []);
@@ -4922,7 +4923,7 @@ function renderRecordsPage(){
         <button id="identityAuthBtn" type="button" class="btn btn-gray">授權</button>
         <span id="identityAuthState">${secureIdentityAuthenticated?'已通過授權':'未授權時不顯示完整證號'}</span>
         <button id="openFormImportModal" type="button" class="btn btn-primary" disabled aria-disabled="true" title="請先完成資料庫授權">匯入 Google 表單</button>
-        <button id="openFormAnomaliesModal" type="button" class="btn btn-primary" disabled aria-disabled="true" title="請先完成資料庫授權">待確認資料</button>
+        <button id="openFormAnomaliesModal" type="button" class="btn btn-primary" disabled aria-disabled="true" title="請先完成資料庫授權">資格審查</button>
       </div>
 
       <div class="records-fixed-filter">
@@ -4945,12 +4946,13 @@ function renderRecordsPage(){
           <button id="applyFilterBtn" class="btn btn-primary">套用條件</button>
           <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray">顯示全部登記</button>
           <button id="exportBtn" class="btn btn-primary">匯出目前名單</button>
+          <button id="exportQualifiedBtn" class="btn btn-gray">匯出合格抽籤名單</button>
         </div>
       </div>
 
       <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
         <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
-        <button class="records-function-tab ${recordsActionTab==='review'?'active':''}" data-action-tab="review">待確認資料</button>
+        <button class="records-function-tab ${recordsActionTab==='review'?'active':''}" data-action-tab="review">資格審查</button>
         <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
       </div>
 
@@ -5011,6 +5013,7 @@ function renderRecordsPage(){
   document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
   document.getElementById('perPage').addEventListener('change',applyRecordFilters);
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
+  document.getElementById('exportQualifiedBtn').onclick=()=>{if(!qualificationReviewsLoaded){alert('資格審查資料尚未成功載入，禁止匯出。');return;} exportToCsv(getFilteredRecords().filter(isQualifiedForLottery));};
 
   document.querySelectorAll('.records-function-tab').forEach(btn=>{
     btn.onclick=()=>{
@@ -5028,11 +5031,60 @@ function renderRecordsPage(){
   renderRecordsWorkspace();
 }
 
+// v52: per-registration qualification review; distinct from lottery result and anomaly events.
+let qualificationReviews=new Map();
+let qualificationReviewsLoaded=false;
+function qualificationIssueTypes(r){
+  // Only actual eligibility concerns count here; publication and lottery workflow are excluded.
+  return getRecordAnomalyTypes(r).filter(x=>/手機重複|超過次數|不開放場次有登記|截止後登記/.test(x));
+}
+function qualificationState(r){
+  const saved=qualificationReviews.get(String(r.id));
+  return saved?.review_status || (qualificationIssueTypes(r).length?'pending':'qualified');
+}
+function isQualifiedForLottery(r){return qualificationReviewsLoaded && qualificationState(r)==='qualified';}
+async function loadQualificationReviews(){
+  qualificationReviewsLoaded=false;
+  qualificationReviews=new Map();
+  if(!importDb){return;}
+  try{
+    const {data:user}=await importDb.auth.getUser();
+    if(!user?.user)return;
+    const {data,error}=await importDb.rpc('list_registration_qualifications_v52');
+    if(error)throw error;
+    (data||[]).forEach(row=>qualificationReviews.set(String(row.record_id),row));
+    qualificationReviewsLoaded=true;
+  }catch(e){console.warn('資格審查讀取失敗',e);}
+}
+async function renderQualificationReview(container){
+  if(!container)return;
+  if(!importDb){container.innerHTML='<div class="panel">請先完成 Supabase 授權。</div>';return;}
+  await loadQualificationReviews();
+  if(!qualificationReviewsLoaded){container.innerHTML='<div class="panel">請先完成上方「授權」登入並重新開啟資格審查。若已登入，請先執行 v52 SQL。</div>';return;}
+  const currentFilter=window.qualificationFilterV52||'open';
+  const issues=allRecords.filter(r=>qualificationIssueTypes(r).length || qualificationReviews.has(String(r.id)));
+  const open=issues.filter(r=>['pending','correction'].includes(qualificationState(r)));
+  const rows=issues.filter(r=>currentFilter==='all'||(currentFilter==='open'?['pending','correction'].includes(qualificationState(r)):qualificationState(r)===currentFilter));
+  const options=[['qualified','合格'],['pending','待審查'],['correction','待補正'],['invalid','審查不合格']];
+  container.innerHTML=`<div class="panel"><h3>資格審查</h3><div class="small">每筆登記個別審查；僅「合格」能列入抽籤名單。未標記異常者預設合格。已確認的紀錄不會再次出現在待審查清單。</div>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0"><select id="qualificationFilterV52"><option value="open">待處理（待審查／待補正）</option><option value="qualified">合格</option><option value="invalid">審查不合格</option><option value="all">全部有提示或曾審查</option></select><span class="small">待處理 ${open.length} 筆｜共 ${issues.length} 筆需追蹤</span><button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
+  <div class="table-wrap"><table><thead><tr><th>申請人／登記時段</th><th>系統提示</th><th>資格審查</th><th>審查紀錄</th><th>操作</th></tr></thead><tbody>${rows.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);return `<tr><td><strong>${escapeHtml(r.name)}</strong><div class="small">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}｜${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="small">序號 ${escapeHtml(r.serial_number||'')}</div></td><td>${qualificationIssueTypes(r).map(escapeHtml).join('、')||'已完成查核'}</td><td><select data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><textarea data-qnote="${r.id}" maxlength="1000" placeholder="審查備註" style="display:block;width:190px;min-height:45px;margin-top:6px">${escapeHtml(saved.review_note||'')}</textarea></td><td class="small">${escapeHtml(saved.reviewer_email||'—')}<div>${saved.reviewed_at?escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW')):'—'}</div></td><td><button class="btn btn-gray" data-qsave="${r.id}">儲存</button></td></tr>`}).join('')||'<tr><td colspan="5">此條件目前沒有資料。</td></tr>'}</tbody></table></div></div>`;
+  const sel=container.querySelector('#qualificationFilterV52');sel.value=currentFilter;sel.onchange=()=>{window.qualificationFilterV52=sel.value;renderQualificationReview(container);};
+  container.querySelector('#refreshQualificationV52').onclick=()=>renderQualificationReview(container);
+  container.querySelectorAll('[data-qsave]').forEach(btn=>btn.onclick=async()=>{
+    const id=btn.dataset.qsave,st=container.querySelector(`[data-qstate="${id}"]`).value,note=container.querySelector(`[data-qnote="${id}"]`).value.trim();
+    if(st==='invalid'&&!note){alert('審查不合格時請填寫原因。');return;}
+    btn.disabled=true;
+    const {error}=await importDb.rpc('save_registration_qualification_v52',{p_record_id:id,p_status:st,p_note:note});
+    if(error){alert('儲存失敗：'+error.message);btn.disabled=false;return;}
+    await renderQualificationReview(container);
+  });
+}
 function renderRecordsWorkspace(){
   const box=document.getElementById('recordsWorkspace');
   if(!box) return;
   if(recordsActionTab==='review'){
-    renderGoogleFormImportPage(box,'review');
+    renderQualificationReview(box);
     return;
   }
   if(recordsActionTab==='publish'){
@@ -6088,6 +6140,8 @@ async function exportPendingLotteryWorkbook(stages){
     alert('ZIP 元件尚未載入，請重新整理後再試。');
     return;
   }
+  await loadQualificationReviews();
+  if(!qualificationReviewsLoaded){alert('請先授權並成功載入資格審查狀態，才可匯出抽籤名單。');return;}
   if(!stages||!stages.length){
     alert('目前沒有待抽籤場次');
     return;
@@ -6101,8 +6155,12 @@ async function exportPendingLotteryWorkbook(stages){
     timeSortValue(a.time)-timeSortValue(b.time)
   );
 
+  let excluded=0;
   sortedStages.forEach(stage=>{
-    const rows=[...stage.records]
+    const eligible=stage.records.filter(isQualifiedForLottery);
+    excluded+=stage.records.length-eligible.length;
+    if(!eligible.length)return;
+    const rows=[...eligible]
       .sort((a,b)=>String(a.serial_number||'').localeCompare(String(b.serial_number||'')))
       .map((r,i)=>({
         '項次':i+1,
@@ -6142,6 +6200,8 @@ async function exportPendingLotteryWorkbook(stages){
     zip.file(`${uniqueName}.xlsx`,arrayBuffer);
   });
 
+  if(!usedNames.size){alert('目前沒有資格合格的待抽籤資料。');return;}
+  if(excluded)alert('已排除 '+excluded+' 筆待審查、待補正或審查不合格的申請。');
   const dateStr=new Date().toISOString().slice(0,10);
   const blob=await zip.generateAsync({
     type:'blob',
