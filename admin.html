@@ -4005,7 +4005,7 @@ function sensitiveIdCell(r){
   const masked=maskMemberId(id,last4);
   const label=escapeHtml(masked);
   if(!secureIdentityAuthenticated) return `<span title="完整證號僅限授權人員查閱">${label}</span>`;
-  if(!id) return `<span title="目前僅有遮蔽識別資料">${label}</span> <button type="button" class="btn btn-gray" disabled title="未有完整證號可供查閱" aria-label="目前無完整證號" style="opacity:.45;cursor:not-allowed;padding:3px 6px">👁</button>`;
+  if(!id) return `<span title="目前僅有遮蔽識別資料">${label}</span> <button type="button" class="btn btn-gray" disabled title="目前資料庫只有末四碼；重新匯入原始表單後才可查看全碼" aria-label="目前無完整證號" style="opacity:.45;cursor:not-allowed;padding:3px 6px">👁</button>`;
   const visible=revealedSensitiveKeys.has(key);
   return `<span class="identity-value">${escapeHtml(visible?id:masked)}</span> <button type="button" class="btn btn-gray identity-reveal" data-identity-key="${escapeHtml(key)}" aria-label="${visible?'隱藏':'查看'}完整身分證號" title="${visible?'隱藏':'查看'}完整身分證號">${visible?'隱藏':'👁 查看'}</button>`;
 }
@@ -4019,6 +4019,15 @@ function bindIdentityReveal(){
   });
 }
 
+function courtUsage(r){
+  if(r.sport_usage) return String(r.sport_usage);
+  if(/桌球/.test(String(r.venue_type||'')))return '桌球';
+  // 舊紀錄沒有用途資料時，不以場地推論其實際運動用途。
+  return '待確認';
+}
+function courtVenueLabel(r){
+  return ({'羽球':'羽球場','籃球':'籃球場','B1桌球':'B1桌球場','B2桌球':'B2桌球場'})[r.venue_type]||r.venue_type||'—';
+}
 function adminPhoneCell(r){
   // Go會員=會員綁定手機；會館會員=表單填寫的聯絡手機。
   return escapeHtml(String(r.phone||''));
@@ -4044,7 +4053,7 @@ async function connectSensitiveRecordAccess(){
   document.getElementById('identityAuthPassword').value='';
   if(error){if(status)status.textContent='授權失敗，請確認帳號權限。';return;}
   await loadSensitiveIdentifiers();
-  if(status)status.textContent=secureIdentityAuthenticated?`已通過授權（可查閱 ${secureIdentityBySubmission.size} 筆完整證號）`:'權限不足或尚未執行配套 SQL。';
+  if(status)status.textContent=secureIdentityAuthenticated?`已授權｜已有全碼 ${secureIdentityBySubmission.size} 筆（其他舊資料需補匯）`:'權限不足或尚未執行配套 SQL。';
   renderRecordsWorkspace();
 }
 function memberIdentifierLast4(r){ return String(r.member_identifier_last4||r.id_last4||'').trim(); }
@@ -4699,6 +4708,7 @@ function venueSortValue(venue){
 function getSortValue(record,key){
   if(key==='lottery_status') return statusSortValue(record.lottery_status);
   if(key==='venue_type') return venueSortValue(record.venue_type);
+  if(key==='sport_usage')return courtUsage(record);
   if(key==='day_of_week') return daySortValue(record.day_of_week);
   if(key==='time_slot') return timeSortValue(record.time_slot);
   if(key==='registered_at') return record.registered_at ? new Date(record.registered_at).getTime() : 0;
@@ -4774,7 +4784,7 @@ function getFilteredRecords(){
     if(recordState.anomaly==='__normal__' && anomalyTypes.length>0) return false;
     if(recordState.anomaly && recordState.anomaly!=='__normal__' && !anomalyTypes.includes(recordState.anomaly)) return false;
     if(q){
-      const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${secureIdentityBySubmission.get(String(r.import_submission_key||''))||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
+      const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${secureIdentityBySubmission.get(String(r.import_submission_key||''))||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${courtUsage(r)} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -5059,7 +5069,7 @@ function renderRecordsTable(){
 
   html+=`<div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr>`;
   if(isBatch) html+=`<th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th>`;
-  html+=`<th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('聯絡手機','phone')}</th><th style="width:130px;">${sortHeader('會員身分／識別末4碼','member_type')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
+  html+=`<th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('聯絡手機','phone')}</th><th style="width:130px;">${sortHeader('會員身分／識別末4碼','member_type')}</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
 
   rows.forEach((r,i)=>{
     html+=`<tr>`;
@@ -5073,7 +5083,7 @@ function renderRecordsTable(){
       <td>${escapeHtml(r.phone)}</td>
       <td>${memberIdentityCell(r)}</td>
       <td>${escapeHtml(shortLocationName(recordLocation(r)))}</td>
-      <td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td>
+      <td><span class="tag blue">${escapeHtml(courtUsage(r))}</span></td>
       <td>${escapeHtml(r.day_of_week)}</td>
       <td>${escapeHtml(r.time_slot)}</td>
       <td>${recordHours(r)}h</td>
@@ -5153,9 +5163,9 @@ function recordStatusTag(status){
   const s=String(status||'').trim();
   if(!s) return '<span class="tag gray">未抽籤</span>';
   if(s==='中籤') return '<span class="tag green">中籤</span>';
-  if(s.startsWith('候補')) return `<span class="tag warn">${escapeHtml(s)}</span>`;
+  if(s.startsWith('候補')) return `<span class="tag warn">備取${escapeHtml(s.slice(2))}</span>`;
   if(s==='放棄') return '<span class="tag gray">放棄</span>';
-  if(s==='未中籤') return '<span class="tag gray">未中籤</span>';
+  if(s==='未中籤') return '<span class="tag gray">未中籤（舊資料）</span>';
   return `<span class="tag gray">${escapeHtml(s)}</span>`;
 }
 
@@ -5167,11 +5177,10 @@ function recordStatusSelect(record){
   return `<select class="record-status-select" data-status-id="${record.id}" data-original="${escapeHtml(String(record.lottery_status||''))}" ${disabled}>
     <option value="" ${current===''?'selected':''}>未抽籤</option>
     <option value="中籤" ${current==='中籤'?'selected':''}>中籤</option>
-    <option value="候補1" ${current==='候補1'?'selected':''}>候補1</option>
-    <option value="候補2" ${current==='候補2'?'selected':''}>候補2</option>
-    <option value="候補3" ${current==='候補3'?'selected':''}>候補3</option>
+    ${Array.from({length:100},(_,i)=>i+1).map(n=>`<option value="候補${n}" ${current==='候補'+n?'selected':''}>備取${n}</option>`).join('')}
+    ${/^候補\d+$/.test(current)&&Number(current.replace('候補',''))>100?`<option selected value="${escapeHtml(current)}">備取${escapeHtml(current.replace('候補',''))}</option>`:''}
     <option value="放棄" ${current==='放棄'?'selected':''}>放棄</option>
-    <option value="未中籤" ${current==='未中籤'?'selected':''}>未中籤</option>
+    ${current==='未中籤'?'<option value="未中籤" selected>未中籤（舊資料）</option>':''}
   </select>`;
 }
 
@@ -5285,12 +5294,12 @@ function renderRecordsTable(){
       儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
     </button>
   </div>
-  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:98px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:110px;">${sortHeader('會員身分','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:58px;">場地</th><th style="width:72px;">${sortHeader('球類','venue_type')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
+  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:98px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:110px;">${sortHeader('會員身分','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'blue':'green'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${escapeHtml(shortLocationName(recordLocation(r)))}</td><td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
+    <td>${anomalyTags(r)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'blue':'green'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag blue">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td><td>${formatCompactDateTime(r.registered_at)}</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
@@ -6864,7 +6873,7 @@ async function applyPromotionSuggestion(stage){
                   <td>${escapeHtml(r.name)}</td>
                   <td>${escapeHtml(r.phone)}</td>
                   <td>${memberIdentityCell(r)}</td>
-                  <td><span class="tag blue">${escapeHtml(r.venue_type)}</span></td>
+                  <td><span class="tag blue">${escapeHtml(courtUsage(r))}</span></td>
                   <td>${escapeHtml(r.day_of_week)}</td>
                   <td>${escapeHtml(r.time_slot)}</td>
                   <td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td>
@@ -7972,7 +7981,7 @@ async function parseGoogleFormWorkbook(file){
     if(cap===null)flag('無法核對116年時段',submissionKey,slotKey);
     if(slot.venue==='羽球'&&slot.usage==='匹克球'&&cap!==3)flag('匹克球僅限羽球場3場時段',submissionKey,slotKey);
     const recordKey=await sha256(`${submissionKey}|${slotKey}`);
-    records.push({submission_key:submissionKey,record_key:recordKey,member_key_hash:memberKeyHash,member_type:sub.member_type,member_identifier_last4:identifier.slice(-4),name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:time,serial_number:`GF-${recordKey.slice(0,12).toUpperCase()}`,registered_at:stamp});
+    records.push({submission_key:submissionKey,record_key:recordKey,sport_usage:slot.usage,member_key_hash:memberKeyHash,member_type:sub.member_type,member_identifier_last4:identifier.slice(-4),name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:time,serial_number:`GF-${recordKey.slice(0,12).toUpperCase()}`,registered_at:stamp});
     // 用途存於原始回覆欄位，避免在尚未驗證資料庫欄位前增加不相容欄位。
   }
  }
@@ -7996,7 +8005,7 @@ function renderGoogleFormImportPage(){
   document.getElementById('refreshFormAnomalies').onclick=loadFormAnomalies;loadFormAnomalies();
 }
 function renderFormImportPreview(){const p=pendingFormImport,box=document.getElementById('formImportPreview');if(!p||!box)return;const counts={};p.anomalies.forEach(a=>counts[a.type]=(counts[a.type]||0)+1);box.innerHTML=`<div class="msg info">來源：${escapeHtml(p.sourceType||'未辨識')}｜${p.submissions.length} 份回覆，拆分 ${p.records.length} 筆場次，${p.anomalies.length} 項異常。</div><div class="table-wrap"><table><thead><tr><th>異常類型</th><th>筆數</th><th>關聯資料</th></tr></thead><tbody>${Object.entries(counts).map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td>匯入後可逐項確認</td></tr>`).join('')||'<tr><td colspan="3">未發現匯入前異常</td></tr>'}</tbody></table></div><button id="commitFormImportBtn" class="btn btn-primary" style="margin-top:12px">確認匯入 ${p.records.length} 筆場次</button>`;document.getElementById('commitFormImportBtn').onclick=commitGoogleFormImport;}
-async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data:userData,error:userError}=await importDb.auth.getUser();if(userError||!userData?.user){alert('請先登入已授權的 Supabase Auth 管理帳號。');return;}if(!confirm(`將匯入 ${pendingFormImport.submissions.length} 份回覆、${pendingFormImport.records.length} 筆場次。已匯入回覆會自動略過。繼續？`))return;const {data,error}=await importDb.rpc('import_google_form_batch_v2',{p_payload:{batch_key:crypto.randomUUID(),submissions:pendingFormImport.submissions,records:pendingFormImport.records,anomalies:pendingFormImport.anomalies}});if(error){
+async function commitGoogleFormImport(){if(!pendingFormImport)return;const {data:userData,error:userError}=await importDb.auth.getUser();if(userError||!userData?.user){alert('請先登入已授權的 Supabase Auth 管理帳號。');return;}if(!confirm(`將匯入 ${pendingFormImport.submissions.length} 份回覆、${pendingFormImport.records.length} 筆場次。已匯入回覆會自動略過。繼續？`))return;const {data,error}=await importDb.rpc('import_google_form_batch_v3',{p_payload:{batch_key:crypto.randomUUID(),submissions:pendingFormImport.submissions,records:pendingFormImport.records,anomalies:pendingFormImport.anomalies}});if(error){
   if(String(error.message||'').includes('lottery_records_unique_limited_sports')){
     alert('資料庫仍套用舊版羽球／籃球「手機＋身分證末四碼」唯一限制，無法保留重複申請供異常審查。請先由資料庫管理人員執行隨附的 01_fix_unique_index.sql，再重新匯入。本次交易未成功，請勿重複亂改測試資料。');
   }else alert(`匯入失敗：${error.message}`);
