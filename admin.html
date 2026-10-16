@@ -3727,6 +3727,29 @@
   @media(max-width:1000px){.single-limit-grid{grid-template-columns:repeat(2,minmax(120px,1fr));}.cross-limit-row{grid-template-columns:1fr;}.registration-limit-actions{justify-content:flex-start;}}
 </style>
 
+<style id="v35-records-horizontal-scroll-fix">
+/* 登記資料寬表：恢復水平卷軸，不裁切右側欄位。 */
+#recordsWorkspace, #recordsTable { min-width:0; max-width:100%; }
+#content #recordsWorkspace .records-table-wrap,
+#content #recordsWorkspace > #recordsTable .records-table-wrap {
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  overflow-x:scroll!important;
+  overflow-y:hidden!important;
+  scrollbar-width:auto;
+  scrollbar-color:#94a3b8 #e2e8f0;
+  -webkit-overflow-scrolling:touch;
+}
+#content #recordsWorkspace .records-table-wrap > table {
+  width:max-content!important;
+  min-width:100%!important;
+  table-layout:auto!important;
+}
+#recordsWorkspace .records-table-wrap::-webkit-scrollbar {height:13px;}
+#recordsWorkspace .records-table-wrap::-webkit-scrollbar-track {background:#e2e8f0;border-radius:8px;}
+#recordsWorkspace .records-table-wrap::-webkit-scrollbar-thumb {background:#94a3b8;border-radius:8px;border:2px solid #e2e8f0;}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
