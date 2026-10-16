@@ -4395,6 +4395,8 @@ function parseSettingDate(value){
   return Number.isNaN(d.getTime()) ? null : d;
 }
 function getRegistrationState(now=new Date()){
+  if(String(systemSettings.registration_enabled||'true')==='false')
+    return {key:'closed',label:'未開放登記',note:'目前未開放登記，僅提供查詢。',start:null,end:null};
   const start=parseSettingDate(systemSettings.registration_start);
   const end=parseSettingDate(systemSettings.registration_end);
   if(!start && !end) return {key:'open',label:'登記中',note:'尚未設定登記期間，系統維持開放。',start:null,end:null};
@@ -5609,15 +5611,22 @@ function renderCapacityPage(){
         <div class="capacity-window-head">
           <div>
             <div class="capacity-window-title">登記期間</div>
-            <div class="small">設定開始及截止時間後，前台會自動切換登記狀態；截止後僅保留查詢功能。</div>
+            <div class="small">先設定是否公告開放登記；選擇「是」後再設定開始及截止時間。前台會依設定自動切換。</div>
           </div>
           <div><span class="tag ${regClass}">${escapeHtml(regState.label)}</span></div>
         </div>
-        <div class="capacity-window-grid">
+        <div class="field" style="max-width:260px;margin:12px 0">
+          <label for="registrationEnabledInput">是否公告開放登記</label>
+          <select id="registrationEnabledInput">
+            <option value="false" ${String(systemSettings.registration_enabled)==='false'?'selected':''}>否，暫不開放</option>
+            <option value="true" ${String(systemSettings.registration_enabled||'true')!=='false'?'selected':''}>是，設定登記期間</option>
+          </select>
+        </div>
+        <div class="capacity-window-grid" id="registrationDateFields" style="${String(systemSettings.registration_enabled||'true')==='false'?'display:none;':''}">
           <div class="field"><label>開始時間</label><input id="registrationStartInput" type="datetime-local" value="${escapeHtml(toDateTimeLocal(systemSettings.registration_start))}"></div>
           <div class="field"><label>截止時間</label><input id="registrationEndInput" type="datetime-local" value="${escapeHtml(toDateTimeLocal(systemSettings.registration_end))}"></div>
-          <button id="saveRegistrationWindow" class="btn btn-primary">儲存期間</button>
         </div>
+        <button id="saveRegistrationWindow" class="btn btn-primary" style="margin-top:12px">儲存設定</button>
         <div class="small capacity-window-state">${escapeHtml(regState.note)}</div>
       </div>
 
@@ -5677,24 +5686,36 @@ function renderCapacityPage(){
   renderRegistrationLimitEditor();
   renderBulkCapacityTable();
 
+  const registrationEnabledInput=document.getElementById('registrationEnabledInput');
+  if(registrationEnabledInput) registrationEnabledInput.onchange=()=>{
+    const fields=document.getElementById('registrationDateFields');
+    if(fields) fields.style.display=registrationEnabledInput.value==='true'?'grid':'none';
+  };
   const saveRegistrationWindowBtn=document.getElementById('saveRegistrationWindow');
   if(saveRegistrationWindowBtn) saveRegistrationWindowBtn.onclick=async()=>{
+    const enabled=registrationEnabledInput?.value==='true';
     const startRaw=document.getElementById('registrationStartInput')?.value || '';
     const endRaw=document.getElementById('registrationEndInput')?.value || '';
     const start=startRaw?new Date(startRaw):null;
     const end=endRaw?new Date(endRaw):null;
-    if(start&&end&&end<=start){alert('截止時間必須晚於開始時間');return;}
+    if(enabled&&(!start||!end)){alert('選擇開放登記時，請設定開始及截止時間。');return;}
+    if(enabled&&end<=start){alert('截止時間必須晚於開始時間');return;}
     saveRegistrationWindowBtn.disabled=true;
     saveRegistrationWindowBtn.textContent='儲存中...';
-    const okStart=await saveSetting('registration_start',start?start.toISOString():'');
-    const okEnd=okStart ? await saveSetting('registration_end',end?end.toISOString():'') : false;
+    // 先儲存日期，再更新開放開關，避免開關已啟用但日期未寫入。
+    let ok=true;
+    if(enabled){
+      ok=await saveSetting('registration_start',start.toISOString());
+      if(ok)ok=await saveSetting('registration_end',end.toISOString());
+    }
+    if(ok)ok=await saveSetting('registration_enabled',enabled?'true':'false');
     saveRegistrationWindowBtn.disabled=false;
-    saveRegistrationWindowBtn.textContent='儲存期間';
-    if(!okStart||!okEnd) return;
-    await writeOperationLog('更新登記期間',{registration_start:start?start.toISOString():'',registration_end:end?end.toISOString():''});
+    saveRegistrationWindowBtn.textContent='儲存設定';
+    if(!ok)return;
+    await writeOperationLog('更新登記開放設定',{enabled,registration_start:enabled?start.toISOString():null,registration_end:enabled?end.toISOString():null});
     await loadAllData();
     renderCapacityPage();
-    alert('登記期間已儲存。');
+    alert('登記開放設定已儲存。');
   };
 
   const capLoc=document.getElementById('capacityLocation');
