@@ -3876,7 +3876,35 @@ body .ux-review-case-head{margin-bottom:10px}
 body .ux-review-edit{align-items:end}
 @media(max-width:650px){body .ux-review-reasons{align-items:flex-start;flex-wrap:wrap;gap:4px}}
 </style>
-\n<style id="v59-compact-settings-and-meaningful-colors">\n/* 設定區：一個區域兩組內容，桌面不再上下疊兩張大卡 */\n@media(min-width:1100px){\n  .compact-registration-settings{display:grid;grid-template-columns:minmax(360px,0.94fr) minmax(460px,1.16fr);gap:14px;align-items:start;margin-bottom:10px}\n  .compact-registration-settings>.capacity-section-divider{display:none}\n  .compact-registration-settings>.capacity-registration-window{margin:0;min-width:0;height:100%;padding:14px 16px;background:#fff;border:1px solid #dce4ed;box-shadow:none}\n  .compact-registration-settings .capacity-window-head{margin-bottom:8px}\n  .compact-registration-settings .capacity-window-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}\n  .compact-registration-settings .single-limit-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}\n  .compact-registration-settings .registration-limit-head{margin-bottom:9px;gap:8px}\n  .compact-registration-settings .capacity-window-state{margin-top:6px}\n  .compact-registration-settings .field{margin-bottom:7px}\n  .compact-registration-settings .registration-limit-actions{margin-top:8px}\n  .compact-registration-settings .cross-limit-list{margin-top:8px}\n}\n@media(max-width:1099px){.compact-registration-settings{display:block}.compact-registration-settings>.capacity-registration-window{background:#fff}}\n/* 預設白底／灰底，僅辨識類別使用低飽和色；嚴重異常才紅色 */\n.records-compact-table .tag.identity-go{background:#edf3ff!important;color:#355c96!important;border:1px solid #dce7fa!important}\n.records-compact-table .tag.identity-hall{background:#edf5f1!important;color:#326653!important;border:1px solid #d7e7de!important}\n.records-compact-table .tag.sport-usage-tag{background:#f1f4f8!important;color:#354b65!important;border:1px solid #e3e8f0!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="匹克球"]{background:#f5f0fb!important;color:#69518b!important;border-color:#e9ddf5!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="籃球"]{background:#eef3fc!important;color:#365c92!important;border-color:#dce7fa!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="桌球"]{background:#f2f5ed!important;color:#596f3c!important;border-color:#e1e9d9!important}\n.records-compact-table .tag.review-qualified{background:#e9f5ef!important;color:#226447!important;border:1px solid #cfe7d9!important}\n.records-compact-table .tag.review-pending{background:#fff3df!important;color:#885914!important;border:1px solid #f3dfb4!important}\n.records-compact-table .tag.review-correction{background:#fff0da!important;color:#955a12!important;border:1px solid #f1d8a8!important}\n.records-compact-table .tag.review-invalid{background:#feecea!important;color:#b42318!important;border:1px solid #f5d0c9!important}\n.records-compact-table .tag.gray:not(.review-qualified):not(.review-pending){background:#f2f4f7;color:#526174}\n.records-compact-table td{border-bottom:1px solid #edf0f4}\n.records-compact-table tr:hover td{background:#f7f9fc}\n.records-compact-table [data-qopen]{white-space:nowrap}\n/* 提示只紅在真正異常，不以警示色覆蓋一般資料 */\n.records-compact-table .tag.anomaly-red{color:#b42318!important;background:#fff1ef!important;border:1px solid #f4d0cb!important}\n</style>\n</head>
+\n<style id="v59-compact-settings-and-meaningful-colors">\n/* 設定區：一個區域兩組內容，桌面不再上下疊兩張大卡 */\n@media(min-width:1100px){\n  .compact-registration-settings{display:grid;grid-template-columns:minmax(360px,0.94fr) minmax(460px,1.16fr);gap:14px;align-items:start;margin-bottom:10px}\n  .compact-registration-settings>.capacity-section-divider{display:none}\n  .compact-registration-settings>.capacity-registration-window{margin:0;min-width:0;height:100%;padding:14px 16px;background:#fff;border:1px solid #dce4ed;box-shadow:none}\n  .compact-registration-settings .capacity-window-head{margin-bottom:8px}\n  .compact-registration-settings .capacity-window-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}\n  .compact-registration-settings .single-limit-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}\n  .compact-registration-settings .registration-limit-head{margin-bottom:9px;gap:8px}\n  .compact-registration-settings .capacity-window-state{margin-top:6px}\n  .compact-registration-settings .field{margin-bottom:7px}\n  .compact-registration-settings .registration-limit-actions{margin-top:8px}\n  .compact-registration-settings .cross-limit-list{margin-top:8px}\n}\n@media(max-width:1099px){.compact-registration-settings{display:block}.compact-registration-settings>.capacity-registration-window{background:#fff}}\n/* 預設白底／灰底，僅辨識類別使用低飽和色；嚴重異常才紅色 */\n.records-compact-table .tag.identity-go{background:#edf3ff!important;color:#355c96!important;border:1px solid #dce7fa!important}\n.records-compact-table .tag.identity-hall{background:#edf5f1!important;color:#326653!important;border:1px solid #d7e7de!important}\n.records-compact-table .tag.sport-usage-tag{background:#f1f4f8!important;color:#354b65!important;border:1px solid #e3e8f0!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="匹克球"]{background:#f5f0fb!important;color:#69518b!important;border-color:#e9ddf5!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="籃球"]{background:#eef3fc!important;color:#365c92!important;border-color:#dce7fa!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="桌球"]{background:#f2f5ed!important;color:#596f3c!important;border-color:#e1e9d9!important}\n.records-compact-table .tag.review-qualified{background:#e9f5ef!important;color:#226447!important;border:1px solid #cfe7d9!important}\n.records-compact-table .tag.review-pending{background:#fff3df!important;color:#885914!important;border:1px solid #f3dfb4!important}\n.records-compact-table .tag.review-correction{background:#fff0da!important;color:#955a12!important;border:1px solid #f1d8a8!important}\n.records-compact-table .tag.review-invalid{background:#feecea!important;color:#b42318!important;border:1px solid #f5d0c9!important}\n.records-compact-table .tag.gray:not(.review-qualified):not(.review-pending){background:#f2f4f7;color:#526174}\n.records-compact-table td{border-bottom:1px solid #edf0f4}\n.records-compact-table tr:hover td{background:#f7f9fc}\n.records-compact-table [data-qopen]{white-space:nowrap}\n/* 提示只紅在真正異常，不以警示色覆蓋一般資料 */\n.records-compact-table .tag.anomaly-red{color:#b42318!important;background:#fff1ef!important;border:1px solid #f4d0cb!important}\n</style>\n
+<style id="v60-structure-and-scannability">
+/* Settings are a one-line overview unless somebody explicitly edits them. */
+.registration-settings-fold{border:1px solid #dce4ee;border-radius:12px;background:#fff;margin:0 0 16px;overflow:hidden}
+.registration-settings-summary{list-style:none;display:flex;align-items:center;gap:18px;padding:14px 18px;cursor:pointer;min-height:58px}
+.registration-settings-summary::-webkit-details-marker{display:none}
+.registration-summary-leading{display:flex;align-items:center;gap:12px;white-space:nowrap}
+.registration-summary-heading{font-weight:800;font-size:15px;color:#152338}
+.registration-summary-state{font-size:12px;color:#506277;background:#f0f3f7;border-radius:6px;padding:5px 9px;font-weight:700}
+.registration-summary-limits{font-size:13px;color:#64748b;flex:1}
+.registration-summary-action{color:#285da5;font-weight:700;font-size:13px;white-space:nowrap}
+.registration-settings-fold[open] .registration-summary-action span{display:inline-block;transform:rotate(180deg)}
+.registration-settings-fold[open] .registration-settings-summary{border-bottom:1px solid #e6ebf1}
+.registration-settings-fold .compact-registration-settings{padding:12px;background:#f8fafc;margin:0}
+.registration-settings-fold .capacity-registration-window{border:1px solid #e1e7ef!important;background:#fff!important;border-radius:9px!important;box-shadow:none!important;margin:0!important;padding:13px!important}
+.registration-settings-fold .capacity-registration-window .small{line-height:1.5}
+.registration-settings-fold .capacity-section-divider{display:none!important}
+@media(max-width:1050px){.registration-settings-summary{flex-wrap:wrap;gap:8px 14px}.registration-summary-limits{order:3;flex-basis:100%}}
+/* Directly target the buttons and cells that are actually rendered. */
+.records-compact-table .qualification-jump.review-qualified{background:#e9f5ef!important;color:#226447!important;border:1px solid #cde6d7!important}
+.records-compact-table .qualification-jump.review-pending{background:#fff3dd!important;color:#885914!important;border:1px solid #f2ddad!important}
+.records-compact-table .qualification-jump.review-correction{background:#fff0e5!important;color:#9e4c18!important;border:1px solid #f3d6bd!important}
+.records-compact-table .qualification-jump.review-invalid{background:#fff0f0!important;color:#bd3333!important;border:1px solid #f1c8c8!important}
+.records-compact-table .qualification-jump{padding:6px 8px!important;border-radius:6px!important;white-space:nowrap}
+.records-compact-table tr:has(.review-pending) td:first-child,.records-compact-table tr:has(.review-correction) td:first-child{box-shadow:inset 3px 0 0 #d49a42}
+.records-compact-table tr:has(.review-invalid) td:first-child{box-shadow:inset 3px 0 0 #d35151}
+.records-compact-table .tag.identity-go,.records-compact-table .tag.identity-hall,.records-compact-table .tag.sport-usage-tag{font-weight:700}
+</style>
+</head>
 <body>
   <section id="loginPage" class="login-page">
     <div class="hero">
@@ -5695,6 +5723,12 @@ function renderCapacityPage(){
   document.getElementById('content').innerHTML=`
     <div class="panel capacity-main-panel">
 
+      <details class="registration-settings-fold" aria-label="登記開放與限制設定">
+        <summary class="registration-settings-summary">
+          <span class="registration-summary-leading"><span class="registration-summary-heading">登記開放與申請限制</span><span class="registration-summary-state">${escapeHtml(regState.label)}</span></span>
+          <span class="registration-summary-limits">羽球每人 1 場 · 籃球每人 1 場 · 桌球不限場次</span>
+          <span class="registration-summary-action">編輯設定 <span aria-hidden="true">⌄</span></span>
+        </summary>
       <div class="compact-registration-settings" aria-label="登記開放與限制設定">
       <div class="capacity-registration-window">
         <div class="capacity-window-head">
@@ -5726,6 +5760,7 @@ function renderCapacityPage(){
       </div>
 
       </div>
+      </details>
       <div class="capacity-section-divider"></div>
 
       <div class="capacity-toolbar">
