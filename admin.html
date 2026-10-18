@@ -3876,7 +3876,7 @@ body .ux-review-case-head{margin-bottom:10px}
 body .ux-review-edit{align-items:end}
 @media(max-width:650px){body .ux-review-reasons{align-items:flex-start;flex-wrap:wrap;gap:4px}}
 </style>
-</head>
+\n<style id="v59-compact-settings-and-meaningful-colors">\n/* 設定區：一個區域兩組內容，桌面不再上下疊兩張大卡 */\n@media(min-width:1100px){\n  .compact-registration-settings{display:grid;grid-template-columns:minmax(360px,0.94fr) minmax(460px,1.16fr);gap:14px;align-items:start;margin-bottom:10px}\n  .compact-registration-settings>.capacity-section-divider{display:none}\n  .compact-registration-settings>.capacity-registration-window{margin:0;min-width:0;height:100%;padding:14px 16px;background:#fff;border:1px solid #dce4ed;box-shadow:none}\n  .compact-registration-settings .capacity-window-head{margin-bottom:8px}\n  .compact-registration-settings .capacity-window-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}\n  .compact-registration-settings .single-limit-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}\n  .compact-registration-settings .registration-limit-head{margin-bottom:9px;gap:8px}\n  .compact-registration-settings .capacity-window-state{margin-top:6px}\n  .compact-registration-settings .field{margin-bottom:7px}\n  .compact-registration-settings .registration-limit-actions{margin-top:8px}\n  .compact-registration-settings .cross-limit-list{margin-top:8px}\n}\n@media(max-width:1099px){.compact-registration-settings{display:block}.compact-registration-settings>.capacity-registration-window{background:#fff}}\n/* 預設白底／灰底，僅辨識類別使用低飽和色；嚴重異常才紅色 */\n.records-compact-table .tag.identity-go{background:#edf3ff!important;color:#355c96!important;border:1px solid #dce7fa!important}\n.records-compact-table .tag.identity-hall{background:#edf5f1!important;color:#326653!important;border:1px solid #d7e7de!important}\n.records-compact-table .tag.sport-usage-tag{background:#f1f4f8!important;color:#354b65!important;border:1px solid #e3e8f0!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="匹克球"]{background:#f5f0fb!important;color:#69518b!important;border-color:#e9ddf5!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="籃球"]{background:#eef3fc!important;color:#365c92!important;border-color:#dce7fa!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="桌球"]{background:#f2f5ed!important;color:#596f3c!important;border-color:#e1e9d9!important}\n.records-compact-table .tag.review-qualified{background:#e9f5ef!important;color:#226447!important;border:1px solid #cfe7d9!important}\n.records-compact-table .tag.review-pending{background:#fff3df!important;color:#885914!important;border:1px solid #f3dfb4!important}\n.records-compact-table .tag.review-correction{background:#fff0da!important;color:#955a12!important;border:1px solid #f1d8a8!important}\n.records-compact-table .tag.review-invalid{background:#feecea!important;color:#b42318!important;border:1px solid #f5d0c9!important}\n.records-compact-table .tag.gray:not(.review-qualified):not(.review-pending){background:#f2f4f7;color:#526174}\n.records-compact-table td{border-bottom:1px solid #edf0f4}\n.records-compact-table tr:hover td{background:#f7f9fc}\n.records-compact-table [data-qopen]{white-space:nowrap}\n/* 提示只紅在真正異常，不以警示色覆蓋一般資料 */\n.records-compact-table .tag.anomaly-red{color:#b42318!important;background:#fff1ef!important;border:1px solid #f4d0cb!important}\n</style>\n</head>
 <body>
   <section id="loginPage" class="login-page">
     <div class="hero">
@@ -4555,7 +4555,7 @@ function renderRegistrationLimitEditor(){
     <div class="registration-limit-head">
       <div>
         <div class="capacity-window-title">登記限制</div>
-        <div class="small">0 表示不限。跨球類限制可自由勾選球類，例如「羽球＋籃球合計最多 1 筆」。</div>
+        <div class="small">0 表示不限；羽球場、籃球場分別限登記1場，桌球不限場次。跨球類限制僅供特殊需求設定。</div>
       </div>
       <button type="button" id="addRegistrationLimitGroup" class="btn btn-gray">新增跨球類限制</button>
     </div>
@@ -5132,7 +5132,7 @@ function qualificationStatusCell(r){
   if(!qualificationReviewsLoaded)return '<span class="tag gray" title="請先完成資料庫授權及資格資料載入">未載入</span>';
   const st=qualificationState(r);
   const display={qualified:'合格',pending:'待審查',correction:'待補正',invalid:'審查不合格'};
-  const tone={qualified:'green',pending:'gray',correction:'blue',invalid:'anomaly-red'};
+  const tone={qualified:'review-qualified',pending:'review-pending',correction:'review-correction',invalid:'review-invalid'};
   return `<button type="button" class="tag ${tone[st]||'gray'} qualification-jump" data-qopen="${escapeHtml(String(r.id))}" title="查看此筆資格審查，並可更改狀態" style="cursor:pointer;border:0;font:inherit;font-weight:700">${display[st]||'待審查'} ↗</button>`;
 }
 function openQualificationRecord(id){
@@ -5360,7 +5360,7 @@ function renderRecordsTable(){
       <td>${adminEmailCell(r)}</td>
       <td>${memberIdentityCell(r)}</td>
       <td>${escapeHtml(shortLocationName(recordLocation(r)))}</td>
-      <td><span class="tag blue">${escapeHtml(courtUsage(r))}</span></td>
+      <td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td>
       <td>${escapeHtml(r.day_of_week)}</td>
       <td>${escapeHtml(r.time_slot)}</td>
       <td>${recordHours(r)}h</td></tr>`;
@@ -5574,7 +5574,7 @@ function renderRecordsTable(){
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td>${qualificationStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'blue':'green'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag blue">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td></tr>`;
+    <td>${anomalyTags(r)}</td><td>${qualificationStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'identity-go':'identity-hall'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
@@ -5694,8 +5694,8 @@ function renderCapacityPage(){
 
   document.getElementById('content').innerHTML=`
     <div class="panel capacity-main-panel">
-      <h3>名額與登記期間設定</h3>
 
+      <div class="compact-registration-settings" aria-label="登記開放與限制設定">
       <div class="capacity-registration-window">
         <div class="capacity-window-head">
           <div>
@@ -5725,6 +5725,7 @@ function renderCapacityPage(){
         <div id="registrationLimitEditor" class="registration-limit-editor"></div>
       </div>
 
+      </div>
       <div class="capacity-section-divider"></div>
 
       <div class="capacity-toolbar">
@@ -7176,7 +7177,7 @@ async function applyPromotionSuggestion(stage){
                   <td>${escapeHtml(r.name)}</td>
                   <td>${escapeHtml(r.phone)}</td>
                   <td>${memberIdentityCell(r)}</td>
-                  <td><span class="tag blue">${escapeHtml(courtUsage(r))}</span></td>
+                  <td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td>
                   <td>${escapeHtml(r.day_of_week)}</td>
                   <td>${escapeHtml(r.time_slot)}</td>
                   <td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td>
