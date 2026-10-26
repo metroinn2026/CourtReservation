@@ -5394,7 +5394,9 @@ function renderRecordsTable(){
 
   let html=`<div class="small records-table-meta"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span>`;
   if(isBatch) html+=`<span>已勾選 <strong>${selectedRecordIds.size}</strong> 筆｜已修改 <strong>${pendingRecordStatusChanges.size}</strong> 筆</span>`;
-  html+=`<span class="records-instant-filter-controls" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;">
+  html+=`</div>`;
+  html+=`<div class="records-list-filterbar" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 12px;margin:0 20px 10px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;">
+    
     <label for="recordsLotteryStatusFilter">抽籤狀態</label>
     <select id="recordsLotteryStatusFilter" title="選擇後立即篩選">
       <option value="">全部狀態</option><option value="__not_drawn__">未抽籤</option>
@@ -5403,7 +5405,8 @@ function renderRecordsTable(){
     </select>
     <label for="recordsPerPage">每頁顯示</label>
     <select id="recordsPerPage"><option value="20">20筆</option><option value="50">50筆</option><option value="100">100筆</option></select>
-  </span></div>`;
+  
+  </div>`;
   if(isBatch){
     html+=`
       <div class="records-list-actionbar">
