@@ -9,7 +9,7 @@ const admin = '00000000-0000-0000-0000-000000000001';
 const root = new URL('../', import.meta.url);
 before(async () => {
   await db.exec(await readFile(new URL('tests/fixtures/schema.sql', root), 'utf8'));
-  for (const file of ['v16_registration_unique_index_migration.sql', 'v16_import_existing_submissions_STAGING.sql', 'v16_reconcile_all_imports_STAGING.sql']) {
+  for (const file of ['v16_registration_unique_index_migration.sql', 'v16_import_existing_submissions_STAGING.sql', 'v16_reconcile_all_imports_STAGING.sql', 'v33_form_import_PRODUCTION_READY.sql']) {
     try { await db.exec(await readFile(new URL('sql/' + file, root), 'utf8')); }
     catch (e) { throw new Error(`${file}: ${e.message} at ${e.position || ''} ${e.where || ''}`); }
   }
@@ -20,13 +20,13 @@ beforeEach(async () => {
   await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [admin]);
 });
 
-function payload({ key = randomUUID(), stamp = '2026-10-01T08:00:00+08:00', id = 'A123456789', phone = '0912345678', slots = [['羽球','周一','08:00-09:00']] } = {}) {
+function payload({ key = randomUUID(), stamp = '2026-10-01T08:00:00+08:00', id = 'A123456789', phone = '0912345678', slots = [['羽球','周一','08:00-09:00','羽球']] } = {}) {
   const sub = { submission_key: key, submitted_at: stamp, member_type: '北投會館會員',
     member_identifier: id, name: '合成會員', phone, email: 'synthetic@example.invalid', raw_payload: {}, excel_row: 2 };
-  return { batch_key: randomUUID(), submissions: [sub], anomalies: [], records: slots.map(([venue,day,time], i) => ({
+  return { batch_key: randomUUID(), submissions: [sub], anomalies: [], records: slots.map(([venue,day,time,usage], i) => ({
     submission_key: key, record_key: key + '-' + i, member_type: sub.member_type,
     name: sub.name, phone, member_identifier_last4: id.slice(-4), id_last4: 'FAKE',
-    venue_type: venue, day_of_week: day, time_slot: time, serial_number: 'GF-' + key + '-' + i,
+    venue_type: venue, sport_usage: usage || (venue.includes('桌球') ? '桌球' : venue), day_of_week: day, time_slot: time, serial_number: 'GF-' + key + '-' + i,
     location_name: '北投會館', registered_at: '2099-01-01T00:00:00Z'
   })) };
 }
@@ -39,13 +39,20 @@ const eligibility = async () => (await db.query('SELECT public.court_v16_lottery
 const commit = async (rows, snapshot) => (await db.query('SELECT public.court_v16_commit_lottery_results($1::jsonb,$2,$3) AS result', [JSON.stringify(rows),snapshot,'synthetic-draw'])).rows[0].result;
 
 test('candidate SQL installs; independent sports and server-derived source fields', async () => {
-  const p = payload({slots:[['羽球','周一','08:00-09:00'],['籃球','周一','10:00-12:00']]});
+  const p = payload({slots:[['羽球','周一','08:00-09:00','匹克球'],['籃球','周一','10:00-12:00','籃球']]});
   assert.equal((await importBatch(p)).inserted_records,2);
   await reconcile();
   assert.equal((await anomalies()).length,0);
-  const rows = (await db.query('SELECT id_last4, registered_at FROM public.lottery_records')).rows;
+  const rows = (await db.query('SELECT id_last4, registered_at, sport_usage FROM public.lottery_records')).rows;
   assert.ok(rows.every(r => r.id_last4 === '6789'));
   assert.ok(rows.every(r => new Date(r.registered_at).getFullYear() === 2026));
+  assert.deepEqual(new Set(rows.map(r => r.sport_usage)), new Set(['匹克球','籃球']));
+});
+
+test('venue and sport usage mismatch is rejected atomically', async () => {
+  await assert.rejects(importBatch(payload({slots:[['羽球','周一','08:00-10:00','籃球']]})),/場地與運動用途不一致/);
+  assert.equal(await count('lottery_form_submissions'),0);
+  assert.equal(await count('lottery_records'),0);
 });
 test('replay is idempotent and restores missing records without deleting submissions', async () => {
   const p = payload(); await importBatch(p);
@@ -192,8 +199,19 @@ test('failure in reconciliation rolls back the entire import', async () => {
     await db.exec(await readFile(new URL('sql/v16_reconcile_all_imports_STAGING.sql',root),'utf8'));
   }
 });
+test('production importer remains usable when optional reconciler is not installed', async () => {
+  await db.exec('ALTER FUNCTION public.court_v16_reconcile_import_anomalies() RENAME TO court_v16_reconcile_import_anomalies_temporarily_disabled');
+  try {
+    const result = await importBatch(payload());
+    assert.equal(result.inserted_records, 1);
+    assert.equal(result.reconciliation_performed, false);
+    assert.equal(await count('lottery_records'), 1);
+  } finally {
+    await db.exec('ALTER FUNCTION public.court_v16_reconcile_import_anomalies_temporarily_disabled() RENAME TO court_v16_reconcile_import_anomalies');
+  }
+});
 test('sensitive raw identity fields are stripped before persistence', async () => {
-  const p=payload();p.submissions[0].raw_payload={'北投會館會員身分證字號（10碼）':'A123456789',member_identifier:'A123456789',safe:'example'};
+  const p=payload();p.submissions[0].raw_payload={'北投會館會員身分證字號（10碼）':'A123456789','台北捷運Go App會員綁定手機（10碼）':'0912345678',member_identifier:'A123456789',safe:'example'};
   await importBatch(p);
   const s=(await db.query('SELECT member_identifier,raw_payload FROM public.lottery_form_submissions')).rows[0];
   assert.equal(s.member_identifier,'6789');assert.deepEqual(s.raw_payload,{safe:'example'});

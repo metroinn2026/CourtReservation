@@ -42,6 +42,29 @@ function createRow({
   return row;
 }
 
+function createV33BaseRow({
+  timestamp = '2026-10-25 12:00:00',
+  email = 'v33-member@example.invalid',
+  name = '測試會員',
+  memberType = '北投會館會員',
+  id = 'A123456789',
+  goPhone = '0912345678',
+  contactPhone = '0987654321'
+} = {}) {
+  return {
+    '時間戳記': timestamp,
+    '電子郵件地址': email,
+    '您對上開告知已閱讀瞭解並同意本公司之蒐集處理及利用您之個人資料。': '同意',
+    '您對上開長租登記及抽籤方式已閱讀瞭解並同意遵守相關規定。': '同意',
+    '申請人姓名': name,
+    '申請會員身分（請擇一）': memberType,
+    '台北捷運Go App會員綁定手機（10碼）': memberType === '台北捷運Go會員' ? goPhone : '',
+    '北投會館會員身分證字號（10碼）': memberType === '北投會館會員' ? id : '',
+    '聯絡手機號碼（會館會員，10碼）': memberType === '北投會館會員' ? contactPhone : '',
+    '送出前確認': '我已確認本次申請資料，並同意送出表單'
+  };
+}
+
 async function parseRows(rows) {
   let worksheetRows = rows;
   const xlsx = {
@@ -166,4 +189,56 @@ test('out-of-range hours and minutes become anomalies instead of database failur
   const parsed = await parseRows([createRow({ badminton: ['25:00-26:00'] })]);
   assert.equal(parsed.records.length, 0);
   assert.ok(parsed.anomalies.some(a => a.type === '場次時間格式異常'));
+});
+
+test('v33 badminton workbook accepts the Go App phone header and stores sport usage', async () => {
+  const row = createV33BaseRow({ memberType: '台北捷運Go會員' });
+  row['羽球場使用項目（請擇一）'] = '羽球';
+  row['羽球：選擇星期（限選一日）'] = '週一';
+  row['羽球：請選擇1個時段'] = '18:00-20:00';
+  const parsed = await parseRows([row]);
+  assert.equal(parsed.sourceFormType, 'badminton');
+  assert.equal(parsed.records.length, 1);
+  assert.equal(parsed.records[0].sport_usage, '羽球');
+  assert.equal(parsed.records[0].phone, '0912345678');
+  assert.equal(parsed.submissions[0].raw_payload['台北捷運Go App會員綁定手機（10碼）'], '末4碼 5678');
+  assert.ok(!parsed.anomalies.some(a => a.type === '基本資料格式或必填欄位異常'));
+});
+
+test('v33 badminton other-sport branch is normalized to pickleball', async () => {
+  const row = createV33BaseRow();
+  row['羽球場使用項目（請擇一）'] = '其他球類';
+  row['其他球類：選擇星期（限選一日）'] = '週六';
+  row['其他球類：請選擇1個時段 2'] = '08:00-10:00';
+  const parsed = await parseRows([row]);
+  assert.equal(parsed.records.length, 1);
+  assert.equal(parsed.records[0].venue_type, '羽球');
+  assert.equal(parsed.records[0].sport_usage, '匹克球');
+});
+
+test('v33 basketball workbook reads generic branch columns and short hour labels', async () => {
+  const row = createV33BaseRow();
+  row['籃球場使用項目（請擇一）'] = '籃球';
+  row['籃球／其他球類：選擇星期（限選一日）'] = '週日';
+  row['籃球／其他球類：請選擇1個時段 7'] = '12-14時';
+  const parsed = await parseRows([row]);
+  assert.equal(parsed.sourceFormType, 'basketball');
+  assert.equal(parsed.records.length, 1);
+  assert.deepEqual(
+    [parsed.records[0].venue_type, parsed.records[0].sport_usage, parsed.records[0].day_of_week, parsed.records[0].time_slot],
+    ['籃球', '籃球', '周日', '12:00-14:00']
+  );
+});
+
+test('v33 table-tennis workbook splits a multi-select cell into two-hour records', async () => {
+  const row = createV33BaseRow({ memberType: '台北捷運Go會員' });
+  row['B2桌球場｜週五｜可複選時段'] = '08:00-10:00, 10:00-12:00, 12:00-14:00, 14:00-16:00, 16:00-18:00, 18:00-20:00';
+  const parsed = await parseRows([row]);
+  assert.equal(parsed.sourceFormType, 'table_tennis');
+  assert.equal(parsed.records.length, 6);
+  assert.ok(parsed.records.every(r => r.venue_type === 'B2桌球' && r.sport_usage === '桌球'));
+  assert.equal(parsed.records.map(r => r.time_slot).join(','), [
+    '08:00-10:00', '10:00-12:00', '12:00-14:00',
+    '14:00-16:00', '16:00-18:00', '18:00-20:00'
+  ].join(','));
 });
