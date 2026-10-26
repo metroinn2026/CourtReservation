@@ -4049,7 +4049,16 @@ function refreshRuleTimeSelect(selectId, venue, selected=''){
 }
 function settingKey(venue, day, timeSlot){ return `${venue}|${day}|${timeSlot}`; }
 function countSlot(venue,day,startTime,location=DEFAULT_LOCATION){ return allRecords.filter(r=>recordLocation(r)===location && r.venue_type===venue && r.day_of_week===day && String(r.time_slot||'').includes(startTime)).length; }
-function recordHours(r){ const t=String(r.time_slot||''); const parts=t.split('-'); const sh=parseInt(parts[0],10); const eh=parseInt((parts[1]||'').split(':')[0],10); if(!isNaN(sh)&&!isNaN(eh)) return Math.max(1,eh-sh+1); return 2; }
+function recordHours(r){
+  // Open intervals (e.g. 12:00-14:00) and legacy inclusive end times (12:00-13:59).
+  const slot=String(r?.time_slot||'').trim().replace(/[–—~～至]/g,'-');
+  const match=slot.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  if(!match) return getVenueDurationHours(r?.venue_type);
+  const start=Number(match[1])*60+Number(match[2]);
+  const end=Number(match[3])*60+Number(match[4]);
+  const duration=(end-start+(Number(match[4])===59 ? 1 : 0))/60;
+  return duration>0 && duration<=24 ? Math.round(duration*100)/100 : getVenueDurationHours(r?.venue_type);
+}
 function escapeHtml(s){ return String(s??'').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 function getAdminLocations(){
   const locations=[...new Set(allRecords.map(recordLocation).filter(Boolean))];
