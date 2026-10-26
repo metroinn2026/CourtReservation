@@ -3996,7 +3996,7 @@ let allLogs = [];
 let capacitySettings = {};
 let closedSlotSettings = {};
 let systemSettings = {};
-let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', usage:'', day:'', time:'', anomaly:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
+let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', usage:'', day:'', time:'', anomaly:'', lotteryFilter:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let recordsActionTab = 'filter';
 let selectedRecordIds = new Set();
 let pendingRecordStatusChanges = new Map();
@@ -4866,6 +4866,7 @@ function renderDashboard(){
   document.querySelectorAll('.anomaly-text-action, .anomaly-go').forEach(b=>b.onclick=()=>{
     recordsActionTab='review';
     recordState.anomaly='';
+    recordState.lotteryFilter='';
     recordState.page=1;
     renderPage('records');
     document.querySelector('.records-function-tabs')?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -5004,6 +5005,11 @@ function getFilteredRecords(){
     if(recordState.usage && courtUsage(r)!==recordState.usage) return false;
     if(recordState.day && r.day_of_week!==recordState.day) return false;
     if(recordState.time && r.time_slot!==recordState.time) return false;
+    const lotteryStatus=pendingRecordStatusChanges.has(String(r.id))?pendingRecordStatusChanges.get(String(r.id)):r.lottery_status;
+    const lf=recordState.lotteryFilter||'';
+    if(lf==='__not_drawn__' && String(lotteryStatus||'').trim())return false;
+    if(lf==='__backup__' && !/^候補\d+$/.test(String(lotteryStatus||'')))return false;
+    if(lf && lf!=='__not_drawn__' && lf!=='__backup__' && lotteryStatus!==lf)return false;
     const anomalyTypes=getRecordAnomalyTypes(r);
     if(recordState.anomaly==='__normal__' && anomalyTypes.length>0) return false;
     if(recordState.anomaly && recordState.anomaly!=='__normal__' && !anomalyTypes.includes(recordState.anomaly)) return false;
@@ -5095,7 +5101,6 @@ function renderRecordsPage(){
             <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
             ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','截止後登記'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
           </select>
-          <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
         </div>
         <div class="records-filter-actions">
           <button id="applyFilterBtn" class="btn btn-primary">篩選</button>
@@ -5126,7 +5131,6 @@ function renderRecordsPage(){
   document.getElementById('openFormAnomaliesModal').onclick=()=>openCourtImportModal('anomaly');
   document.getElementById('closeCourtImportModal').onclick=closeCourtImportModal;
   document.getElementById('courtImportModal').addEventListener('click',e=>{if(e.target.id==='courtImportModal')closeCourtImportModal();});
-  document.getElementById('perPage').value=String(recordState.perPage);
 
   const applyRecordFilters=()=>{
     recordState.q=document.getElementById('searchQ').value;
@@ -5136,7 +5140,6 @@ function renderRecordsPage(){
     recordState.day=document.getElementById('filterDay').value;
     recordState.time=document.getElementById('filterTime').value;
     recordState.anomaly=document.getElementById('filterAnomaly').value;
-    recordState.perPage=parseInt(document.getElementById('perPage').value,10);
     recordState.page=1;
     selectedRecordIds.clear();
     renderRecordsWorkspace();
@@ -5166,7 +5169,10 @@ function renderRecordsPage(){
     };
   }
   document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
-  document.getElementById('perPage').addEventListener('change',applyRecordFilters);
+  ['filterLocation','filterVenue','filterUsage','filterDay','filterTime','filterAnomaly'].forEach(id=>{
+    document.getElementById(id)?.addEventListener('change',applyRecordFilters);
+  });
+  document.getElementById('searchQ').addEventListener('input',applyRecordFilters);
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
   document.getElementById('exportQualifiedBtn').onclick=()=>exportPendingLotteryWorkbook(getStageGroups(getFilteredRecords()));
 
@@ -5388,8 +5394,16 @@ function renderRecordsTable(){
 
   let html=`<div class="small records-table-meta"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span>`;
   if(isBatch) html+=`<span>已勾選 <strong>${selectedRecordIds.size}</strong> 筆｜已修改 <strong>${pendingRecordStatusChanges.size}</strong> 筆</span>`;
-  html+=`</div>`;
-
+  html+=`<span class="records-instant-filter-controls" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <label for="recordsLotteryStatusFilter">抽籤狀態</label>
+    <select id="recordsLotteryStatusFilter" title="選擇後立即篩選">
+      <option value="">全部狀態</option><option value="__not_drawn__">未抽籤</option>
+      <option value="中籤">中籤</option><option value="__backup__">備取</option>
+      <option value="未中籤">未中籤</option><option value="放棄">放棄</option>
+    </select>
+    <label for="recordsPerPage">每頁顯示</label>
+    <select id="recordsPerPage"><option value="20">20筆</option><option value="50">50筆</option><option value="100">100筆</option></select>
+  </span></div>`;
   if(isBatch){
     html+=`
       <div class="records-list-actionbar">
@@ -5402,7 +5416,7 @@ function renderRecordsTable(){
             <option value="未中籤">未中籤</option>
             <option value="__clear__">未抽籤</option>
           </select>
-          <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將上方選取的狀態套用至勾選資料，需再儲存才會更新">篩選</button>
+          <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將上方選取的狀態套用至勾選資料，需再儲存才會更新">套用至勾選</button>
           <button id="markSelectedNotWonBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將勾選資料批次暫存為未中籤；請再按儲存狀態變更">將勾選設為未中籤</button>
           <button id="deleteSelectedFromListBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>刪除勾選資料</button>
         </div>
@@ -5487,6 +5501,26 @@ function renderRecordsTable(){
 
   const saveStatusBtn=document.getElementById('savePendingRecordStatusBtn');
   if(saveStatusBtn) saveStatusBtn.onclick=savePendingRecordStatusChanges;
+  const statusFilter=document.getElementById('recordsLotteryStatusFilter');
+  if(statusFilter){
+    statusFilter.value=recordState.lotteryFilter||'';
+    statusFilter.onchange=()=>{
+      recordState.lotteryFilter=statusFilter.value;
+      recordState.page=1;
+      selectedRecordIds.clear();
+      renderRecordsWorkspace();
+    };
+  }
+  const pageFilter=document.getElementById('recordsPerPage');
+  if(pageFilter){
+    pageFilter.value=String(recordState.perPage);
+    pageFilter.onchange=()=>{
+      recordState.perPage=Number(pageFilter.value)||20;
+      recordState.page=1;
+      selectedRecordIds.clear();
+      renderRecordsWorkspace();
+    };
+  }
 }
 
 function shortLocationName(value){
@@ -5663,7 +5697,7 @@ function renderRecordsTable(){
         <option value="未中籤">未中籤</option>
         <option value="__clear__">未抽籤</option>
       </select>
-      <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將上方選取的狀態套用至勾選資料，需再儲存才會更新">篩選</button>
+      <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將上方選取的狀態套用至勾選資料，需再儲存才會更新">套用至勾選</button>
       <button id="markSelectedNotWonBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將勾選資料批次暫存為未中籤；請再按儲存狀態變更">將勾選設為未中籤</button>
       <button id="deleteSelectedFromListBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>刪除勾選資料</button>
     </div>
