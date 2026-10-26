@@ -9,7 +9,7 @@ const admin = '00000000-0000-0000-0000-000000000001';
 const root = new URL('../', import.meta.url);
 before(async () => {
   await db.exec(await readFile(new URL('tests/fixtures/schema.sql', root), 'utf8'));
-  for (const file of ['v16_registration_unique_index_migration.sql', 'v16_import_existing_submissions_STAGING.sql', 'v16_reconcile_all_imports_STAGING.sql']) {
+  for (const file of ['v16_registration_unique_index_migration.sql', 'v16_import_existing_submissions_STAGING.sql', 'v16_reconcile_all_imports_STAGING.sql', 'v33_form_import_PRODUCTION_READY.sql']) {
     try { await db.exec(await readFile(new URL('sql/' + file, root), 'utf8')); }
     catch (e) { throw new Error(`${file}: ${e.message} at ${e.position || ''} ${e.where || ''}`); }
   }
@@ -197,6 +197,17 @@ test('failure in reconciliation rolls back the entire import', async () => {
     assert.equal(await count('lottery_form_import_batches'),0);
   } finally {
     await db.exec(await readFile(new URL('sql/v16_reconcile_all_imports_STAGING.sql',root),'utf8'));
+  }
+});
+test('production importer remains usable when optional reconciler is not installed', async () => {
+  await db.exec('ALTER FUNCTION public.court_v16_reconcile_import_anomalies() RENAME TO court_v16_reconcile_import_anomalies_temporarily_disabled');
+  try {
+    const result = await importBatch(payload());
+    assert.equal(result.inserted_records, 1);
+    assert.equal(result.reconciliation_performed, false);
+    assert.equal(await count('lottery_records'), 1);
+  } finally {
+    await db.exec('ALTER FUNCTION public.court_v16_reconcile_import_anomalies_temporarily_disabled() RENAME TO court_v16_reconcile_import_anomalies');
   }
 });
 test('sensitive raw identity fields are stripped before persistence', async () => {
