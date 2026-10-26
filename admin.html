@@ -5098,7 +5098,7 @@ function renderRecordsPage(){
           <select id="perPage"><option value="20">每頁20筆</option><option value="50">每頁50筆</option><option value="100">每頁100筆</option></select>
         </div>
         <div class="records-filter-actions">
-          <button id="applyFilterBtn" class="btn btn-primary">套用條件</button>
+          <button id="applyFilterBtn" class="btn btn-primary">篩選</button>
           <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray">顯示全部登記</button>
           <button id="exportBtn" class="btn btn-primary">匯出目前名單</button>
           <button id="exportQualifiedBtn" class="btn btn-gray" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
@@ -5402,7 +5402,8 @@ function renderRecordsTable(){
             <option value="未中籤">未中籤</option>
             <option value="__clear__">未抽籤</option>
           </select>
-          <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>套用至勾選</button>
+          <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將上方選取的狀態套用至勾選資料，需再儲存才會更新">篩選</button>
+          <button id="markSelectedNotWonBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將勾選資料批次暫存為未中籤；請再按儲存狀態變更">將勾選設為未中籤</button>
           <button id="deleteSelectedFromListBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>刪除勾選資料</button>
         </div>
         <button id="savePendingRecordStatusBtn" class="btn btn-primary" ${pendingRecordStatusChanges.size?'':'disabled'}>
@@ -5478,6 +5479,8 @@ function renderRecordsTable(){
 
   const applySelectedStatusBtn=document.getElementById('applySelectedStatusBtn');
   if(applySelectedStatusBtn) applySelectedStatusBtn.onclick=stageSelectedRecordStatus;
+  const markSelectedNotWonBtn=document.getElementById('markSelectedNotWonBtn');
+  if(markSelectedNotWonBtn) markSelectedNotWonBtn.onclick=stageSelectedNotWon;
 
   const deleteSelectedFromListBtn=document.getElementById('deleteSelectedFromListBtn');
   if(deleteSelectedFromListBtn) deleteSelectedFromListBtn.onclick=batchDeleteSelectedRecords;
@@ -5537,6 +5540,24 @@ function promptBackupRank(){
   }
   return `候補${Number(raw)}`;
 }
+function stageSelectedNotWon(){
+  const ids=[...selectedRecordIds].map(String);
+  if(!ids.length){alert('請先勾選要設為未中籤的登記資料');return;}
+  const targets=allRecords.filter(r=>ids.includes(String(r.id)));
+  const published=targets.filter(r=>r.result_published);
+  if(published.length){
+    alert(`已勾選資料中有 ${published.length} 筆已公布，請先取消公布後再修改狀態。`);
+    return;
+  }
+  if(!window.confirm(`確定將勾選的 ${targets.length} 筆登記暫存為「未中籤」嗎？\n操作後仍須按「儲存狀態變更」才會寫入資料庫。`))return;
+  for(const record of targets){
+    const id=String(record.id);
+    if(String(record.lottery_status||'')==='未中籤')pendingRecordStatusChanges.delete(id);
+    else pendingRecordStatusChanges.set(id,'未中籤');
+  }
+  renderRecordsTable();
+}
+
 function stageSelectedRecordStatus(){
   const ids=[...selectedRecordIds].map(String);
   if(ids.length===0){ alert('請先勾選要變更狀態的資料'); return; }
@@ -5642,7 +5663,8 @@ function renderRecordsTable(){
         <option value="未中籤">未中籤</option>
         <option value="__clear__">未抽籤</option>
       </select>
-      <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>套用至勾選</button>
+      <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將上方選取的狀態套用至勾選資料，需再儲存才會更新">篩選</button>
+      <button id="markSelectedNotWonBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將勾選資料批次暫存為未中籤；請再按儲存狀態變更">將勾選設為未中籤</button>
       <button id="deleteSelectedFromListBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>刪除勾選資料</button>
     </div>
     <button id="savePendingRecordStatusBtn" class="btn btn-primary" ${pendingRecordStatusChanges.size?'':'disabled'}>
@@ -5684,6 +5706,8 @@ function renderRecordsTable(){
 
   const applySelectedStatusBtn=document.getElementById('applySelectedStatusBtn');
   if(applySelectedStatusBtn) applySelectedStatusBtn.onclick=stageSelectedRecordStatus;
+  const markSelectedNotWonBtn=document.getElementById('markSelectedNotWonBtn');
+  if(markSelectedNotWonBtn) markSelectedNotWonBtn.onclick=stageSelectedNotWon;
 
   const deleteSelectedFromListBtn=document.getElementById('deleteSelectedFromListBtn');
   if(deleteSelectedFromListBtn) deleteSelectedFromListBtn.onclick=batchDeleteSelectedRecords;
