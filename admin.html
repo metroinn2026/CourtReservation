@@ -5200,7 +5200,7 @@ async function renderQualificationReview(container){
     <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待審查／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
     <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
       <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):'此筆原有審查狀態尚未完成，請核對登記內容。'}</div></div>
-      <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(String(r.serial_number||'').slice(0,6))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
+      <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
       <div class="ux-review-edit"><div class="ux-review-field"><label for="qstate-${r.id}">資格審查結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><div class="ux-review-field-help">只有「合格」可列入抽籤名單。</div></div><div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">審查說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="填寫審查原因或處理說明">${escapeHtml(saved.review_note||'')}</textarea></div><div class="ux-review-save"><button class="btn btn-primary" data-qsave="${r.id}">儲存審查結果</button></div></div>
       ${saved.reviewed_at?`<div class="ux-review-history">最近處理：${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</div>`:''}
     </article>`}).join('')||'<div class="ux-review-empty">目前沒有符合此篩選條件的申請。</div>'}</div></div>`;
@@ -6296,7 +6296,7 @@ function maskPhoneForNotice(phone){
   return p;
 }
 
-// SP88 公開抽籤：單一場次一份 Excel；只輸出姓名遮蔽、手機末三碼、固定登記序號。
+// SP88 公開抽籤：單一場次一份 Excel；序號與後台顯示一致（英數6碼），原始完整序號留在資料庫。
 function maskLotteryPublicName(value){
   const s=String(value||'').trim().replace(/\s+/g,'');
   if(!s) return '';
@@ -6321,6 +6321,15 @@ async function exportPendingLotteryWorkbook(stages){
   await loadQualificationReviews();
   if(!qualificationReviewsLoaded){alert('資格審查資料尚未成功載入，請先授權並重新整理。');return;}
   if(!stages?.length){alert('目前沒有可以匯出的場次。');return;}
+  // 檢查整份登記資料的短碼唯一性，避免以六碼從抽籤結果回填時誤配。
+  const ownersByCode=new Map();
+  for(const r of allRecords){
+    const code=compactRecordCode(r);
+    if(!/^[A-Z0-9]{6}$/.test(code)) continue;
+    const owner=String(r.serial_number||'').trim();
+    if(!ownersByCode.has(code)) ownersByCode.set(code,new Set());
+    ownersByCode.get(code).add(owner);
+  }
   const sorted=[...stages].sort((a,b)=>
     venueSortValue(a.venue)-venueSortValue(b.venue)||
     daySortValue(a.day)-daySortValue(b.day)||
@@ -6334,18 +6343,19 @@ async function exportPendingLotteryWorkbook(stages){
     const serials=new Set();
     const rows=[];
     for(const r of [...eligible].sort((a,b)=>String(a.serial_number||'').localeCompare(String(b.serial_number||'')))){
-      const serial=String(r.serial_number||'').trim();
+      const serial=compactRecordCode(r);
       const name=maskLotteryPublicName(r.name);
       const last3=getLotteryPhoneLast3(r);
-      if(!serial||!name||!last3){errors.push(`${stage.venue} ${stage.day} ${stage.time}：序號 ${serial||'(空白)'} 缺少姓名、合法手機或序號`);continue;}
+      if(!/^[A-Z0-9]{6}$/.test(serial)||!name||!last3){errors.push(`${stage.venue} ${stage.day} ${stage.time}：序號 ${serial||'(空白)'} 缺少姓名、合法手機或序號`);continue;}
+      if((ownersByCode.get(serial)?.size||0)>1){errors.push(`${stage.venue} ${stage.day} ${stage.time}：6碼序號 ${serial} 對應多筆不同原始登記序號，為避免對錯人請先處理`);continue;}
       if(serials.has(serial)){errors.push(`${stage.venue} ${stage.day} ${stage.time}：序號 ${serial} 重複`);continue;}
       serials.add(serial);
       rows.push([name,last3,serial]);
     }
     if(rows.length!==eligible.length) continue;
     const ws=XLSX.utils.aoa_to_sheet([['姓名','手機末三碼','序號'],...rows]);
-    ws['!cols']=[{wch:18},{wch:16},{wch:26}];
-    // 指定文字格式：保留末三碼的前導零與完整登記序號。
+    ws['!cols']=[{wch:18},{wch:16},{wch:12}];
+    // 指定文字格式：保留末三碼的前導零與六碼登記序號。
     for(let row=2;row<=rows.length+1;row++){
       for(const col of ['B','C']){const cell=ws[`${col}${row}`];if(cell){cell.t='s';cell.z='@';}}
     }
@@ -6665,7 +6675,17 @@ function renderLotteryPage(){
       for(const n of names){ if(Object.prototype.hasOwnProperty.call(row,n)) return row[n]; }
       return '';
     };
-    const recordMap=new Map(allRecords.map(r=>[String(r.serial_number||'').trim(),r]));
+    const recordMap=new Map();
+    const ambiguousCodes=new Set();
+    for(const record of allRecords){
+      const full=String(record.serial_number||'').trim();
+      if(full) recordMap.set(full,record); // 相容原有完整序號
+      const short=compactRecordCode(record);
+      if(!/^[A-Z0-9]{6}$/.test(short)) continue;
+      if(recordMap.has(short) && recordMap.get(short)?.serial_number!==record.serial_number){
+        ambiguousCodes.add(short);recordMap.delete(short);
+      }else if(!ambiguousCodes.has(short)) recordMap.set(short,record);
+    }
     const globalSeen=new Set();
     const results=[];
     let totalValid=0,totalErrors=0,totalSkipped=0;
@@ -6691,6 +6711,7 @@ function renderLotteryPage(){
         if(!serial){ errors.push({row:excelRow,serial:'',status:String(rawStatus??''),reason:'缺少序號'}); return; }
         if(globalSeen.has(serial)){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'此序號已出現在其他匯入檔案'}); return; }
         globalSeen.add(serial);
+        if(ambiguousCodes.has(serial)){errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'六碼序號對應多筆紀錄，禁止自動配對'});return;}
         const record=recordMap.get(serial);
         if(!record){ errors.push({row:excelRow,serial,status:String(rawStatus??''),reason:'系統找不到此登記序號'}); return; }
         const stageKey=[recordLocation(record),record.venue_type,record.day_of_week,record.time_slot].join('|');
@@ -8312,7 +8333,7 @@ async function parseGoogleFormWorkbook(file){
     if(cap===null)flag('無法核對116年時段',submissionKey,slotKey);
     if(slot.venue==='羽球'&&['其他球類','匹克球'].includes(slot.usage)&&cap!==3)flag('其他球類僅限羽球場3場時段',submissionKey,slotKey);
     const recordKey=await sha256(`${submissionKey}|${slotKey}`);
-    records.push({submission_key:submissionKey,record_key:recordKey,sport_usage:slot.usage,member_key_hash:memberKeyHash,member_type:sub.member_type,member_identifier_last4:identifier.slice(-4),name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:time,serial_number:`GF-${recordKey.slice(0,12).toUpperCase()}`,registered_at:stamp});
+    records.push({submission_key:submissionKey,record_key:recordKey,sport_usage:slot.usage,member_key_hash:memberKeyHash,member_type:sub.member_type,member_identifier_last4:identifier.slice(-4),name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:time,serial_number:recordKey.slice(0,6).toUpperCase(),registered_at:stamp});
     // 用途存於原始回覆欄位，避免在尚未驗證資料庫欄位前增加不相容欄位。
   }
  }
