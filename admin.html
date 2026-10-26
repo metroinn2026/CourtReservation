@@ -4921,7 +4921,7 @@ function statusSortValue(status){
   const s=String(status||'未抽籤');
   if(s==='中籤') return 1;
   if(s.startsWith('候補')) return 2 + (parseInt(s.replace('候補',''),10)||0);
-  if(s==='未中籤') return 50;
+  if(s==='未中籤') return 1000000000;
   return 99;
 }
 function venueSortValue(venue){
@@ -5397,9 +5397,7 @@ function renderRecordsTable(){
           <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
             <option value="__none__">批次變更狀態</option>
             <option value="中籤">中籤</option>
-            <option value="候補1">候補1</option>
-            <option value="候補2">候補2</option>
-            <option value="候補3">候補3</option>
+            <option value="__rank__">備取（輸入順位…）</option>
             <option value="放棄">放棄</option>
             <option value="未中籤">未中籤</option>
             <option value="__clear__">未抽籤</option>
@@ -5470,7 +5468,8 @@ function renderRecordsTable(){
     sel.onchange=()=>{
       const id=String(sel.dataset.statusId);
       const original=String(sel.dataset.original||'');
-      const next=String(sel.value||'');
+      const next=sel.value==='__rank__'?promptBackupRank():String(sel.value||'');
+      if(next===null){renderRecordsTable();return;}
       if(next===original) pendingRecordStatusChanges.delete(id);
       else pendingRecordStatusChanges.set(id,next);
       renderRecordsTable();
@@ -5510,7 +5509,7 @@ function recordStatusTag(status){
   if(s==='中籤') return '<span class="tag green">中籤</span>';
   if(s.startsWith('候補')) return `<span class="tag warn">備取${escapeHtml(s.slice(2))}</span>`;
   if(s==='放棄') return '<span class="tag gray">放棄</span>';
-  if(s==='未中籤') return '<span class="tag gray">未中籤（舊資料）</span>';
+  if(s==='未中籤') return '<span class="tag gray">未中籤</span>';
   return `<span class="tag gray">${escapeHtml(s)}</span>`;
 }
 
@@ -5522,19 +5521,30 @@ function recordStatusSelect(record){
   return `<select class="record-status-select" data-status-id="${record.id}" data-original="${escapeHtml(String(record.lottery_status||''))}" ${disabled}>
     <option value="" ${current===''?'selected':''}>未抽籤</option>
     <option value="中籤" ${current==='中籤'?'selected':''}>中籤</option>
-    ${Array.from({length:100},(_,i)=>i+1).map(n=>`<option value="候補${n}" ${current==='候補'+n?'selected':''}>備取${n}</option>`).join('')}
-    ${/^候補\d+$/.test(current)&&Number(current.replace('候補',''))>100?`<option selected value="${escapeHtml(current)}">備取${escapeHtml(current.replace('候補',''))}</option>`:''}
+    ${/^候補[1-9]\d*$/.test(current)?`<option value="${escapeHtml(current)}" selected>備取${escapeHtml(current.slice(2))}</option>`:''}
+    <option value="__rank__">備取（輸入順位…）</option>
+    <option value="未中籤" ${current==='未中籤'?'selected':''}>未中籤</option>
     <option value="放棄" ${current==='放棄'?'selected':''}>放棄</option>
-    ${current==='未中籤'?'<option value="未中籤" selected>未中籤（舊資料）</option>':''}
   </select>`;
 }
 
+function promptBackupRank(){
+  const answer=window.prompt('請輸入備取順位（正整數，不設上限），例如 37：','1');
+  if(answer===null)return null;
+  const raw=String(answer).trim();
+  if(!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(Number(raw))){
+    alert('請輸入有效的正整數備取順位');return null;
+  }
+  return `候補${Number(raw)}`;
+}
 function stageSelectedRecordStatus(){
   const ids=[...selectedRecordIds].map(String);
   if(ids.length===0){ alert('請先勾選要變更狀態的資料'); return; }
 
   const select=document.getElementById('listBatchStatus');
-  const status=select?.value ?? '';
+  const rawStatus=select?.value ?? '';
+  const status=rawStatus==='__rank__'?promptBackupRank():rawStatus;
+  if(status===null)return;
   if(status==='__none__' || !select){ alert('請先選擇要套用的抽籤狀態'); return; }
 
   const selectedRecords=allRecords.filter(r=>ids.includes(String(r.id)));
@@ -5627,9 +5637,7 @@ function renderRecordsTable(){
       <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
         <option value="__none__">批次變更狀態</option>
         <option value="中籤">中籤</option>
-        <option value="候補1">候補1</option>
-        <option value="候補2">候補2</option>
-        <option value="候補3">候補3</option>
+        <option value="__rank__">備取（輸入順位…）</option>
         <option value="放棄">放棄</option>
         <option value="未中籤">未中籤</option>
         <option value="__clear__">未抽籤</option>
@@ -5666,7 +5674,8 @@ function renderRecordsTable(){
     sel.onchange=()=>{
       const id=String(sel.dataset.statusId);
       const original=String(sel.dataset.original||'');
-      const next=String(sel.value||'');
+      const next=sel.value==='__rank__'?promptBackupRank():String(sel.value||'');
+      if(next===null){renderRecordsTable();return;}
       if(next===original) pendingRecordStatusChanges.delete(id);
       else pendingRecordStatusChanges.set(id,next);
       renderRecordsTable();
@@ -5702,7 +5711,8 @@ async function batchUpdateSelectedLotteryStatus(){
   const rawValue=select ? select.value : '';
   if(!rawValue){ alert('請先選擇要統一變更的抽籤狀態'); return; }
 
-  const status=rawValue==='__clear__' ? '' : rawValue;
+  const status=rawValue==='__clear__' ? '' : rawValue==='__rank__' ? promptBackupRank() : rawValue;
+  if(status===null)return;
   const selectedRecords=allRecords.filter(r=>ids.some(id=>String(id)===String(r.id)));
   const publishedRecords=selectedRecords.filter(r=>r.result_published);
   if(publishedRecords.length>0){
@@ -7241,7 +7251,7 @@ async function applyPromotionSuggestion(stage){
     const s=String(status||'未抽籤');
     if(s==='中籤') return 1;
     if(s.startsWith('候補')) return 2 + (parseInt(s.replace('候補',''),10)||0);
-    if(s==='未中籤') return 50;
+    if(s==='未中籤') return 1000000000;
     return 99;
   }
 
@@ -7333,9 +7343,8 @@ async function applyPromotionSuggestion(stage){
                     <select class="stage-status-select" data-status-id="${r.id}" data-original="${escapeHtml(r.lottery_status||'')}" style="border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;font-weight:800;">
                       <option value="" ${!r.lottery_status?'selected':''}>未抽籤</option>
                       <option value="中籤" ${r.lottery_status==='中籤'?'selected':''}>中籤</option>
-                      <option value="候補1" ${r.lottery_status==='候補1'?'selected':''}>候補1</option>
-                      <option value="候補2" ${r.lottery_status==='候補2'?'selected':''}>候補2</option>
-                      <option value="候補3" ${r.lottery_status==='候補3'?'selected':''}>候補3</option>
+                      ${/^候補[1-9]\d*$/.test(String(r.lottery_status||''))?`<option value="${escapeHtml(r.lottery_status)}" selected>備取${escapeHtml(String(r.lottery_status).slice(2))}</option>`:''}
+                      <option value="__rank__">備取（輸入順位…）</option>
                       <option value="放棄" ${r.lottery_status==='放棄'?'selected':''}>放棄</option>
                       <option value="未中籤" ${r.lottery_status==='未中籤'?'selected':''}>未中籤</option>
                     </select>
@@ -7389,7 +7398,8 @@ async function applyPromotionSuggestion(stage){
     document.querySelectorAll('.stage-status-select').forEach(sel=>{
       sel.onchange=()=>{
         const oldValue=sel.dataset.original || '';
-        const newValue=sel.value || '';
+        const newValue=sel.value==='__rank__'?promptBackupRank():(sel.value || '');
+        if(newValue===null){sel.value=oldValue;return;}
         const r=allRecords.find(x=>String(x.id)===String(sel.dataset.statusId));
         showModal('確認變更抽籤狀態',`確定要將 ${escapeHtml(r?.name||'此筆資料')} 的狀態由「${escapeHtml(oldValue||'未抽籤')}」改為「${escapeHtml(newValue||'未抽籤')}」嗎？`,async()=>{
           const ok=await updateRecordLotteryStatus(sel.dataset.statusId, newValue);
