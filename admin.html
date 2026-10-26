@@ -3904,6 +3904,36 @@ body .ux-review-edit{align-items:end}
 .records-compact-table tr:has(.review-invalid) td:first-child{box-shadow:inset 3px 0 0 #d35151}
 .records-compact-table .tag.identity-go,.records-compact-table .tag.identity-hall,.records-compact-table .tag.sport-usage-tag{font-weight:700}
 </style>
+<style id="records-layout-redesign-v11">
+.records-main-panel{background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important}
+.records-redesign-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:8px 0 14px}
+.records-redesign-header h3{margin:0!important;font-size:21px!important}
+.records-redesign-header span,.records-section-caption span,.records-fixed-filter-title span{color:#64748b;font-size:13px}
+.records-quick-actions,.records-fixed-filter{background:#fff;border:1px solid #e1e8f0;border-radius:14px;padding:17px 20px;margin-bottom:16px}
+.records-quick-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.records-quick-actions>strong{margin-right:10px;font-size:15px}
+.records-authorization-details{width:100%;font-size:13px;color:#64748b}
+.records-authorization-details summary{cursor:pointer;max-width:max-content;padding:6px 0}
+.records-authorization-content{padding:12px 0;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.records-fixed-filter-title,.records-section-caption{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}
+.records-fixed-filter-title strong,.records-section-caption strong{font-size:16px;color:#19334a}
+.records-fixed-filter .records-shared-toolbar{display:grid!important;grid-template-columns:minmax(190px,1.5fr) repeat(4,minmax(130px,1fr))!important;gap:9px!important}
+.records-fixed-filter .records-shared-toolbar input,.records-fixed-filter .records-shared-toolbar select{width:100%!important;min-width:0!important;max-width:unset!important}
+.records-advanced-filter{display:none!important}
+.records-fixed-filter.show-advanced .records-advanced-filter{display:block!important}
+.records-filter-actions{display:flex!important;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px}
+#applyFilterBtn[hidden]{display:none!important}
+.records-section-caption{padding:8px 4px;margin-top:18px;margin-bottom:4px}
+.records-list-filterbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 16px;margin:10px 20px 14px;background:#fff;border:1px solid #dbe5ef;border-radius:12px}
+.records-list-filterbar select{height:38px!important;padding:6px 32px 6px 10px!important;min-width:110px!important}
+.records-list-actionbar{display:block!important;margin:0 20px 14px!important;padding:14px 16px!important;background:#f8fafc!important;border:1px solid #dce4ed!important}
+.records-batch-intro{display:flex;align-items:center;gap:12px;margin-bottom:11px;color:#334155}
+.records-batch-intro span{font-size:12px;color:#64748b}
+.records-list-action-left{display:flex!important;flex-wrap:wrap!important;gap:8px!important;margin-bottom:10px}
+#savePendingRecordStatusBtn{margin-left:auto;display:block}
+@media(max-width:1100px){.records-fixed-filter .records-shared-toolbar{grid-template-columns:repeat(3,minmax(130px,1fr))!important}}
+@media(max-width:650px){.records-fixed-filter .records-shared-toolbar{grid-template-columns:repeat(2,minmax(130px,1fr))!important}.records-redesign-header,.records-fixed-filter-title,.records-section-caption{display:block}.records-quick-actions{padding:13px}}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5076,40 +5106,47 @@ function renderRecordsPage(){
 
   document.getElementById('content').innerHTML=`${renderCards(stats())}
     <div class="panel records-main-panel">
-      <h3>登記資料</h3>
-      <div class="small" style="margin-bottom:14px;padding:10px 12px;background:#f5f7fb;border:1px solid #e4e9f1;line-height:1.7">
+      <div class="records-redesign-header"><h3>登記資料管理</h3><span>先查詢、再勾選，需要時進行批次處理</span></div>
+      <div class="records-quick-actions">
+        <strong>常用作業</strong>
+        <button id="openFormImportModal" type="button" class="btn btn-primary" disabled aria-disabled="true" title="請先完成資料庫授權">匯入 Google 表單</button>
+        <button id="openFormAnomaliesModal" type="button" class="btn btn-gray" disabled aria-disabled="true" title="請先完成資料庫授權">資格審查</button>
+        <details class="records-authorization-details"><summary>資料庫授權及證號查閱設定</summary>
+          <div class="small records-authorization-content">
         🔐 會館會員證號預設遮蔽；授權後可點選眼睛圖示，Go會員不蒐集身分證字號。<br>
         <label>資料庫授權帳號 <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="Supabase Auth Email" style="max-width:200px" /></label>
         <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" style="max-width:160px" /></label>
         <button id="identityAuthBtn" type="button" class="btn btn-gray">授權</button>
         <span id="identityAuthState">${secureIdentityAuthenticated?'已通過授權':'未授權時不顯示完整證號'}</span>
-        <button id="openFormImportModal" type="button" class="btn btn-primary" disabled aria-disabled="true" title="請先完成資料庫授權">匯入 Google 表單</button>
-        <button id="openFormAnomaliesModal" type="button" class="btn btn-primary" disabled aria-disabled="true" title="請先完成資料庫授權">資格審查</button>
+          </div>
+        </details>
       </div>
 
       <div class="records-fixed-filter">
-        <div class="records-fixed-filter-title">篩選條件</div>
+        <div class="records-fixed-filter-title"><strong>1｜查詢登記資料</strong><span>調整條件後自動顯示結果</span></div>
         <div class="toolbar records-shared-toolbar">
           <input id="searchQ" placeholder="搜尋姓名／聯絡手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
           <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
           <select id="filterVenue" title="篩選運動場地"><option value="">全部場地類別</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
-          <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
+          <select id="filterUsage" class="records-advanced-filter" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
           <select id="filterTime" title="未選球類：每小時；羽球/桌球：每1小時；籃球：每2小時">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
-          <select id="filterAnomaly" title="篩選正常或指定異常狀態">
+          <select id="filterAnomaly" class="records-advanced-filter" title="篩選正常或指定異常狀態">
             <option value="" ${recordState.anomaly===''?'selected':''}>全部</option>
             <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
             ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','截止後登記'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
           </select>
         </div>
         <div class="records-filter-actions">
-          <button id="applyFilterBtn" class="btn btn-primary">篩選</button>
-          <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray">顯示全部登記</button>
-          <button id="exportBtn" class="btn btn-primary">匯出目前名單</button>
+          <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
+          <button id="recordsAdvancedToggle" type="button" class="btn btn-gray">進階篩選 ▾</button>
+          <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray">清除篩選條件</button>
+          <button id="exportBtn" class="btn btn-gray">匯出目前名單</button>
           <button id="exportQualifiedBtn" class="btn btn-gray" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
         </div>
       </div>
 
+      <div class="records-section-caption"><strong>2｜查看與管理資料</strong><span>先篩選清單，勾選後再批次修改</span></div>
       <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
         <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
         <button class="records-function-tab ${recordsActionTab==='review'?'active':''}" data-action-tab="review">異常清單</button>
@@ -5146,6 +5183,12 @@ function renderRecordsPage(){
   };
 
   document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
+  const advancedBtn=document.getElementById('recordsAdvancedToggle');
+  advancedBtn.onclick=()=>{
+    const panel=document.querySelector('.records-fixed-filter');
+    const active=panel.classList.toggle('show-advanced');
+    advancedBtn.textContent=active?'收起進階篩選 ▴':'進階篩選 ▾';
+  };
   document.getElementById('clearRecordFiltersBtn').onclick=()=>{
     recordState.q='';
     recordState.location=DEFAULT_LOCATION;
@@ -5395,7 +5438,7 @@ function renderRecordsTable(){
   let html=`<div class="small records-table-meta"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span>`;
   if(isBatch) html+=`<span>已勾選 <strong>${selectedRecordIds.size}</strong> 筆｜已修改 <strong>${pendingRecordStatusChanges.size}</strong> 筆</span>`;
   html+=`</div>`;
-  html+=`<div class="records-list-filterbar" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 12px;margin:0 20px 10px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;">
+  html+=`<div class="records-list-filterbar">
     
     <label for="recordsLotteryStatusFilter">抽籤狀態</label>
     <select id="recordsLotteryStatusFilter" title="選擇後立即篩選">
@@ -5410,6 +5453,7 @@ function renderRecordsTable(){
   if(isBatch){
     html+=`
       <div class="records-list-actionbar">
+        <div class="records-batch-intro"><strong>3｜批次處理</strong><span>勾選紀錄 → 設定狀態 → 儲存變更</span></div>
         <div class="records-list-action-left">
           <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
             <option value="__none__">批次變更狀態</option>
