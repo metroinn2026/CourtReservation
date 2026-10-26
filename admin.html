@@ -6695,6 +6695,8 @@ function renderLotteryPage(){
         }
       }
       if(!files.length) throw new Error('未找到可匯入的 Excel / CSV 檔案。');
+      await loadQualificationReviews();
+      if(!qualificationReviewsLoaded) throw new Error('無法讀取資格審查資料，請重新登入或確認權限。');
       const batch=await parseLotteryResultFiles(files);
       renderLotteryBatchImportPreview(batch);
     }catch(err){
@@ -6711,6 +6713,80 @@ function renderLotteryPage(){
     const m=v.match(/^(?:候補|備取)(\d+)$/);
     if(m) return `候補${Number(m[1])}`;
     return null;
+  }
+
+
+  // SP88「中獎者」原始 Excel：獎項標題為正取／備取，下一行起每行一筆「遮蔽姓名,末三碼,英數6碼」。
+  // SP88 可只輸出部分備取；是否將其餘合格參加者標記未中籤，由預覽選項與嚴格人數核對決定。
+  function parseSP88Results(matrix,fileName,recordMap,ambiguousCodes,globalSeen){
+    const valid=[],errors=[],skipped=[];
+    const title=String(matrix?.[0]?.[1]||'').trim();
+    const declared=Number(String(matrix?.[3]?.[1]||'').match(/\d+/)?.[0]||0);
+    const resultCount=Number(String(matrix?.[5]?.[1]||'').match(/(\d+)\s*名中獎者/)?.[1]||0);
+    let section='',waitRank=0,winRank=0,readCount=0;
+    const stageKeys=new Set();
+    matrix.forEach((cells,idx)=>{
+      const raw=String(cells?.[0]??'').trim();
+      if(/^正取\s*[.…·・-]*\s*\d+\s*個名額/.test(raw)){section='winner';return;}
+      if(/^備取\s*[.…·・-]*\s*\d+\s*個名額/.test(raw)){section='waitlist';return;}
+      if(!section || !raw || raw==='中獎者') return;
+      // Other section headings must never be mistaken for a participant.
+      if(!raw.includes(',')) return;
+      readCount++;
+      const parts=raw.split(/[,，]/).map(x=>x.trim());
+      if(parts.length!==3){errors.push({row:idx+1,serial:'',status:'',reason:'SP88 名單必須是姓名、手機末三碼、6碼序號'});return;}
+      const [masked,phone3,serialRaw]=parts;
+      const serial=serialRaw.toUpperCase();
+      const status=section==='winner'?'中籤':`候補${++waitRank}`;
+      if(section==='winner') winRank++;
+      if(!/^[A-Z0-9]{6}$/.test(serial) || !/^\d{3}$/.test(phone3)){
+        errors.push({row:idx+1,serial,status,reason:'序號須為6碼英數，手機末三碼須為3位數字'});return;
+      }
+      if(globalSeen.has(serial)){errors.push({row:idx+1,serial,status,reason:'序號重複出現在本次匯入檔案'});return;}
+      globalSeen.add(serial);
+      if(ambiguousCodes.has(serial)){errors.push({row:idx+1,serial,status,reason:'六碼序號對應多筆紀錄'});return;}
+      const record=recordMap.get(serial);
+      if(!record){errors.push({row:idx+1,serial,status,reason:'找不到對應登記序號；請確認是否已匯入該場次名單'});return;}
+      if(String(record.phone||'').slice(-3)!==phone3){errors.push({row:idx+1,serial,status,reason:'手機末三碼與登記資料不一致'});return;}
+      const mask=(name)=>{const a=Array.from(String(name||''));return a.length<=1?a.join(''):a.length===2?a[0]+'○':a[0]+'○'.repeat(a.length-2)+a[a.length-1];};
+      if(mask(record.name).replace(/[ＯO]/g,'○')!==masked.replace(/[ＯO]/g,'○')){
+        errors.push({row:idx+1,serial,status,reason:'遮蔽姓名與資料庫不一致'});return;
+      }
+      if(record.result_published || record.lottery_locked || String(record.lottery_status||'').trim()){
+        errors.push({row:idx+1,serial,status,reason:'已有抽籤結果或已發布，請先依現行管理程序解除鎖定'});return;
+      }
+      stageKeys.add([recordLocation(record),record.venue_type,record.day_of_week,record.time_slot].join('|'));
+      valid.push({row:idx+1,serial,status,record});
+    });
+    if(!title){errors.push({row:'-',serial:'',status:'',reason:'缺少 SP88 抽獎主題'});}
+    if(!/\d{1,2}[:：]\d{2}\s*[-–~至]\s*\d{1,2}[:：]\d{2}/.test(title)){
+      errors.push({row:'-',serial:'',status:'',reason:'SP88 主題未含完整時段，無法核對場次'});
+    }
+    if(stageKeys.size!==1){errors.push({row:'-',serial:'',status:'',reason:'本檔案結果沒有對應唯一場次（可能尚未匯入登記資料或混合不同場次）'});}
+    let stageLabel='';
+    if(stageKeys.size===1){
+      const [loc,venue,day,time]=[...stageKeys][0].split('|');
+      stageLabel=`${locationLabel(loc)}｜${venue}｜${day}｜${time}`;
+      const norm=(v)=>String(v||'').replace(/週/g,'周').replace(/[–—]/g,'-').replace(/\s/g,'');
+      const dayMatch=title.match(/(?:週|周)[一二三四五六日]/)?.[0];
+      const timeMatch=title.match(/\d{1,2}[:：]\d{2}\s*[-–~至]\s*\d{1,2}[:：]\d{2}/)?.[0];
+      if(!dayMatch || norm(dayMatch)!==norm(day)) errors.push({row:'-',serial:'',status:'',reason:'SP88 主題星期與登記場次不一致'});
+      if(!timeMatch || norm(timeMatch.replace(/[：]/g,':'))!==norm(time)) errors.push({row:'-',serial:'',status:'',reason:'SP88 主題時段與登記場次不一致'});
+      if(venue.includes('羽球')&&!title.includes('羽球') || venue.includes('籃球')&&!title.includes('籃球') || venue.includes('桌球')&&!title.includes('桌球')) errors.push({row:'-',serial:'',status:'',reason:'SP88 主題運動場地與登記場次不一致'});
+    }
+    if(resultCount && resultCount!==readCount) errors.push({row:'-',serial:'',status:'',reason:`SP88 宣告中獎 ${resultCount} 人，但實際辨識 ${readCount} 人`});
+    if(!valid.length)errors.push({row:'-',serial:'',status:'',reason:'未解析到任何有效正取／備取結果'});
+    // 比對整個場次的合格名單。SP88 只提供中獎者與參加總數，不包含其餘參加者的序號。
+    // 因此只有在後台合格人數與 SP88 宣告總數完全相符時，才允許自動補上未中籤。
+    const stageRecords=stageKeys.size===1 ? allRecords.filter(r=>
+      [recordLocation(r),r.venue_type,r.day_of_week,r.time_slot].join('|')===[...stageKeys][0]) : [];
+    const qualified=stageRecords.filter(isQualifiedForLottery);
+    const missing=qualified.filter(r=>!valid.some(v=>v.record.id===r.id));
+    const match=declared>0 && qualified.length===declared && valid.length<=declared &&
+      valid.every(v=>isQualifiedForLottery(v.record)) &&
+      stageRecords.every(r=>!r.result_published && !r.lottery_locked && !String(r.lottery_status||'').trim());
+    if(!match) skipped.push({row:'-',serial:'',name:'',reason:`整場自動設為未中籤不可用：SP88 參加 ${declared||'未提供'} 人，後台同場次合格 ${qualified.length} 人；或已有結果／審查未完成`});
+    return {fileName,valid,errors,skipped,stageLabel,totalRows:readCount,sp88:true,declared,qualifiedCount:qualified.length,autoMissing:missing,canSetMissing:match};
   }
 
   async function parseLotteryResultFiles(files){
@@ -6738,6 +6814,13 @@ function renderLotteryPage(){
       const buffer=await file.arrayBuffer();
       const workbook=XLSX.read(buffer,{type:'array'});
       const sheet=workbook.Sheets[workbook.SheetNames[0]];
+      const matrix=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:false});
+      if(String(matrix?.[0]?.[0]||'').includes('抽獎主題')){
+        const sp88=parseSP88Results(matrix,file.name,recordMap,ambiguousCodes,globalSeen);
+        totalValid+=sp88.valid.length; totalErrors+=sp88.errors.length; totalSkipped+=sp88.skipped.length;
+        results.push(sp88);
+        continue;
+      }
       const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false});
       const valid=[],errors=[],skipped=[];
       const stageKeys=new Set();
@@ -6787,58 +6870,81 @@ function renderLotteryPage(){
     const box=document.getElementById('importLotteryPreview');
     if(!box) return;
     window.pendingLotteryImport=batch;
-    const fileRows=batch.files.map(f=>`<tr>
-      <td>${escapeHtml(f.fileName)}</td>
-      <td>${escapeHtml(f.stageLabel||'-')}</td>
-      <td>${f.valid.length}</td>
-      <td style="color:${f.errors.length?'#b91c1c':'#16a34a'};font-weight:800;">${f.errors.length}</td>
-      <td>${f.skipped.length}</td>
-    </tr>`).join('');
+    const sp88=batch.files.filter(f=>f.sp88);
+    const autoAvailable=sp88.every(f=>f.canSetMissing) && sp88.length>0;
+    const autoCount=sp88.reduce((n,f)=>n+(f.canSetMissing?f.autoMissing.length:0),0);
+    // 非 SP88 整理表不提供整場自動推算。
+    const modeHtml=sp88.length?`<div class="panel" style="margin:12px 0;background:#fff;border:1px solid #dbe4ee;">
+      <strong style="display:block;margin-bottom:8px;">SP88 抽籤結果匯入方式</strong>
+      <label style="display:block;margin-bottom:9px;cursor:${autoAvailable?'pointer':'not-allowed'};"><input type="radio" name="sp88ImportMode" value="all" ${autoAvailable?'checked':''} ${autoAvailable?'':'disabled'}>
+      <strong>匯入結果並將其餘人員設為「未中籤」（建議）</strong><div class="small" style="margin-left:23px">更新正取及備取順位；其餘未出現在結果中的同場次合格登記者，自動設為「未中籤」。需通過人數及場次核對。</div></label>
+      <label style="display:block;cursor:pointer;"><input type="radio" name="sp88ImportMode" value="partial" ${autoAvailable?'':'checked'}> <strong>僅匯入正取及備取結果</strong><div class="small" style="margin-left:23px">其餘登記者維持原狀，不自動修改。</div></label>
+      <div id="sp88ModeSummary" class="msg info" style="margin-top:10px"></div>
+      ${!autoAvailable?'<div class="msg error">部分場次的 SP88 參加人數與後台合格人數不一致，或有結果已鎖定，無法自動設定未中籤。請核對場次、資格名單及抽籤檔案。</div>':''}
+    </div>`:'';
+    const fileRows=batch.files.map(f=>`<tr><td>${escapeHtml(f.fileName)}</td><td>${escapeHtml(f.stageLabel||'-')}</td><td>${f.valid.length}</td><td style="color:${f.errors.length?'#b91c1c':'#16a34a'};font-weight:800">${f.errors.length}</td><td>${f.sp88?`SP88 ${f.declared} 人／後台合格 ${f.qualifiedCount} 人`:f.skipped.length}</td></tr>`).join('');
     const firstErrors=batch.files.flatMap(f=>f.errors.map(e=>({...e,fileName:f.fileName}))).slice(0,10);
-    const errorRows=firstErrors.map(x=>`<tr><td>${escapeHtml(x.fileName)}</td><td>${x.row}</td><td>${escapeHtml(x.serial)}</td><td>${escapeHtml(x.status)}</td><td style="color:#b91c1c;font-weight:800;">${escapeHtml(x.reason)}</td></tr>`).join('');
-    box.innerHTML=`
-      <div class="panel" style="border:2px solid #93c5fd;background:#f8fbff;">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
-          <div><h3 style="margin:0 0 4px;">批次抽籤結果匯入預覽</h3><div class="small">共 ${batch.totalFiles} 個檔案｜可匯入 ${batch.totalValid} 筆｜錯誤 ${batch.totalErrors} 筆｜略過 ${batch.totalSkipped} 筆</div></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;"><button id="cancelLotteryImportBtn" class="btn btn-gray">取消</button><button id="confirmLotteryImportBtn" class="btn btn-primary" ${batch.totalValid===0 || batch.totalErrors>0 ? 'disabled' : ''}>確認批次匯入並鎖定</button></div>
-        </div>
-        <div class="table-wrap" style="margin-bottom:12px;"><table style="min-width:760px"><thead><tr><th>檔案</th><th>場次</th><th>可匯入</th><th>錯誤</th><th>略過</th></tr></thead><tbody>${fileRows}</tbody></table></div>
-        ${batch.totalErrors?`<div class="msg error"><strong>有 ${batch.totalErrors} 筆／項錯誤，為避免誤匯入，目前暫不開放確認。</strong><br>請修正檔案後重新批次上傳。</div><div class="table-wrap"><table style="min-width:850px"><thead><tr><th>檔案</th><th>Excel列</th><th>序號</th><th>抽籤狀態</th><th>原因</th></tr></thead><tbody>${errorRows}</tbody></table></div>`:'<div class="msg ok">全部檔案格式檢查完成，可一次批次匯入。匯入後結果會鎖定且維持「未公布」。</div>'}
-      </div>`;
+    const errorRows=firstErrors.map(x=>`<tr><td>${escapeHtml(x.fileName)}</td><td>${x.row}</td><td>${escapeHtml(x.serial)}</td><td>${escapeHtml(x.status)}</td><td style="color:#b91c1c;font-weight:800">${escapeHtml(x.reason)}</td></tr>`).join('');
+    box.innerHTML=`<div class="panel" style="border:2px solid #93c5fd;background:#f8fbff">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div><h3 style="margin:0 0 4px">批次抽籤結果匯入預覽</h3><div class="small">共 ${batch.totalFiles} 個檔案｜正取及備取 ${batch.totalValid} 筆｜錯誤 ${batch.totalErrors} 項</div></div>
+      <div style="display:flex;gap:8px"><button id="cancelLotteryImportBtn" class="btn btn-gray">取消</button><button id="confirmLotteryImportBtn" class="btn btn-primary" ${batch.totalValid===0||batch.totalErrors>0?'disabled':''}>確認更新抽籤狀態</button></div>
+    </div><div class="table-wrap"><table style="min-width:680px"><thead><tr><th>檔案</th><th>場次</th><th>正取／備取筆數</th><th>錯誤</th><th>人數核對</th></tr></thead><tbody>${fileRows}</tbody></table></div>
+    ${modeHtml}
+    ${batch.totalErrors?`<div class="msg error">有 ${batch.totalErrors} 項錯誤，禁止整批匯入。請修正後重新上傳。</div><div class="table-wrap"><table><thead><tr><th>檔案</th><th>列</th><th>序號</th><th>狀態</th><th>原因</th></tr></thead><tbody>${errorRows}</tbody></table></div>`:'<div class="msg ok">檔案可辨識；確認後更新資料庫並維持未公布。</div>'}</div>`;
+    const summary=()=>{
+      const mode=box.querySelector('input[name="sp88ImportMode"]:checked')?.value;
+      const count=mode==='all'?autoCount:0;
+      const node=document.getElementById('sp88ModeSummary');
+      if(node)node.textContent=`本次將更新正取／備取 ${batch.totalValid} 人${count?`，並將其餘 ${count} 人設為「未中籤」`:'；其餘人員維持原狀'}。`;
+    };
+    box.querySelectorAll('input[name="sp88ImportMode"]').forEach(r=>r.onchange=summary);
+    summary();
     document.getElementById('cancelLotteryImportBtn').onclick=()=>{box.innerHTML='';window.pendingLotteryImport=null;};
-    const confirmBtn=document.getElementById('confirmLotteryImportBtn');
-    if(confirmBtn) confirmBtn.onclick=()=>confirmLotteryBatchImport(batch);
+    document.getElementById('confirmLotteryImportBtn').onclick=()=>confirmLotteryBatchImport(batch);
   }
 
   async function confirmLotteryBatchImport(batch){
-    if(!batch || batch.totalValid===0 || batch.totalErrors>0) return;
-    const ok=await confirmModal('確認批次匯入抽籤結果',`確定一次匯入 <strong>${batch.totalFiles}</strong> 個檔案、共 <strong>${batch.totalValid}</strong> 筆抽籤結果並鎖定嗎？<br><br>匯入後仍為「未公布」，需另行確認後才會顯示於民眾前台。`);
-    if(!ok) return;
-    const btn=document.getElementById('confirmLotteryImportBtn');
-    if(btn){btn.disabled=true;btn.textContent='批次匯入中...';}
-    const batchId=`excel-batch-${Date.now()}`;
+    if(!batch||batch.totalValid===0||batch.totalErrors>0)return;
+    const mode=document.querySelector('input[name="sp88ImportMode"]:checked')?.value||'partial';
+    const extra=batch.files.flatMap(f=>f.sp88&&mode==='all'&&f.canSetMissing?f.autoMissing.map(r=>({record:r,serial:compactRecordCode(r),status:'未中籤',fileName:f.fileName})):[]);
+    if(mode==='all'&&batch.files.some(f=>f.sp88&&!f.canSetMissing)){alert('人數或場次未通過核對，禁止將其餘人員自動設為未中籤。');return;}
+    const items=[...batch.files.flatMap(f=>f.valid.map(x=>({...x,fileName:f.fileName}))),...extra];
+    if(new Set(items.map(x=>x.record.id)).size!==items.length){alert('重複場次或重複序號，已停止匯入。');return;}
+    // 防止預覽後資料被其他管理員變更：重新讀取最新登記與資格審查資料。
+    await loadAllData();await loadQualificationReviews();
+    if(!qualificationReviewsLoaded){alert('資格審查資料無法讀取，已停止匯入。');return;}
+    const latest=new Map(allRecords.map(r=>[r.id,r]));
+    if(items.some(x=>{const r=latest.get(x.record.id);return !r||r.lottery_locked||r.result_published||String(r.lottery_status||'').trim()||!isQualifiedForLottery(r);})){alert('登記或資格狀態已變更，請重新上傳並預覽。');return;}
+    if(mode==='all'){
+      for(const f of batch.files.filter(x=>x.sp88)){
+        const anchor=f.valid[0]?.record;
+        if(!anchor){alert('缺少場次識別');return;}
+        const key=[recordLocation(anchor),anchor.venue_type,anchor.day_of_week,anchor.time_slot].join('|');
+        const current=allRecords.filter(r=>[recordLocation(r),r.venue_type,r.day_of_week,r.time_slot].join('|')===key);
+        const eligible=current.filter(isQualifiedForLottery);
+        if(!f.canSetMissing||eligible.length!==f.declared||eligible.some(r=>!items.some(x=>x.record.id===r.id))){alert('後台合格參加名單已變更或不完整，請重新上傳預覽。');return;}
+      }
+    }
+    const message=`本次將更新 <strong>正取／備取 ${batch.totalValid} 人</strong>${extra.length?`，並將其餘 <strong>${extra.length} 人設為「未中籤」</strong>`:'，其他人維持原狀'}。<br><br>結果仍為「未公布」。確定執行？`;
+    if(!await confirmModal('確認抽籤結果匯入',message))return;
+    const btn=document.getElementById('confirmLotteryImportBtn');if(btn){btn.disabled=true;btn.textContent='批次匯入中...';}
+    const batchId=`sp88-batch-${Date.now()}`;
     const successIds=[],failed=[];
-    const items=batch.files.flatMap(f=>f.valid.map(x=>({...x,fileName:f.fileName})));
     for(let i=0;i<items.length;i+=15){
       const chunk=items.slice(i,i+15);
       const results=await Promise.all(chunk.map(async item=>{
-        const {error,data}=await db.from(RECORD_TABLE).update({lottery_status:item.status,lottery_locked:true,lottery_batch:batchId,result_published:false,updated_at:new Date().toISOString()}).eq('id',item.record.id).select('id');
-        const noUpdate=!error && (!data || data.length===0);
-        return {item,error:noUpdate?new Error('資料未更新，請確認權限或資料狀態'):error};
+        const {error,data}=await db.from(RECORD_TABLE).update({lottery_status:item.status,lottery_locked:true,lottery_batch:batchId,result_published:false,updated_at:new Date().toISOString()}).eq('id',item.record.id).eq('result_published',false).eq('lottery_locked',false).select('id');
+        return {item,error:error||(!data?.length?new Error('更新失敗或紀錄狀態已變更'):null)};
       }));
-      results.forEach(({item,error})=>{if(error)failed.push({serial:item.serial,fileName:item.fileName,error});else successIds.push(item.record.id);});
+      results.forEach(({item,error})=>error?failed.push({serial:item.serial,error}):successIds.push(item.record.id));
+      if(failed.length)break;
     }
-    await writeOperationLog('批次匯入 Excel 抽籤結果',{file_count:batch.totalFiles,imported_count:successIds.length,failed_count:failed.length,batch_id:batchId},successIds);
-    if(failed.length){
-      alert(`已匯入 ${successIds.length} 筆，另有 ${failed.length} 筆更新失敗。請重新整理後確認。`);
-    }else{
-      const goPublish=await confirmModal('批次結果已匯入',`已完成 <strong>${batch.totalFiles}</strong> 個檔案、共 <strong>${successIds.length}</strong> 筆抽籤結果匯入並鎖定。<br><br>是否前往「待發布結果」確認？`);
-      if(goPublish){recordsActionTab='publish';recordState.q='';recordState.location=DEFAULT_LOCATION;recordState.venue='';recordState.day='';recordState.time='';recordState.anomaly='結果待發布';recordState.page=1;renderPage('records');}
-    }
-    document.getElementById('importLotteryPreview').innerHTML='';
-    window.pendingLotteryImport=null;
-    await loadAllData();
-    renderLotteryPage();
+    await writeOperationLog('批次匯入 SP88 抽籤結果',{file_count:batch.totalFiles,imported_count:successIds.length,not_selected_count:extra.length,failed_count:failed.length,batch_id:batchId,mode},successIds);
+    if(failed.length)alert(`已成功更新 ${successIds.length} 筆，但有 ${failed.length} 筆失敗。請先查核狀態，勿重複匯入。`);
+    else alert(`已更新 ${successIds.length} 筆抽籤結果，包含 ${extra.length} 筆「未中籤」，目前尚未公布。`);
+    document.getElementById('importLotteryPreview').innerHTML='';window.pendingLotteryImport=null;
+    await loadAllData();renderLotteryPage();
   }
 
 
