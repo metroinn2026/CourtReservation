@@ -4049,6 +4049,39 @@ function refreshRuleTimeSelect(selectId, venue, selected=''){
 }
 function settingKey(venue, day, timeSlot){ return `${venue}|${day}|${timeSlot}`; }
 function countSlot(venue,day,startTime,location=DEFAULT_LOCATION){ return allRecords.filter(r=>recordLocation(r)===location && r.venue_type===venue && r.day_of_week===day && String(r.time_slot||'').includes(startTime)).length; }
+// 僅供承辦人辨識相鄰的桌球登記，不影響資格或抽籤。
+function continuousRegistrationRecordIds(records){
+  const groups=new Map(), marked=new Set();
+  for(const r of records){
+    if(!/^(B1桌球|B2桌球)$/.test(String(r.venue_type||''))) continue;
+    const member=String(r.member_key_hash||'').trim() ||
+      (String(r.member_type||'')+'|'+String(r.phone||'').replace(/\D/g,''));
+    if(!member || member.endsWith('|')) continue;
+    const day=String(r.day_of_week||'').replace(/^周/,'週');
+    const venue=String(r.venue_type||'');
+    const location=String(r.location_name||'北投會館');
+    const match=String(r.time_slot||'').replace(/[–—~～至]/g,'-')
+      .match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+    if(!match) continue;
+    const start=Number(match[1])*60+Number(match[2]);
+    let end=Number(match[3])*60+Number(match[4]);
+    if(Number(match[4])===59)end++;
+    if(end-start!==120)continue;
+    const key=[member,location,venue,day].join('|');
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push({id:r.id,start,end});
+  }
+  for(const group of groups.values()){
+    group.sort((a,b)=>a.start-b.start);
+    for(let i=0;i<group.length-1;i++){
+      if(group[i].end===group[i+1].start){
+        marked.add(group[i].id);
+        marked.add(group[i+1].id);
+      }
+    }
+  }
+  return marked;
+}
 function recordHours(r){
   // Open intervals (e.g. 12:00-14:00) and legacy inclusive end times (12:00-13:59).
   const slot=String(r?.time_slot||'').trim().replace(/[–—~～至]/g,'-');
@@ -5580,6 +5613,8 @@ async function savePendingRecordStatusChanges(){
 }
 function renderRecordsTable(){
   const filtered=getFilteredRecords();
+  // 以所有已載入的登記資料判斷，不受目前篩選與分頁影響。
+  const continuousRecordIds=continuousRegistrationRecordIds(allRecords);
   const totalPages=Math.max(1,Math.ceil(filtered.length/recordState.perPage));
   if(recordState.page>totalPages) recordState.page=totalPages;
   const start=(recordState.page-1)*recordState.perPage;
@@ -5611,7 +5646,7 @@ function renderRecordsTable(){
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td>${qualificationStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'identity-go':'identity-hall'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}</td><td>${recordHours(r)}h</td></tr>`;
+    <td>${anomalyTags(r)}</td><td>${qualificationStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'identity-go':'identity-hall'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
