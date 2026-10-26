@@ -8214,8 +8214,20 @@ document.getElementById('createFirstAdminBtn').onclick=async()=>{
 };
 document.getElementById('logoutBtn').onclick=logout;
 function normalizeFormDay(value){const m=String(value||'').match(/週([一二三四五六日])/);return m?`周${m[1]}`:'';}
-function normalizeFormTime(value){return String(value||'').split(/[,，、\n]/).map(x=>x.trim()).filter(Boolean);}
+function normalizeFormTime(value){
+ return String(value||'').split(/[,，、\n]/).map(x=>x.trim()).filter(Boolean).map(x=>{
+  // 兼容 v31 標準格式、v33 Google 表單選項「12-14時」及全形符號。
+  const t=x.replace(/：/g,':').replace(/[－–—～~]/g,'-').replace(/\s+/g,'');
+  const m=t.match(/^(\d{1,2})(?::(\d{2}))?-(\d{1,2})(?::(\d{2}))?時?$/);
+  if(!m)return t;
+  const a=+m[1],b=+m[3],am=+(m[2]||0),bm=+(m[4]||0);
+  if(a>23||b>24||am>59||bm>59||b===24&&bm)return t;
+  return `${String(a).padStart(2,'0')}:${String(am).padStart(2,'0')}-${String(b).padStart(2,'0')}:${String(bm).padStart(2,'0')}`;
+ });
+}
 function formField(row,title){return String(row[title]??'').trim();}
+function formFieldAny(row,...titles){for(const title of titles){const v=formField(row,title);if(v)return v;}return '';}
+function formColumnPrefixValues(row,...prefixes){return Object.entries(row).filter(([k,v])=>prefixes.some(prefix=>k.startsWith(prefix+'：請選擇1個時段'))&&String(v||'').trim()).flatMap(([,v])=>normalizeFormTime(v));}
 function normalizeFormTimestamp(value){
   if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString();
   if(((typeof value==='number'&&Number.isFinite(value))||(typeof value==='string'&&/^\d{4,6}(?:\.\d+)?$/.test(value.trim())))&&window.XLSX?.SSF?.parse_date_code){
@@ -8269,7 +8281,7 @@ async function parseGoogleFormWorkbook(file){
   const isGo=memberType==='台北捷運Go會員',isBeitou=memberType==='北投會館會員';
   const name=formField(row,'申請人姓名');
   const email=formField(row,'電子郵件地址')||formField(row,'電子郵件');
-  const identifier=(isGo?formField(row,'台北捷運Go會員綁定手機（10碼）'):formField(row,'北投會館會員身分證字號（10碼）')).replace(/\s/g,'').toUpperCase();
+  const identifier=(isGo?formFieldAny(row,'台北捷運Go App會員綁定手機（10碼）','台北捷運Go會員綁定手機（10碼）'):formField(row,'北投會館會員身分證字號（10碼）')).replace(/\s/g,'').toUpperCase();
   const phone=(isGo?identifier:formField(row,'聯絡手機號碼（會館會員，10碼）')).replace(/\D/g,'');
   const stamp=normalizeFormTimestamp(row['時間戳記']);
   const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`);
@@ -8277,7 +8289,7 @@ async function parseGoogleFormWorkbook(file){
   const submissionKey=await sha256([type,stamp,email.toLowerCase(),memberType,identifier,name].join('|'));
   if(seen.has(submissionKey)){flag('重複回覆資料',submissionKey,`第 ${excelRow} 列`);continue;}seen.add(submissionKey);
   const safePayload={...row,'匯入表單類別':type};
-  const key=isGo?'台北捷運Go會員綁定手機（10碼）':'北投會館會員身分證字號（10碼）';
+  const key=isGo?(Object.prototype.hasOwnProperty.call(safePayload,'台北捷運Go App會員綁定手機（10碼）')?'台北捷運Go App會員綁定手機（10碼）':'台北捷運Go會員綁定手機（10碼）'):'北投會館會員身分證字號（10碼）';
   if(Object.prototype.hasOwnProperty.call(safePayload,key))safePayload[key]=`末4碼 ${identifier.slice(-4)}`;
   const sub={submission_key:submissionKey,submitted_at:stamp,member_type:isGo?'台北捷運Go會員':isBeitou?'北投會館會員':'',member_key_hash:memberKeyHash,member_identifier:identifier,name,phone,email,raw_payload:safePayload,excel_row:excelRow};
   submissions.push(sub);
@@ -8286,12 +8298,14 @@ async function parseGoogleFormWorkbook(file){
   if(type==='羽球'||type==='籃球'){
     const useField=type==='羽球'?'羽球場使用項目（請擇一）':'籃球場使用項目（請擇一）';
     const usage=formField(row,useField);
-    const validUse=type==='羽球'?['羽球','匹克球']:['籃球','匹克球'];
+    const validUse=type==='羽球'?['羽球','其他球類','匹克球']:['籃球','其他球類','匹克球'];
     if(!validUse.includes(usage))flag('使用用途異常',submissionKey,`第 ${excelRow} 列：${usage}`);
-    const dayTitle=type==='籃球'?'籃球／匹克球：選擇星期（限選一日）':`${usage}：選擇星期（限選一日）`;
-    const day=normalizeFormDay(formField(row,dayTitle));
-    const prefix=type==='籃球'?'籃球／匹克球':usage;
-    const times=Object.entries(row).filter(([k,v])=>k.startsWith(prefix+'：請選擇1個時段')&&String(v||'').trim()).flatMap(([,v])=>normalizeFormTime(v));
+    const day=normalizeFormDay(type==='籃球'
+      ? formFieldAny(row,'籃球／其他球類：選擇星期（限選一日）','籃球／匹克球：選擇星期（限選一日）')
+      : formField(row,`${usage}：選擇星期（限選一日）`));
+    const times=type==='籃球'
+      ? formColumnPrefixValues(row,'籃球／其他球類','籃球／匹克球')
+      : formColumnPrefixValues(row,usage);
     if(times.length!==1)flag(`${type}登記時段數量異常`,submissionKey,`第 ${excelRow} 列，取得 ${times.length} 個時段`);
     times.forEach(time=>selected.push({venue:type,day,time,usage}));
   }else if(type==='桌球'){
@@ -8318,7 +8332,7 @@ async function parseGoogleFormWorkbook(file){
     if(unique.has(slotKey)){flag('同一回覆重複選擇場次',submissionKey,slotKey);continue;}unique.add(slotKey);
     if(cap===0)flag('非開放長租時段',submissionKey,slotKey);
     if(cap===null)flag('無法核對116年時段',submissionKey,slotKey);
-    if(slot.venue==='羽球'&&slot.usage==='匹克球'&&cap!==3)flag('匹克球僅限羽球場3場時段',submissionKey,slotKey);
+    if(slot.venue==='羽球'&&['其他球類','匹克球'].includes(slot.usage)&&cap!==3)flag('其他球類僅限羽球場3場時段',submissionKey,slotKey);
     const recordKey=await sha256(`${submissionKey}|${slotKey}`);
     records.push({submission_key:submissionKey,record_key:recordKey,sport_usage:slot.usage,member_key_hash:memberKeyHash,member_type:sub.member_type,member_identifier_last4:identifier.slice(-4),name,phone,id_last4:isGo?'':identifier.slice(-4),location_name:DEFAULT_LOCATION,venue_type:slot.venue,day_of_week:slot.day,time_slot:time,serial_number:`GF-${recordKey.slice(0,12).toUpperCase()}`,registered_at:stamp});
     // 用途存於原始回覆欄位，避免在尚未驗證資料庫欄位前增加不相容欄位。
