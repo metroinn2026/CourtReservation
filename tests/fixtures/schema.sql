@@ -26,7 +26,7 @@ CREATE TABLE public.lottery_form_submissions(
 );
 CREATE TABLE public.lottery_records(
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text, phone text, id_last4 text,
- location_name text, venue_type text, day_of_week text, time_slot text, serial_number text,
+ location_name text, venue_type text, sport_usage text, day_of_week text, time_slot text, serial_number text,
  registered_at timestamptz, import_submission_key text, import_record_key text,
  member_type text, member_key_hash text, member_identifier_last4 text,
  lottery_status text, lottery_batch text, lottery_locked boolean DEFAULT false,

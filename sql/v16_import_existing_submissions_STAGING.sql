@@ -1,7 +1,24 @@
--- v16 Google Forms importer repair.
+-- v16 importer repair plus v33 three-form compatibility.
 -- STAGING ONLY. Requires the unique-index migration first and an isolated test DB.
 -- Existing submission rows are retained; missing records are recreated by record key.
 BEGIN;
+
+ALTER TABLE public.lottery_records
+  ADD COLUMN IF NOT EXISTS sport_usage text;
+
+DO $sport_usage_constraint$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint
+    WHERE conname = 'lottery_records_sport_usage_ck'
+      AND conrelid = 'public.lottery_records'::pg_catalog.regclass
+  ) THEN
+    ALTER TABLE public.lottery_records
+      ADD CONSTRAINT lottery_records_sport_usage_ck
+      CHECK (sport_usage IS NULL OR sport_usage IN ('羽球', '籃球', '匹克球', '桌球')) NOT VALID;
+  END IF;
+END
+$sport_usage_constraint$;
 
 DO $preflight$
 BEGIN
@@ -44,6 +61,7 @@ DECLARE
   v_member_type text;
   v_identifier text;
   v_member_hash text;
+  v_sport_usage text;
   v_sub_key text;
   v_rec_key text;
   v_submitted_at_text text;
@@ -148,6 +166,7 @@ BEGIN
     v_safe_payload := v_raw_payload
       - '北投會館會員身分證字號（10碼）'
       - '台北捷運Go會員綁定手機（10碼）'
+      - '台北捷運Go App會員綁定手機（10碼）'
       - 'member_identifier'
       - 'id_number'
       - 'identity';
@@ -213,6 +232,16 @@ BEGIN
        OR COALESCE(v_rec->>'day_of_week', '') NOT IN ('周一', '周二', '周三', '周四', '周五', '周六', '周日') THEN
       RAISE EXCEPTION '運動類型或星期格式錯誤：%', v_rec_key;
     END IF;
+    v_sport_usage := COALESCE(NULLIF(v_rec->>'sport_usage', ''), CASE v_rec->>'venue_type'
+      WHEN '羽球' THEN '羽球'
+      WHEN '籃球' THEN '籃球'
+      ELSE '桌球'
+    END);
+    IF (v_rec->>'venue_type' = '羽球' AND v_sport_usage NOT IN ('羽球', '匹克球'))
+       OR (v_rec->>'venue_type' = '籃球' AND v_sport_usage NOT IN ('籃球', '匹克球'))
+       OR (v_rec->>'venue_type' IN ('B1桌球', 'B2桌球') AND v_sport_usage <> '桌球') THEN
+      RAISE EXCEPTION '場地與運動用途不一致：%', v_rec_key;
+    END IF;
     v_time_parts := pg_catalog.regexp_match(
       COALESCE(v_rec->>'time_slot', ''),
       '^\s*([0-9]{1,2}):([0-9]{2})\s*[-–~至]\s*([0-9]{1,2}):([0-9]{2})\s*$'
@@ -228,7 +257,7 @@ BEGIN
     v_end_min := v_time_parts[3]::integer * 60 + v_time_parts[4]::integer;
     IF v_start_min >= v_end_min THEN RAISE EXCEPTION '時段結束時間需晚於開始時間：%', v_rec_key; END IF;
 
-    SELECT r.id, r.import_submission_key, r.venue_type, r.day_of_week, r.time_slot,
+    SELECT r.id, r.import_submission_key, r.venue_type, r.sport_usage, r.day_of_week, r.time_slot,
            r.member_key_hash, r.member_type, r.member_identifier_last4, r.id_last4,
            r.location_name, r.serial_number, r.name, r.phone, r.registered_at
       INTO v_existing_record
@@ -237,6 +266,7 @@ BEGIN
     IF FOUND THEN
       IF v_existing_record.import_submission_key IS DISTINCT FROM v_sub_key
          OR v_existing_record.venue_type IS DISTINCT FROM v_rec->>'venue_type'
+         OR v_existing_record.sport_usage IS DISTINCT FROM v_sport_usage
          OR v_existing_record.day_of_week IS DISTINCT FROM v_rec->>'day_of_week'
          OR v_existing_record.time_slot IS DISTINCT FROM v_rec->>'time_slot'
          OR v_existing_record.member_key_hash IS DISTINCT FROM v_source.member_key_hash
@@ -256,13 +286,13 @@ BEGIN
     END IF;
 
     INSERT INTO public.lottery_records(
-      name, phone, id_last4, location_name, venue_type, day_of_week, time_slot,
+      name, phone, id_last4, location_name, venue_type, sport_usage, day_of_week, time_slot,
       serial_number, registered_at, import_submission_key, import_record_key,
       member_type, member_key_hash, member_identifier_last4
     ) VALUES (
       v_rec->>'name', v_rec->>'phone',
       CASE WHEN v_source.member_type = '北投會館會員' THEN v_source.member_identifier ELSE '' END,
-      COALESCE(NULLIF(v_rec->>'location_name', ''), '北投會館'), v_rec->>'venue_type',
+      COALESCE(NULLIF(v_rec->>'location_name', ''), '北投會館'), v_rec->>'venue_type', v_sport_usage,
       v_rec->>'day_of_week', v_rec->>'time_slot', v_rec->>'serial_number',
       v_registered_at,
       v_sub_key, v_rec_key, v_source.member_type, v_source.member_key_hash,
@@ -272,7 +302,7 @@ BEGIN
     IF FOUND THEN
       v_inserted := v_inserted + 1;
     ELSE
-      SELECT r.id, r.import_submission_key, r.venue_type, r.day_of_week, r.time_slot,
+      SELECT r.id, r.import_submission_key, r.venue_type, r.sport_usage, r.day_of_week, r.time_slot,
              r.member_key_hash, r.member_type, r.member_identifier_last4, r.id_last4,
              r.location_name, r.serial_number, r.name, r.phone, r.registered_at
         INTO v_existing_record
@@ -281,6 +311,7 @@ BEGIN
       IF NOT FOUND
          OR v_existing_record.import_submission_key IS DISTINCT FROM v_sub_key
          OR v_existing_record.venue_type IS DISTINCT FROM v_rec->>'venue_type'
+         OR v_existing_record.sport_usage IS DISTINCT FROM v_sport_usage
          OR v_existing_record.day_of_week IS DISTINCT FROM v_rec->>'day_of_week'
          OR v_existing_record.time_slot IS DISTINCT FROM v_rec->>'time_slot'
          OR v_existing_record.member_key_hash IS DISTINCT FROM v_source.member_key_hash
