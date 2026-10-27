@@ -8748,9 +8748,16 @@ async function commitBatchGoogleFormImports(){
   for(const p of files){
     if(progress)progress.textContent='正在處理：'+p.sourceType+'｜已完成 '+lines.length+' / '+files.length;
     try{
+      const correctedKeys=new Set(importMode==='append'?corrections.filter(d=>d.source===p.sourceType).map(d=>d.sub.submission_key):[]);
+      const submissions=p.submissions.filter(x=>!correctedKeys.has(x.submission_key));
+      const records=p.records.filter(x=>!correctedKeys.has(x.submission_key));
+      const anomalies=p.anomalies.filter(x=>!(x.submissionKeys||[]).some(k=>correctedKeys.has(k)));
+      if(!submissions.length&&importMode==='append'){
+        lines.push({ok:true,text:p.sourceType+'：沒有需要新增的紀錄，等待套用選取的重複資料修正'});
+        continue;
+      }
       const {data,error}=await importDb.rpc(importMode==='replace'?'replace_google_form_source_v50':'import_google_form_batch_v3',{p_payload:{
-        batch_key:crypto.randomUUID(),source_type:p.sourceType,
-        submissions:p.submissions,records:p.records,anomalies:p.anomalies
+        batch_key:crypto.randomUUID(),source_type:p.sourceType,submissions,records,anomalies
       }});
       if(error)throw error;
       lines.push({ok:true,text:p.sourceType+(importMode==='replace'?'：成功重建 '+(data?.replaced_records??0)+' 筆':'：新增 '+(data?.inserted_records??0)+' 筆，略過重複 '+(data?.duplicate_records??0)+' 筆')});
