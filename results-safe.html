@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>抽籤結果安全查詢｜北投會館</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>body{font-family:system-ui,"Noto Sans TC",sans-serif;background:#f6f7f8;color:#263238;margin:0}.wrap{max-width:640px;margin:8vh auto;padding:22px}.card{background:white;border-radius:14px;padding:30px;box-shadow:0 8px 30px #10212a11}h1{font-size:24px;margin:0 0 10px}p{color:#607076;line-height:1.7}label{display:block;font-weight:700;margin:24px 0 8px}input{width:100%;box-sizing:border-box;padding:13px;border:1px solid #cad3d6;border-radius:8px;font-size:16px}button{border:none;background:#007ab0;color:white;border-radius:8px;padding:12px 24px;margin-top:14px;cursor:pointer;font-size:16px}button:disabled{opacity:.6;cursor:wait}.result{border-top:1px solid #e1e5e8;margin-top:24px;padding-top:18px;line-height:1.9}.sub{font-size:13px}a{color:#007ab0}</style></head><body><main class="wrap"><div class="card">
+<h1>抽籤結果查詢</h1><p>輸入您的登記序號，查詢<strong>已正式公布</strong>的抽籤結果。本頁不會顯示姓名、手機或會員識別資料。</p>
+<form id="lookup"><label for="code">登記序號</label><input id="code" required maxlength="80" autocomplete="off" placeholder="請輸入登記序號"><button id="submit" type="submit">查詢結果</button></form>
+<div id="result" class="result" role="status" aria-live="polite">尚未查詢。</div>
+<p class="sub">目前為安全查詢測試頁。若尚未公布抽籤結果，將不會顯示中籤或候補資訊。</p>
+<p class="sub"><a href="./index.html">返回登記系統首頁</a></p></div></main>
+<script>
+(()=>{'use strict';
+const el=document.getElementById('result'),btn=document.getElementById('submit');
+const db=supabase.createClient('https://wsvsdwuksuzcjisnpyin.supabase.co','sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl',{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+document.getElementById('lookup').addEventListener('submit',async e=>{
+e.preventDefault();const code=document.getElementById('code').value.trim();if(!code)return;
+btn.disabled=true;el.textContent='查詢中…';
+try{
+const {data,error}=await db.rpc('court_public_published_results_v1');
+if(error)throw error;
+const matches=(data||[]).filter(r=>String(r.serial_number||'').trim().toUpperCase()===code.toUpperCase());
+if(!matches.length){el.textContent='目前查無已公布的抽籤結果，請確認序號或稍後再查。';return;}
+el.replaceChildren();
+for(const r of matches){
+const div=document.createElement('div');div.style.marginBottom='16px';
+const title=document.createElement('strong');title.textContent=(r.venue_type||'場地')+'｜'+(r.day_of_week||'')+' '+(r.time_slot||'');
+const state=document.createElement('div');state.textContent='抽籤結果：'+(r.lottery_status||'尚無結果');
+const loc=document.createElement('div');loc.textContent=r.location_name||'北投會館';
+div.append(title,loc,state);el.append(div);
+}
+}catch(error){console.warn('Public result lookup failed',error.code||error.message);el.textContent='暫時無法查詢，請稍後重試。';}
+finally{btn.disabled=false;}
+});
+})();
+</script></body></html>
