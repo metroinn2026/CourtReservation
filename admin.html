@@ -4068,6 +4068,11 @@ async function updateAuthorizedRecords(ids,changes,options={}){
  });
  return {data:options.select?data:undefined,error};
 }
+async function saveAuthorizedCapacity(rows){
+ if(!courtAuthLoginActive)return db.from(CAPACITY_TABLE).upsert(rows,{onConflict:'venue_type,day_of_week,time_slot'});
+ const {error}=await authMigrationClient.rpc('court_admin_save_capacity_v1',{p_rows:Array.isArray(rows)?rows:[rows]});
+ return {error};
+}
 const ADMIN_TABLE = 'admin_users';
 const RECORD_TABLE = 'lottery_records';
 const CAPACITY_TABLE = 'lottery_capacity_settings';
@@ -6268,7 +6273,7 @@ function renderBulkCapacityTable(){
         updated_at: new Date().toISOString()
       };
 
-      const {error}=await db.from(CAPACITY_TABLE).upsert(payload,{onConflict:'venue_type,day_of_week,time_slot'});
+      const {error}=await saveAuthorizedCapacity(payload);
       checkbox.disabled=false;
 
       if(error){
@@ -6343,7 +6348,7 @@ async function saveAllCapacity(){
   btn.disabled=true;
   btn.textContent='儲存中...';
 
-  const {error}=await db.from(CAPACITY_TABLE).upsert(rows,{onConflict:'venue_type,day_of_week,time_slot'});
+  const {error}=await saveAuthorizedCapacity(rows);
 
   btn.disabled=false;
   btn.textContent='儲存目前類型';
@@ -6402,21 +6407,17 @@ async function publishRecords(recordIds, published, meta={}){
   }
 
   const publishPayload={result_published:published, updated_at:new Date().toISOString(), published_at: published ? new Date().toISOString() : null};
-  let {error,data}=await db
-    .from(RECORD_TABLE)
-    .update(publishPayload)
-    .in('id',recordIds)
-    .select('id');
-
-  if(error && String(error.message||'').includes('published_at')){
-    console.warn('published_at 欄位尚未建立，改用無公布時間模式更新。', error);
-    const fallback=await db
-      .from(RECORD_TABLE)
-      .update({result_published:published, updated_at:new Date().toISOString()})
-      .in('id',recordIds)
-      .select('id');
-    error=fallback.error;
-    data=fallback.data;
+  let error, data;
+  if(courtAuthLoginActive){
+    ({error,data}=await authMigrationClient.rpc('court_admin_publish_v1',{p_ids:recordIds,p_published:published}));
+  }else{
+    let result=await db.from(RECORD_TABLE).update(publishPayload).in('id',recordIds).select('id');
+    error=result.error; data=result.data;
+    if(error && String(error.message||'').includes('published_at')){
+      console.warn('published_at 欄位尚未建立，改用無公布時間模式更新。',error);
+      result=await db.from(RECORD_TABLE).update({result_published:published,updated_at:new Date().toISOString()}).in('id',recordIds).select('id');
+      error=result.error; data=result.data;
+    }
   }
 
   if(error){
