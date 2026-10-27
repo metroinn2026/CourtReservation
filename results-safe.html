@@ -16,9 +16,9 @@ document.getElementById('lookup').addEventListener('submit',async e=>{
 e.preventDefault();const code=document.getElementById('code').value.trim();if(!code)return;
 btn.disabled=true;el.textContent='查詢中…';
 try{
-const {data,error}=await db.rpc('court_public_published_results_v1');
+const {data,error}=await db.rpc('court_public_result_by_code_v1',{p_serial:code});
 if(error)throw error;
-const matches=(data||[]).filter(r=>String(r.serial_number||'').trim().toUpperCase()===code.toUpperCase());
+const matches=data||[];
 if(!matches.length){el.textContent='目前查無已公布的抽籤結果，請確認序號或稍後再查。';return;}
 el.replaceChildren();
 for(const r of matches){
