@@ -4011,7 +4011,7 @@ const SUPABASE_KEY = 'sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
 // 後台資料查詢維持 anon 連線，避免表單匯入登入將主連線切成 authenticated，
 // 導致只允許 anon 的既有讀取政策回傳空清單。匯入授權使用獨立 Supabase client。
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
-const importDb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storageKey:'court-reservation-form-import-auth',persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
+const importDb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storageKey:'court-reservation-form-import-auth',persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}});
 const ADMIN_TABLE = 'admin_users';
 const RECORD_TABLE = 'lottery_records';
 const CAPACITY_TABLE = 'lottery_capacity_settings';
@@ -4297,8 +4297,38 @@ async function connectSensitiveRecordAccess(){
   await loadSensitiveIdentifiers();
   if(status)status.textContent=secureIdentityAuthenticated?`已授權｜已有全碼 ${secureIdentityBySubmission.size} 筆（其他舊資料需補匯）`:'權限不足或尚未執行配套 SQL。';
   updateCourtImportAuthorizationUI();
+  if(secureIdentityAuthenticated)startSensitiveIdleMonitor();
   renderRecordsWorkspace();
 }
+const SENSITIVE_IDLE_MS=15*60*1000;
+let lastSensitiveActivity=Date.now();
+let sensitiveIdleTimer=null;
+function resetSensitiveActivity(){lastSensitiveActivity=Date.now();}
+async function revokeSensitiveAuthorization(reason='已解除資料庫授權'){
+  secureIdentityAuthenticated=false;
+  secureIdentityBySubmission.clear();
+  secureEmailBySubmission.clear();
+  revealedSensitiveKeys.clear();
+  if(sensitiveIdleTimer){clearInterval(sensitiveIdleTimer);sensitiveIdleTimer=null;}
+  await importDb.auth.signOut().catch(()=>{});
+  closeCourtImportModal();
+  updateCourtImportAuthorizationUI();
+  const status=document.getElementById('identityAuthState');
+  if(status)status.textContent=reason;
+  if(currentPage==='records')renderRecordsWorkspace();
+}
+function startSensitiveIdleMonitor(){
+  resetSensitiveActivity();
+  if(sensitiveIdleTimer)clearInterval(sensitiveIdleTimer);
+  sensitiveIdleTimer=setInterval(()=>{
+    if(secureIdentityAuthenticated&&Date.now()-lastSensitiveActivity>=SENSITIVE_IDLE_MS){
+      revokeSensitiveAuthorization('閒置15分鐘，已自動解除資料庫授權');
+    }
+  },15000);
+}
+['pointerdown','keydown','touchstart'].forEach(eventName=>
+  document.addEventListener(eventName,()=>{if(secureIdentityAuthenticated)resetSensitiveActivity();},{passive:true})
+);
 function updateCourtImportAuthorizationUI(){
   const allowed=secureIdentityAuthenticated===true;
   for(const id of ['openFormImportModal','openFormAnomaliesModal']){
@@ -4519,7 +4549,7 @@ async function enterApp(){
   await loadAllData();
   renderPage('dashboard');
 }
-function logout(){ sessionStorage.removeItem('venue_admin_session'); location.reload(); }
+function logout(){ importDb.auth.signOut().catch(()=>{});sessionStorage.removeItem('venue_admin_session');location.reload(); }
 
 async function loadAllData(){
   const [recordsRes, capRes, settingsRes] = await Promise.all([
@@ -5116,7 +5146,7 @@ function renderRecordsPage(){
         🔐 會館會員證號預設遮蔽；授權後可點選眼睛圖示，Go會員不蒐集身分證字號。<br>
         <label>資料庫授權帳號 <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="Supabase Auth Email" style="max-width:200px" /></label>
         <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" style="max-width:160px" /></label>
-        <button id="identityAuthBtn" type="button" class="btn btn-gray">授權</button>
+        <button id="identityAuthBtn" type="button" class="btn btn-gray">授權</button><button id="identityRevokeBtn" type="button" class="btn btn-gray">解除授權</button>
         <span id="identityAuthState">${secureIdentityAuthenticated?'已通過授權':'未授權時不顯示完整證號'}</span>
           </div>
         </details>
@@ -5164,6 +5194,7 @@ function renderRecordsPage(){
 
   updateCourtImportAuthorizationUI();
   document.getElementById('identityAuthBtn').onclick=connectSensitiveRecordAccess;
+  document.getElementById('identityRevokeBtn').onclick=()=>revokeSensitiveAuthorization();
   document.getElementById('openFormImportModal').onclick=()=>openCourtImportModal('import');
   document.getElementById('openFormAnomaliesModal').onclick=()=>openCourtImportModal('anomaly');
   document.getElementById('closeCourtImportModal').onclick=closeCourtImportModal;
