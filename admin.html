@@ -8694,11 +8694,29 @@ async function commitGoogleFormImport(){
 }
 
 let pendingFormImports=[];
+function renderImportDuplicateReview(){
+  const target=document.getElementById('importDuplicateReview');
+  if(!target)return;
+  const dupes=window.pendingImportDuplicates||[];
+  if(!dupes.length){target.innerHTML='<div class="msg info">沒有發現與目前登記清單相同的原始回覆。</div>';return;}
+  target.innerHTML='<div class="msg info">發現 '+dupes.length+' 份既有回覆。預設全部保留舊資料；僅可針對未抽籤、同一會員與相同場次的聯絡資料修正選擇覆蓋。</div>'+
+  '<div class="table-wrap"><table><thead><tr><th>來源／回覆</th><th>原資料</th><th>上傳資料</th><th>處理方式</th></tr></thead><tbody>'+
+  dupes.map((d,i)=>{
+    const e=d.existing||{};
+    const old=e.name+'／'+e.phone;
+    const next=d.sub.name+'／'+d.sub.phone;
+    const changed=e.name!==d.sub.name||e.phone!==d.sub.phone;
+    const locked=allRecords.some(r=>r.import_submission_key===d.sub.submission_key&&(r.lottery_locked||r.result_published||r.lottery_status));
+    return '<tr><td>'+escapeHtml(d.source)+'｜第'+escapeHtml(d.sub.excel_row||'?')+'列</td><td>'+escapeHtml(old)+'</td><td>'+escapeHtml(next)+(changed?'（有差異）':'（相同）')+'</td><td><select data-duplicate-choice="'+i+'" '+(locked?'disabled title="已有抽籤結果，禁止覆蓋"':'')+'><option value="skip">保留舊資料</option><option value="overwrite">覆蓋聯絡資料</option></select>'+(locked?'<div class="small" style="color:#b45309">已抽籤，不可覆蓋</div>':'')+'</td></tr>';
+  }).join('')+'</tbody></table></div>';
+}
 function renderBatchFormImportPreview(){
   const box=document.getElementById('formImportPreview');
   if(!box)return;
   if(!pendingFormImports.length){box.innerHTML='';return;}
   const rows=pendingFormImports.map(p=>`<tr><td>${escapeHtml(p.fileName)}</td><td>${escapeHtml(p.sourceType)}</td><td>${p.submissions.length}</td><td>${p.records.length}</td><td>${p.anomalies.length}</td></tr>`).join('');
+  const dupes=pendingFormImports.flatMap(p=>p.submissions.filter(x=>allRecords.some(r=>r.import_submission_key===x.submission_key)).map(x=>({source:p.sourceType,file:p.fileName,sub:x,records:p.records.filter(r=>r.submission_key===x.submission_key),existing:allRecords.find(r=>r.import_submission_key===x.submission_key)})));
+  window.pendingImportDuplicates=dupes;
   box.innerHTML=`<div class="msg info">已辨識 ${pendingFormImports.length} 份不同來源的表單，請選擇「新增」或「覆蓋」模式；各來源分開處理。</div>
   <div class="table-wrap"><table><thead><tr><th>檔案</th><th>來源</th><th>回覆數</th><th>登記場次</th><th>異常</th></tr></thead><tbody>${rows}</tbody></table></div>
   <fieldset style="border:1px solid #dce4ed;border-radius:12px;margin:12px 0;padding:14px">
@@ -8707,9 +8725,11 @@ function renderBatchFormImportPreview(){
     <label style="display:block;margin:8px 0"><input type="radio" name="batchGoogleImportMode" value="replace"> <strong>整批覆蓋該來源舊資料</strong><span class="small" style="display:block;margin-left:25px;color:#9a3412">移除該來源既有 Google 表單匯入登記再重建，相關抽籤及公告狀態可能遺失。請先備份。</span></label>
   </fieldset>
   <div class="small">各來源獨立交易；後一份失敗不會回滾先前成功的資料。</div>
+  <div id="importDuplicateReview" style="margin-top:14px"></div>
   <button id="commitBatchFormImportBtn" class="btn btn-primary" style="margin-top:8px">確認批次匯入（${pendingFormImports.length} 份）</button>
   <div id="batchFormImportProgress" style="margin-top:12px" aria-live="polite"></div>`;
   document.getElementById('commitBatchFormImportBtn').onclick=commitBatchGoogleFormImports;
+  renderImportDuplicateReview();
 }
 async function commitBatchGoogleFormImports(){
   const files=pendingFormImports.slice();
@@ -8717,6 +8737,8 @@ async function commitBatchGoogleFormImports(){
   const {data:userData,error:userError}=await importDb.auth.getUser();
   if(userError||!userData?.user){alert('請先登入授權的資料庫管理帳號。');return;}
   const importMode=document.querySelector('input[name="batchGoogleImportMode"]:checked')?.value||'append';
+  const corrections=(window.pendingImportDuplicates||[]).filter((d,i)=>document.querySelector('[data-duplicate-choice="'+i+'"]')?.value==='overwrite');
+  if(importMode==='replace'&&corrections.length){alert('整批覆蓋模式不支援逐筆修正，請選擇只新增資料。');return;}
   const msg=files.map(p=>`${p.sourceType}：${p.submissions.length} 份回覆、${p.records.length} 筆場次`).join('\n');
   if(!confirm((importMode==='replace'?'整批覆蓋將移除舊登記與抽籤結果，請先備份。':'只新增未匯入資料，保留既有登記及抽籤結果。')+'\n'+msg+'\n\n確定執行？'))return;
   const btn=document.getElementById('commitBatchFormImportBtn');
@@ -8737,6 +8759,13 @@ async function commitBatchGoogleFormImports(){
       break;
     }
     if(progress)progress.innerHTML=lines.map(x=>'<div class="msg '+(x.ok?'info':'error')+'">'+escapeHtml(x.text)+'</div>').join('');
+  }
+  if(corrections.length&&lines.every(x=>x.ok)&&lines.length===files.length){
+    try{
+      const {data,error}=await importDb.rpc('correct_google_form_duplicates_v1',{p_items:corrections.map(d=>({submission:d.sub,records:d.records}))});
+      if(error)throw error;
+      lines.push({ok:true,text:'已依承辦人選擇覆蓋聯絡資料 '+(data?.corrected??0)+' 份回覆'});
+    }catch(e){lines.push({ok:false,text:'重複資料覆蓋未完成：'+(e.message||String(e))});}
   }
   if(progress)progress.innerHTML=lines.map(x=>'<div class="msg '+(x.ok?'info':'error')+'">'+escapeHtml(x.text)+'</div>').join('')+
     (lines.length<files.length?'<div class="msg error">後續檔案未執行；請先檢查前述失敗原因。</div>':'');
