@@ -8376,7 +8376,7 @@ function renderAccountsPage(){
             <div class="accounts-guide-title">重設提醒</div>
             <div class="accounts-guide-text">僅在需要重新建立全部後台帳號時使用。執行後會清除所有管理員帳號，重新整理後台後可重新建立第一位超級管理員。</div>
           </div>
-          <div class="accounts-sql-inline">DELETE FROM public.admin_users;</div>
+          <div class="accounts-sql-inline">此為高風險維護作業，請洽系統管理員，勿直接執行刪除全部帳號。</div>
         </div>
       </div>
     </div>
@@ -8530,7 +8530,7 @@ function exportToCsv(records){
   let csv='序號,抽籤狀態,公布狀態,鎖定,異常狀態,姓名,聯絡手機,Email,會員身分,會員識別末4碼,地點,運動類型,星期,時段,登記時間\n';
   records.forEach(r=>{
     const state=isSuspiciousPhone(r)?'手機重複':'正常';
-    csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.result_published?'已公布':'未公布'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${secureIdentityAuthenticated?(secureEmailBySubmission.get(String(r.import_submission_key||''))||''):''}","${r.member_type||'未記錄'}","${memberIdentifierLast4(r)}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
+    csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.result_published?'已公布':'未公布'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${(courtAuthLoginActive||secureIdentityAuthenticated)?(secureEmailBySubmission.get(String(r.import_submission_key||''))||''):''}","${r.member_type||'未記錄'}","${memberIdentifierLast4(r)}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
   });
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`登記清單_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
