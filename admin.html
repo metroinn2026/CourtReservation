@@ -4588,7 +4588,7 @@ function logout(){ authMigrationClient.auth.signOut().catch(()=>{});importDb.aut
 
 async function loadAllData(){
   const [recordsRes, capRes, settingsRes] = await Promise.all([
-    db.from(RECORD_TABLE).select('*').order('registered_at',{ascending:false}),
+    (courtAuthLoginActive ? authMigrationClient.rpc('court_admin_records_v1') : db.from(RECORD_TABLE).select('*').order('registered_at',{ascending:false})),
     db.from(CAPACITY_TABLE).select('*'),
     db.from(SETTINGS_TABLE).select('*')
   ]);
