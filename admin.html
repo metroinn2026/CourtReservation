@@ -5309,7 +5309,25 @@ async function renderQualificationReview(container){
   if(!container)return;
   if(!importDb){container.innerHTML='<div class="panel">請先完成 Supabase 授權。</div>';return;}
   await loadQualificationReviews();
-  if(!qualificationReviewsLoaded){container.innerHTML='<div class="panel">請先完成上方「授權」登入並重新開啟資格審查。若已登入，請先執行 v52 SQL。</div>';return;}
+  if(!qualificationReviewsLoaded){
+    const filtered=allRecords.filter(r=>qualificationIssueTypes(r).length>0);
+    container.innerHTML=`<div class="panel ux-review-panel ux-review-simple">
+      <p class="ux-review-help"><strong>異常案件查看</strong>｜一般承辦人可直接查閱需要確認的申請。若要變更資格審查結果並儲存，仍需完成資料庫審查授權。</p>
+      <div class="ux-review-toolbar"><span class="small">偵測到 ${filtered.length} 筆需確認申請</span>
+      <button id="refreshQualificationReadOnly" class="btn btn-gray">重新整理清單</button></div>
+      <div class="ux-review-cases">${filtered.map(r=>`<article class="ux-review-case">
+        <div class="ux-review-reasons"><strong>需要確認的原因</strong>
+        <div>${qualificationIssueTypes(r).map(reason=>`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join('')}</div></div>
+        <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong>
+        <div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div>
+        <div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}｜手機：${escapeHtml(r.phone||'—')}</div></div>
+        <span class="ux-review-current">待核對</span></div>
+      </article>`).join('')||'<div class="ux-review-empty">目前沒有系統偵測到的異常案件。</div>'}</div>
+      <div class="small" style="margin-top:14px">此清單依目前登記資料即時計算，未讀取已保存的審查結論；已完成審查的案件可能仍會列在此處。要查看完整處理紀錄及儲存審查結果，需另行授權。</div>
+    </div>`;
+    container.querySelector('#refreshQualificationReadOnly').onclick=()=>renderQualificationReview(container);
+    return;
+  }
   const currentFilter=window.qualificationFilterV52||'open';
   const issues=allRecords.filter(r=>qualificationState(r)!=='qualified');
   const open=issues.filter(r=>['pending','correction'].includes(qualificationState(r)));
