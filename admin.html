@@ -8776,9 +8776,18 @@ async function commitBatchGoogleFormImports(){
   }
   if(progress)progress.innerHTML=lines.map(x=>'<div class="msg '+(x.ok?'info':'error')+'">'+escapeHtml(x.text)+'</div>').join('')+
     (lines.length<files.length?'<div class="msg error">後續檔案未執行；請先檢查前述失敗原因。</div>':'');
-  await loadAllData();
-  pendingFormImports=[];
-  btn.textContent='請重新選檔預覽';
+  // Only reload after every import/correction has completed successfully.
+  // A full page reload also refreshes dashboard summary cards, table counts and cached filters.
+  const complete=lines.length>=files.length && lines.every(x=>x.ok);
+  if(complete){
+    pendingFormImports=[];
+    alert('匯入完成！系統將自動重新整理後台，以顯示最新登記筆數及清單。');
+    window.location.reload();
+    return;
+  }
+  // Keep the outcome messages visible for partial failures; refreshing would hide them.
+  btn.textContent='匯入未全部完成，請查閱上方結果';
+  btn.disabled=true;
   const fileInput=document.getElementById('formWorkbook');if(fileInput)fileInput.value='';
   // Require fresh preview before another destructive batch.
 }
