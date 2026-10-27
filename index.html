@@ -4,6 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>北投會館運動場域智慧租借管理系統</title>
+  <script>
+    (function(){
+      const hash = location.hash || '';
+      const qs = location.search || '';
+      const isApplicantAuthReturn =
+        /(?:^|[#&])access_token=/.test(hash) ||
+        /(?:^|[?&])code=/.test(qs) ||
+        /(?:^|[#&])error(?:_code|_description)?=/.test(hash);
+      if (isApplicantAuthReturn && location.pathname.endsWith('/index.html')) {
+        location.replace('/applicant-safe.html' + qs + hash);
+      }
+    })();
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <script>
