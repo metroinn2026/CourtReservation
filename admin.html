@@ -4021,6 +4021,31 @@ const SUPABASE_KEY = 'sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
 const importDb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storageKey:'court-reservation-form-import-auth',persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}});
 const authMigrationClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storageKey:'court-admin-auth-migration-test',persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}});
+let courtAuthLoginActive=false;
+function reviewDbClient(){return courtAuthLoginActive?authMigrationClient:importDb;}
+async function loadCourtAdminEmails(){
+  if(!courtAuthLoginActive)return;
+  const keys=[...new Set(allRecords.map(r=>r.import_submission_key).filter(Boolean))];
+  secureEmailBySubmission.clear();
+  for(let i=0;i<keys.length;i+=100){
+    const {data,error}=await authMigrationClient.rpc('court_admin_contact_emails_v1',{p_keys:keys.slice(i,i+100)});
+    if(error){console.warn('承辦人 Email 讀取失敗',error.code);break;}
+    (data||[]).forEach(r=>{if(r.contact_email)secureEmailBySubmission.set(String(r.submission_key),String(r.contact_email));});
+  }
+}
+async function loginWithCourtAuth(){
+  const email=document.getElementById('loginUsername').value.trim();
+  const password=document.getElementById('loginPassword').value;
+  if(!email||!password){showMsg('loginMsg','請輸入 Supabase Auth 電子郵件與密碼');return;}
+  const {error}=await authMigrationClient.auth.signInWithPassword({email,password});
+  document.getElementById('loginPassword').value='';
+  if(error){showMsg('loginMsg','登入失敗，請確認帳號與密碼');return;}
+  const {data,error:roleError}=await authMigrationClient.rpc('get_court_admin_identity_v1');
+  if(roleError||!data){await authMigrationClient.auth.signOut();showMsg('loginMsg','未核准此帳號的後台管理權限');return;}
+  courtAuthLoginActive=true;
+  currentAdmin=data;
+  await enterApp();
+}
 const ADMIN_TABLE = 'admin_users';
 const RECORD_TABLE = 'lottery_records';
 const CAPACITY_TABLE = 'lottery_capacity_settings';
@@ -4269,7 +4294,7 @@ function courtVenueLabel(r){
   return ({'羽球':'羽球場','籃球':'籃球場','B1桌球':'B1桌球場','B2桌球':'B2桌球場'})[r.venue_type]||r.venue_type||'—';
 }
 function adminEmailCell(r){
-  const email = secureIdentityAuthenticated ? secureEmailBySubmission.get(String(r.import_submission_key||'')) : '';
+  const email = (courtAuthLoginActive||secureIdentityAuthenticated) ? secureEmailBySubmission.get(String(r.import_submission_key||'')) : '';
   return email ? `<span title="${escapeHtml(email)}">${escapeHtml(email)}</span>` : '<span class="small" title="登入資料庫授權帳號後可查閱">—</span>';
 }
 function adminPhoneCell(r){
@@ -4277,6 +4302,7 @@ function adminPhoneCell(r){
   return escapeHtml(String(r.phone||''));
 }
 async function loadSensitiveIdentifiers(){
+  if(courtAuthLoginActive){secureIdentityBySubmission.clear();secureIdentityAuthenticated=false;revealedSensitiveKeys.clear();await loadCourtAdminEmails();return;}
   secureIdentityBySubmission=new Map(); secureEmailBySubmission=new Map(); secureIdentityAuthenticated=false; revealedSensitiveKeys.clear();
   const {data:auth,error:authError}=await importDb.auth.getUser();
   if(authError||!auth?.user)return;
@@ -4558,7 +4584,7 @@ async function enterApp(){
   await loadAllData();
   renderPage('dashboard');
 }
-function logout(){ importDb.auth.signOut().catch(()=>{});sessionStorage.removeItem('venue_admin_session');location.reload(); }
+function logout(){ authMigrationClient.auth.signOut().catch(()=>{});importDb.auth.signOut().catch(()=>{});sessionStorage.removeItem('venue_admin_session');location.reload(); }
 
 async function loadAllData(){
   const [recordsRes, capRes, settingsRes] = await Promise.all([
@@ -5304,11 +5330,12 @@ function openQualificationRecord(id){
 async function loadQualificationReviews(){
   qualificationReviewsLoaded=false;
   qualificationReviews=new Map();
-  if(!importDb){return;}
+  if(!reviewDbClient()){return;}
   try{
-    const {data:user}=await importDb.auth.getUser();
+    const client=reviewDbClient();
+    const {data:user}=await client.auth.getUser();
     if(!user?.user)return;
-    const {data,error}=await importDb.rpc('list_registration_qualifications_v52');
+    const {data,error}=await client.rpc('list_registration_qualifications_v52');
     if(error)throw error;
     (data||[]).forEach(row=>qualificationReviews.set(String(row.record_id),row));
     qualificationReviewsLoaded=true;
@@ -5360,7 +5387,7 @@ async function renderQualificationReview(container){
     const id=btn.dataset.qsave,st=container.querySelector(`[data-qstate="${id}"]`).value,note=container.querySelector(`[data-qnote="${id}"]`).value.trim();
     if(st==='invalid'&&!note){alert('審查不合格時請填寫原因。');return;}
     btn.disabled=true;
-    const {error}=await importDb.rpc('save_registration_qualification_v52',{p_record_id:id,p_status:st,p_note:note});
+    const {error}=await reviewDbClient().rpc('save_registration_qualification_v52',{p_record_id:id,p_status:st,p_note:note});
     if(error){alert('儲存失敗：'+error.message);btn.disabled=false;return;}
     window.qualificationFocusId=null;
     await renderQualificationReview(container);
@@ -8901,6 +8928,16 @@ async function testSupabaseAdminAuthMigration(){
   if(url.searchParams.get('auth-test')==='1'&&testBox){
     testBox.style.display='block';
     document.getElementById('authTestBtn').onclick=testSupabaseAdminAuthMigration;
+  }
+  if(url.searchParams.get('auth-login')==='1'){
+    const loginBox=document.getElementById('loginBox');
+    document.getElementById('bootstrapBox').classList.add('hidden');
+    loginBox.classList.remove('hidden');
+    document.getElementById('loginUsername').placeholder='Supabase Auth 電子郵件';
+    document.getElementById('loginBtn').textContent='使用 Supabase Auth 登入後台（測試）';
+    document.getElementById('loginBtn').onclick=loginWithCourtAuth;
+    sessionStorage.removeItem('venue_admin_session');
+    return;
   }
   if(url.searchParams.get('reset')==='1') sessionStorage.removeItem('venue_admin_session');
   const saved=sessionStorage.getItem('venue_admin_session');
