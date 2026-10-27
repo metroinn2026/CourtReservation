@@ -6484,7 +6484,7 @@ async function writeOperationLog(action, detail={}, recordIds=[]){
       record_ids: Array.isArray(recordIds) ? recordIds.map(String) : [],
       created_at: new Date().toISOString()
     };
-    const {error}=await db.from(LOG_TABLE).insert([payload]);
+    const {error}=courtAuthLoginActive ? await authMigrationClient.rpc('court_admin_write_log_v1',{p_action:action,p_detail:detail,p_record_ids:payload.record_ids}) : await db.from(LOG_TABLE).insert([payload]);
     if(error) console.warn('操作紀錄寫入失敗，請確認 admin_operation_logs 資料表與 RLS policy。', error);
   }catch(e){
     console.warn('操作紀錄寫入失敗', e);
@@ -6538,9 +6538,7 @@ function applyTextTemplate(template, data){
 }
 
 async function saveSetting(key, value){
-  const { error } = await db
-    .from(SETTINGS_TABLE)
-    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict:'key' });
+  const {error}=courtAuthLoginActive ? await authMigrationClient.rpc('court_admin_save_setting_v1',{p_key:key,p_value:value}) : await db.from(SETTINGS_TABLE).upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict:'key' });
 
   if(error){
     console.error(error);
