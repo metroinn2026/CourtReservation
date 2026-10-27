@@ -4053,6 +4053,21 @@ async function deleteCourtRecords(ids){
  if(data!==ids.length)return {error:new Error('刪除筆數與選取筆數不符，請重新整理並確認')};
  return {error:null};
 }
+async function updateAuthorizedRecords(ids,changes,options={}){
+ if(!courtAuthLoginActive){
+  let query=updateAuthorizedRecords([item.id],changes);
+  query=options.single?query.eq('id',ids[0]):query.in('id',ids);
+  if(options.expectUnpublished)query=query.eq('result_published',false);
+  if(options.expectUnlocked)query=query.eq('lottery_locked',false);
+  if(options.select)return query.select('id');
+  return query;
+ }
+ const {data,error}=await authMigrationClient.rpc('court_admin_update_records_v1',{
+  p_ids:ids,p_changes:changes,
+  p_expect_unpublished:!!options.expectUnpublished,p_expect_unlocked:!!options.expectUnlocked
+ });
+ return {data:options.select?data:undefined,error};
+}
 const ADMIN_TABLE = 'admin_users';
 const RECORD_TABLE = 'lottery_records';
 const CAPACITY_TABLE = 'lottery_capacity_settings';
@@ -5790,7 +5805,7 @@ async function savePendingRecordStatusChanges(){
         payload.result_published=false;
       }
 
-      const {error}=await db.from(RECORD_TABLE).update(payload).eq('id',item.id);
+      const {error}=await db.from(RECORD_TABLE).update(payload,{single:true,select:false});
       if(error){
         console.error(error);
         alert(`儲存失敗：${item.record?.name||item.id}`);
@@ -5929,7 +5944,7 @@ async function batchUpdateSelectedLotteryStatus(){
       payload.result_published=false;
     }
 
-    const {error,data}=await db.from(RECORD_TABLE).update(payload).in('id',ids).select('id');
+    const {error,data}=await updateAuthorizedRecords(ids,payload,{single:false,select:true});
     if(error){
       console.error(error);
       alert('批次變更抽籤狀態失敗');
@@ -6361,7 +6376,7 @@ async function updateRecordLotteryStatus(recordId, status){
   }
 
   const before=allRecords.find(r=>String(r.id)===String(recordId));
-  const {error}=await db.from(RECORD_TABLE).update(payload).eq('id',recordId);
+  const {error}=await updateAuthorizedRecords([recordId],payload,{single:true,select:false});
   if(error){
     console.error(error);
     alert('更新抽籤狀態失敗');
@@ -7126,7 +7141,7 @@ function renderLotteryPage(){
     for(let i=0;i<items.length;i+=15){
       const chunk=items.slice(i,i+15);
       const results=await Promise.all(chunk.map(async item=>{
-        const {error,data}=await db.from(RECORD_TABLE).update({lottery_status:item.status,lottery_locked:true,lottery_batch:batchId,result_published:false,updated_at:new Date().toISOString()}).eq('id',item.record.id).eq('result_published',false).eq('lottery_locked',false).select('id');
+        const {error,data}=await updateAuthorizedRecords([item.record.id],{lottery_status:item.status,lottery_locked:true,lottery_batch:batchId,result_published:false,updated_at:new Date().toISOString()},{single:true,select:true,expectUnpublished:true,expectUnlocked:true});
         return {item,error:error||(!data?.length?new Error('更新失敗或紀錄狀態已變更'):null)};
       }));
       results.forEach(({item,error})=>error?failed.push({serial:item.serial,error}):successIds.push(item.record.id));
@@ -7168,7 +7183,7 @@ async function applyPromotionSuggestion(stage){
   stage.promote.forEach(r=>updates.push({id:r.id,status:'中籤'}));
   remaining.forEach((r,i)=>updates.push({id:r.id,status:`候補${i+1}`}));
   for(const u of updates){
-    const {error}=await db.from(RECORD_TABLE).update({lottery_status:u.status,lottery_locked:true,result_published:false,updated_at:new Date().toISOString()}).eq('id',u.id);
+    const {error}=await updateAuthorizedRecords([u.id],{lottery_status:u.status,lottery_locked:true,result_published:false,updated_at:new Date().toISOString()},{single:true,select:false});
     if(error){console.error(error);alert('遞補更新失敗，請重新整理後確認。');return;}
   }
   await writeOperationLog('確認候補遞補',{venue_type:stage.venue,day_of_week:stage.day,time_slot:stage.time,promoted_count:stage.promote.length},updates.map(x=>x.id));
@@ -7189,13 +7204,13 @@ async function applyPromotionSuggestion(stage){
     for(let i=0;i<items.length;i+=15){
       const chunk=items.slice(i,i+15);
       const results=await Promise.all(chunk.map(async item=>{
-        const {error,data}=await db.from(RECORD_TABLE).update({
+        const {error,data}=await updateAuthorizedRecords([item.record.id],{
           lottery_status:item.status,
           lottery_locked:true,
           lottery_batch:batchId,
           result_published:false,
           updated_at:new Date().toISOString()
-        }).eq('id',item.record.id).select('id');
+        },{single:true,select:true});
         const noUpdate=!error && (!data || data.length===0);
         return {item,error:noUpdate ? new Error('資料未更新，請確認權限或資料狀態') : error};
       }));
@@ -7792,13 +7807,13 @@ async function applyPromotionSuggestion(stage){
     updateRows.forEach(row=>{ if(!groups[row.status]) groups[row.status]=[]; groups[row.status].push(row.id); });
     let updatedCount=0;
     for(const [status,ids] of Object.entries(groups)){
-      const {error,data}=await db.from(RECORD_TABLE).update({
+      const {error,data}=await updateAuthorizedRecords(ids,{
         lottery_status:status,
         lottery_batch:batch,
         lottery_locked:true,
         result_published:false,
         updated_at:new Date().toISOString()
-      }).in('id',ids).select('id');
+      },{single:false,select:true});
       if(error){
         alert('寫入抽籤結果失敗：'+(error.message||'未知錯誤'));
         if(btn){btn.disabled=false;btn.textContent='確認結果並批次寫入';}
@@ -8040,7 +8055,7 @@ async function applyPromotionSuggestion(stage){
       const groups={};
       rows.forEach(x=>{ if(!groups[x.status]) groups[x.status]=[]; groups[x.status].push(x.id); });
       for(const [status,ids] of Object.entries(groups)){
-        const {error,data}=await db.from(RECORD_TABLE).update({lottery_status:status,lottery_batch:batch,lottery_locked:true}).in('id',ids).select('id');
+        const {error,data}=await updateAuthorizedRecords(ids,{lottery_status:status,lottery_batch:batch,lottery_locked:true},{single:false,select:true});
         if(error){alert('批次抽籤寫入失敗：'+(error.message||'未知錯誤'));console.error(error);return;}
         totalUpdated += (data||[]).length;
       }
