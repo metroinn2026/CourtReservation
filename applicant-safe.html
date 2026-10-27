@@ -26,50 +26,43 @@ button.secondary{background:#eef3f5;color:#32505c}.actions{display:flex;gap:10px
 <body>
 <main class="wrap">
 <section class="card">
-<h1>申請人安全查詢測試</h1>
-<p>這是獨立測試頁，不會取代正式前台。目前只測試「Email 驗證、認領既有登記、查詢自己的登記、後端資格檢核」。<strong>新增與刪除功能尚未開放</strong>，不會修改正式登記資料。</p>
+<h1>申請人安全驗證測試</h1>
+<p>這是獨立測試頁，不會取代正式前台。請照著步驟操作即可；<strong>目前不會新增或刪除正式登記資料</strong>。</p>
 <div id="sessionStatus" class="status">檢查登入狀態中…</div>
 </section>
 
 <section class="card" id="authCard">
-<h2>1. Email 驗證</h2>
+<h2>第 1 步｜驗證 Email</h2>
 <label for="email">Email</label>
 <input id="email" type="email" autocomplete="email" placeholder="請輸入 Google 表單填寫的 Email">
 <div class="actions">
-<button id="sendOtp">寄送登入驗證</button>
+<button id="sendOtp">寄驗證信給我</button>
 <button id="signOut" class="secondary">登出</button>
 </div>
-<div class="grid" style="margin-top:10px">
-<div>
-<label for="otp">若 Email 收到 6 碼驗證碼</label>
-<input id="otp" inputmode="numeric" maxlength="8" placeholder="輸入驗證碼">
-<button id="verifyOtp">驗證 6 碼</button>
-</div>
-<div>
-<p class="note">若 Email 收到的是登入連結，請直接點連結。完成登入後再回到本頁；同一瀏覽器會沿用 Supabase Auth 登入狀態。</p>
-</div>
+<div style="margin-top:12px">
+<p class="note"><strong>請只開最新一封驗證信，並點裡面的登入連結一次。</strong><br>點完後系統會自動回到這個測試頁；上方顯示「Email 驗證完成」就代表成功。</p>
 </div>
 <div id="authMsg" class="status hidden"></div>
 </section>
 
 <section class="card">
-<h2>2. 認領既有登記</h2>
-<p class="note">需先完成 Email 驗證。系統會以「已驗證 Email＋手機＋會員識別末四碼」比對既有 Google 表單資料；不會顯示或下載其他申請人的資料。</p>
+<h2>第 2 步｜確認既有登記</h2>
+<p class="note">完成 Email 驗證後，請輸入<strong>當時 Google 表單填寫的手機號碼</strong>及<strong>會員識別資料最後 4 碼</strong>。這一步只是確認這些既有登記屬於你，不會修改資料。</p>
 <div class="grid">
 <div><label for="phone">手機</label><input id="phone" inputmode="tel" placeholder="0912345678"></div>
 <div><label for="last4">會員識別末四碼</label><input id="last4" inputmode="numeric" maxlength="4" placeholder="1234"></div>
 </div>
 <div class="actions">
-<button id="claim">認領並載入我的登記</button>
-<button id="reloadRecords" class="secondary">重新載入</button>
+<button id="claim">確認身分並顯示我的登記</button>
+<button id="reloadRecords" class="secondary">重新讀取我的登記</button>
 </div>
 <div id="claimMsg" class="status hidden"></div>
 <div id="records"></div>
 </section>
 
 <section class="card">
-<h2>3. 後端資格檢核測試</h2>
-<p class="note">這一步只檢查，不會新增資料。後端會再次套用登記期間、羽球／籃球次數限制、同日同時段跨運動衝突及停用時段。</p>
+<h2>第 3 步｜測試登記規則</h2>
+<p class="note">前兩步成功後才需要測這裡。任選一個場次後按下檢核，系統只會回答是否可以登記，<strong>不會真的新增登記</strong>。</p>
 <div class="grid3">
 <div><label for="venue">運動類型</label>
 <select id="venue"><option>羽球</option><option>籃球</option><option>B1桌球</option><option>B2桌球</option></select></div>
@@ -91,7 +84,7 @@ button.secondary{background:#eef3f5;color:#32505c}.actions{display:flex;gap:10px
 (()=>{'use strict';
 const URL='https://wsvsdwuksuzcjisnpyin.supabase.co';
 const KEY='sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
-const db=supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+const db=supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});\nlet sendingOtp=false;
 const $=id=>document.getElementById(id);
 function msg(id,text,ok=false){const el=$(id);el.textContent=text;el.className='status '+(ok?'ok':'err');}
 function normPhone(v){return String(v||'').replace(/\D/g,'');}
@@ -100,12 +93,12 @@ function esc(v){return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&
 async function refreshSession(){
   const {data:{user},error}=await db.auth.getUser();
   if(error||!user){
-    $('sessionStatus').textContent='尚未完成 Email 驗證。';
+    $('sessionStatus').textContent='尚未完成 Email 驗證。請先執行第 1 步。';
     $('sessionStatus').className='status';
     return null;
   }
   $('email').value=user.email||$('email').value;
-  $('sessionStatus').textContent='已登入：'+(user.email||'已驗證 Email');
+  $('sessionStatus').textContent='Email 驗證完成：'+(user.email||'已驗證');
   $('sessionStatus').className='status ok';
   return user;
 }
@@ -129,20 +122,28 @@ async function loadRecords(){
 }
 
 $('sendOtp').onclick=async()=>{
+  if(sendingOtp)return;
   const email=$('email').value.trim().toLowerCase();
-  if(!email){msg('authMsg','請輸入 Email');return;}
-  const redirect=location.origin+location.pathname;
+  if(!email){msg('authMsg','請先輸入 Email');return;}
+  sendingOtp=true;
+  $('sendOtp').disabled=true;
+  $('sendOtp').textContent='寄送中…';
+  const redirect=location.origin+'/applicant-safe.html';
   const {error}=await db.auth.signInWithOtp({email,options:{shouldCreateUser:true,emailRedirectTo:redirect}});
-  if(error){msg('authMsg','寄送失敗：'+error.message);return;}
-  msg('authMsg','驗證信已寄出。若收到 6 碼請在下方輸入；若收到登入連結請直接點連結。',true);
-};
-
-$('verifyOtp').onclick=async()=>{
-  const email=$('email').value.trim().toLowerCase(),token=$('otp').value.trim();
-  if(!email||!token){msg('authMsg','請輸入 Email 與驗證碼');return;}
-  const {error}=await db.auth.verifyOtp({email,token,type:'email'});
-  if(error){msg('authMsg','驗證失敗：'+error.message);return;}
-  msg('authMsg','Email 驗證完成。',true);await refreshSession();await loadRecords();
+  if(error){
+    msg('authMsg','寄送失敗：'+error.message);
+    sendingOtp=false;
+    $('sendOtp').disabled=false;
+    $('sendOtp').textContent='寄驗證信給我';
+    return;
+  }
+  msg('authMsg','驗證信已寄出。請只開最新一封信，並點裡面的登入連結一次。',true);
+  $('sendOtp').textContent='驗證信已寄出';
+  setTimeout(()=>{
+    sendingOtp=false;
+    $('sendOtp').disabled=false;
+    $('sendOtp').textContent='重新寄驗證信';
+  },30000);
 };
 
 $('signOut').onclick=async()=>{await db.auth.signOut();msg('authMsg','已登出。',true);await refreshSession();$('records').innerHTML='';};
@@ -153,7 +154,7 @@ $('claim').onclick=async()=>{
   if(!/^09\d{8}$/.test(phone)||!/^\d{4}$/.test(last4)){msg('claimMsg','請輸入正確手機及 4 碼識別資料');return;}
   const {data,error}=await db.rpc('court_applicant_claim_legacy_v1',{p_phone:phone,p_id_last4:last4});
   if(error){msg('claimMsg','認領失敗：'+error.message);return;}
-  msg('claimMsg','認領完成，本次新增 '+Number(data||0)+' 筆關聯。若先前已認領，新增筆數可能為 0。',true);
+  msg('claimMsg','身分確認完成。下方會顯示屬於你的既有登記；若先前已確認過，本次新增關聯可能為 0。',true);
   await loadRecords();
 };
 
@@ -169,6 +170,10 @@ $('check').onclick=async()=>{
 };
 
 db.auth.onAuthStateChange(()=>{setTimeout(()=>{refreshSession();loadRecords();},0)});
+const authParams=new URLSearchParams((location.hash||'').replace(/^#/,''));
+if(authParams.get('error_description')){
+  msg('authMsg','這封驗證連結已失效。請重新寄驗證信，並只點最新一封。');
+}
 refreshSession().then(loadRecords);
 })();
 </script>
