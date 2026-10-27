@@ -272,10 +272,7 @@
           const client = getCapacitySupabaseClient();
           if (!client) return { isOk: false, settings: {} };
 
-          const { data, error } = await client
-            .from(CAPACITY_TABLE)
-            .select('*')
-            .order('venue_type', { ascending: true });
+          const { data, error } = await client.rpc('court_public_capacity_v1');
 
           if (error) {
             console.error('讀取抽籤名額設定失敗', error);
