@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>申請人安全查詢測試｜北投會館</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{font-family:system-ui,"Noto Sans TC",sans-serif;color:#263238;background:#f4f6f7}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:820px;margin:32px auto;padding:16px}
+.card{background:#fff;border-radius:14px;padding:24px;margin-bottom:16px;box-shadow:0 8px 28px #10212a12}
+h1{font-size:24px;margin:0 0 8px}h2{font-size:18px;margin:0 0 14px}
+p{line-height:1.7;color:#5d6d72}.note{font-size:13px;color:#687b82}
+label{display:block;font-weight:700;margin:12px 0 6px}
+input,select{width:100%;padding:11px 12px;border:1px solid #cbd4d7;border-radius:8px;font-size:16px;background:#fff}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+button{border:0;border-radius:8px;padding:11px 18px;font-size:15px;cursor:pointer;background:#007ab0;color:#fff;margin-top:12px}
+button.secondary{background:#eef3f5;color:#32505c}.actions{display:flex;gap:10px;flex-wrap:wrap}
+.status{margin-top:12px;padding:10px 12px;border-radius:8px;background:#eef5f7;line-height:1.6}
+.status.ok{background:#ecf8ef;color:#24633c}.status.err{background:#fff0f0;color:#8a2d2d}
+.hidden{display:none}.record{border:1px solid #dde4e6;border-radius:10px;padding:14px;margin-top:10px}
+.record strong{color:#004d79}.badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef3f5;font-size:12px;margin-left:6px}
+@media(max-width:680px){.grid,.grid3{grid-template-columns:1fr}.wrap{margin:10px auto}.card{padding:18px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+<section class="card">
+<h1>申請人安全查詢測試</h1>
+<p>這是獨立測試頁，不會取代正式前台。目前只測試「Email 驗證、認領既有登記、查詢自己的登記、後端資格檢核」。<strong>新增與刪除功能尚未開放</strong>，不會修改正式登記資料。</p>
+<div id="sessionStatus" class="status">檢查登入狀態中…</div>
+</section>
+
+<section class="card" id="authCard">
+<h2>1. Email 驗證</h2>
+<label for="email">Email</label>
+<input id="email" type="email" autocomplete="email" placeholder="請輸入 Google 表單填寫的 Email">
+<div class="actions">
+<button id="sendOtp">寄送登入驗證</button>
+<button id="signOut" class="secondary">登出</button>
+</div>
+<div class="grid" style="margin-top:10px">
+<div>
+<label for="otp">若 Email 收到 6 碼驗證碼</label>
+<input id="otp" inputmode="numeric" maxlength="8" placeholder="輸入驗證碼">
+<button id="verifyOtp">驗證 6 碼</button>
+</div>
+<div>
+<p class="note">若 Email 收到的是登入連結，請直接點連結。完成登入後再回到本頁；同一瀏覽器會沿用 Supabase Auth 登入狀態。</p>
+</div>
+</div>
+<div id="authMsg" class="status hidden"></div>
+</section>
+
+<section class="card">
+<h2>2. 認領既有登記</h2>
+<p class="note">需先完成 Email 驗證。系統會以「已驗證 Email＋手機＋會員識別末四碼」比對既有 Google 表單資料；不會顯示或下載其他申請人的資料。</p>
+<div class="grid">
+<div><label for="phone">手機</label><input id="phone" inputmode="tel" placeholder="0912345678"></div>
+<div><label for="last4">會員識別末四碼</label><input id="last4" inputmode="numeric" maxlength="4" placeholder="1234"></div>
+</div>
+<div class="actions">
+<button id="claim">認領並載入我的登記</button>
+<button id="reloadRecords" class="secondary">重新載入</button>
+</div>
+<div id="claimMsg" class="status hidden"></div>
+<div id="records"></div>
+</section>
+
+<section class="card">
+<h2>3. 後端資格檢核測試</h2>
+<p class="note">這一步只檢查，不會新增資料。後端會再次套用登記期間、羽球／籃球次數限制、同日同時段跨運動衝突及停用時段。</p>
+<div class="grid3">
+<div><label for="venue">運動類型</label>
+<select id="venue"><option>羽球</option><option>籃球</option><option>B1桌球</option><option>B2桌球</option></select></div>
+<div><label for="day">星期</label>
+<select id="day"><option>周一</option><option>周二</option><option>周三</option><option>周四</option><option>周五</option><option>周六</option><option>周日</option></select></div>
+<div><label for="time">時段</label><input id="time" placeholder="例如 08:00-09:59"></div>
+</div>
+<label for="location">地點</label>
+<input id="location" value="北投會館">
+<button id="check">執行後端資格檢核</button>
+<div id="checkMsg" class="status hidden"></div>
+</section>
+
+<section class="card">
+<p class="note">測試頁：<code>applicant-safe.html</code>。正式前台仍維持原流程，匿名資料表權限也尚未撤銷；待本頁驗收完成後才進入下一階段安全切換。</p>
+</section>
+</main>
+<script>
+(()=>{'use strict';
+const URL='https://wsvsdwuksuzcjisnpyin.supabase.co';
+const KEY='sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
+const db=supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+const $=id=>document.getElementById(id);
+function msg(id,text,ok=false){const el=$(id);el.textContent=text;el.className='status '+(ok?'ok':'err');}
+function normPhone(v){return String(v||'').replace(/\D/g,'');}
+function esc(v){return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+
+async function refreshSession(){
+  const {data:{user},error}=await db.auth.getUser();
+  if(error||!user){
+    $('sessionStatus').textContent='尚未完成 Email 驗證。';
+    $('sessionStatus').className='status';
+    return null;
+  }
+  $('email').value=user.email||$('email').value;
+  $('sessionStatus').textContent='已登入：'+(user.email||'已驗證 Email');
+  $('sessionStatus').className='status ok';
+  return user;
+}
+
+async function loadRecords(){
+  const user=await refreshSession();
+  if(!user){$('records').innerHTML='<p class="note">請先完成 Email 驗證。</p>';return;}
+  const {data,error}=await db.rpc('court_applicant_records_v1');
+  if(error){$('records').innerHTML='<div class="status err">讀取失敗：'+esc(error.message)+'</div>';return;}
+  const rows=data||[];
+  if(!rows.length){$('records').innerHTML='<p class="note">目前尚未認領到登記紀錄。</p>';return;}
+  $('records').innerHTML=rows.map(r=>`
+    <div class="record">
+      <strong>${esc(r.venue_type)}｜${esc(r.day_of_week)} ${esc(r.time_slot)}</strong>
+      <span class="badge">${r.result_published?esc(r.lottery_status||'已公布'):'結果尚未公布'}</span>
+      <div>地點：${esc(r.location_name||'北投會館')}</div>
+      <div>序號：${esc(r.serial_number||'-')}</div>
+      <div>姓名：${esc(r.name||'-')}｜手機：${esc(r.phone||'-')}｜末四碼：${esc(r.id_last4||'-')}</div>
+      <div class="note">目前安全測試模式：${r.delete_allowed?'尚未抽籤，但刪除功能仍鎖定':'已進入抽籤流程，不可刪除'}</div>
+    </div>`).join('');
+}
+
+$('sendOtp').onclick=async()=>{
+  const email=$('email').value.trim().toLowerCase();
+  if(!email){msg('authMsg','請輸入 Email');return;}
+  const redirect=location.origin+location.pathname;
+  const {error}=await db.auth.signInWithOtp({email,options:{shouldCreateUser:true,emailRedirectTo:redirect}});
+  if(error){msg('authMsg','寄送失敗：'+error.message);return;}
+  msg('authMsg','驗證信已寄出。若收到 6 碼請在下方輸入；若收到登入連結請直接點連結。',true);
+};
+
+$('verifyOtp').onclick=async()=>{
+  const email=$('email').value.trim().toLowerCase(),token=$('otp').value.trim();
+  if(!email||!token){msg('authMsg','請輸入 Email 與驗證碼');return;}
+  const {error}=await db.auth.verifyOtp({email,token,type:'email'});
+  if(error){msg('authMsg','驗證失敗：'+error.message);return;}
+  msg('authMsg','Email 驗證完成。',true);await refreshSession();await loadRecords();
+};
+
+$('signOut').onclick=async()=>{await db.auth.signOut();msg('authMsg','已登出。',true);await refreshSession();$('records').innerHTML='';};
+
+$('claim').onclick=async()=>{
+  const user=await refreshSession();if(!user){msg('claimMsg','請先完成 Email 驗證');return;}
+  const phone=normPhone($('phone').value),last4=$('last4').value.trim();
+  if(!/^09\d{8}$/.test(phone)||!/^\d{4}$/.test(last4)){msg('claimMsg','請輸入正確手機及 4 碼識別資料');return;}
+  const {data,error}=await db.rpc('court_applicant_claim_legacy_v1',{p_phone:phone,p_id_last4:last4});
+  if(error){msg('claimMsg','認領失敗：'+error.message);return;}
+  msg('claimMsg','認領完成，本次新增 '+Number(data||0)+' 筆關聯。若先前已認領，新增筆數可能為 0。',true);
+  await loadRecords();
+};
+
+$('reloadRecords').onclick=loadRecords;
+
+$('check').onclick=async()=>{
+  const user=await refreshSession();if(!user){msg('checkMsg','請先完成 Email 驗證');return;}
+  const phone=normPhone($('phone').value),last4=$('last4').value.trim();
+  const args={p_phone:phone,p_id_last4:last4,p_location:$('location').value.trim(),p_venue:$('venue').value,p_day:$('day').value,p_time_slot:$('time').value.trim()};
+  const {data,error}=await db.rpc('court_applicant_check_registration_v1',args);
+  if(error){msg('checkMsg','檢核失敗：'+error.message);return;}
+  msg('checkMsg',(data&&data.message)||'檢核完成',!!(data&&data.ok));
+};
+
+db.auth.onAuthStateChange(()=>{setTimeout(()=>{refreshSession();loadRecords();},0)});
+refreshSession().then(loadRecords);
+})();
+</script>
+</body>
+</html>
