@@ -3967,7 +3967,15 @@ body .ux-review-edit{align-items:end}
           <div class="field"><label>密碼</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="請輸入密碼"></div>
           <button id="loginBtn" class="btn btn-primary" style="width:100%;">登入後台</button>
         </div>
-        <div id="loginMsg"></div>
+        <div id="authMigrationTestBox" style="display:none;margin-top:20px;border-top:1px solid #dce4ed;padding-top:18px">
+  <strong>Supabase Auth 登入驗證（測試入口）</strong>
+  <p class="small">僅供管理員驗證新的身分機制。此處不會登入正式後台，也不會自動授予權限。</p>
+  <div class="field"><label>Supabase Auth 電子郵件</label><input id="authTestEmail" type="email" autocomplete="off"></div>
+  <div class="field"><label>Supabase Auth 密碼</label><input id="authTestPassword" type="password" autocomplete="off"></div>
+  <button id="authTestBtn" type="button" class="btn btn-gray">測試登入及角色對應</button>
+  <div id="authTestResult" class="small" role="status" style="margin-top:10px"></div>
+</div>
+<div id="loginMsg"></div>
       </div>
     </div>
   </section>
@@ -4012,6 +4020,7 @@ const SUPABASE_KEY = 'sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
 // 導致只允許 anon 的既有讀取政策回傳空清單。匯入授權使用獨立 Supabase client。
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
 const importDb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storageKey:'court-reservation-form-import-auth',persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}});
+const authMigrationClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storageKey:'court-admin-auth-migration-test',persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}});
 const ADMIN_TABLE = 'admin_users';
 const RECORD_TABLE = 'lottery_records';
 const CAPACITY_TABLE = 'lottery_capacity_settings';
@@ -8871,8 +8880,28 @@ async function loadFormAnomalies(){
 
 document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage(btn.dataset.page));
 
+async function testSupabaseAdminAuthMigration(){
+  const email=document.getElementById('authTestEmail')?.value.trim();
+  const password=document.getElementById('authTestPassword')?.value;
+  const output=document.getElementById('authTestResult');
+  if(!email||!password){output.textContent='請輸入測試用 Supabase Auth 電子郵件與密碼';return;}
+  const btn=document.getElementById('authTestBtn');btn.disabled=true;
+  try{
+    const {error}=await authMigrationClient.auth.signInWithPassword({email,password});
+    if(error)throw error;
+    const {data,error:roleError}=await authMigrationClient.rpc('get_court_admin_identity_v1');
+    if(roleError)throw roleError;
+    output.textContent=data ? '新登入驗證成功；已核對角色：'+roleName(data.role)+'。正式登入尚未切換。' : '已通過 Supabase Auth，但此帳號尚未經管理員核准對應後台角色。';
+  }catch(e){output.textContent='驗證未完成：'+(e.message||String(e));}
+  finally{document.getElementById('authTestPassword').value='';await authMigrationClient.auth.signOut().catch(()=>{});btn.disabled=false;}
+}
 (async function init(){
   const url = new URL(location.href);
+  const testBox=document.getElementById('authMigrationTestBox');
+  if(url.searchParams.get('auth-test')==='1'&&testBox){
+    testBox.style.display='block';
+    document.getElementById('authTestBtn').onclick=testSupabaseAdminAuthMigration;
+  }
   if(url.searchParams.get('reset')==='1') sessionStorage.removeItem('venue_admin_session');
   const saved=sessionStorage.getItem('venue_admin_session');
   if(saved){ try{ currentAdmin=JSON.parse(saved); await enterApp(); return; }catch(e){ sessionStorage.removeItem('venue_admin_session'); } }
