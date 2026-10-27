@@ -8699,10 +8699,15 @@ function renderBatchFormImportPreview(){
   if(!box)return;
   if(!pendingFormImports.length){box.innerHTML='';return;}
   const rows=pendingFormImports.map(p=>`<tr><td>${escapeHtml(p.fileName)}</td><td>${escapeHtml(p.sourceType)}</td><td>${p.submissions.length}</td><td>${p.records.length}</td><td>${p.anomalies.length}</td></tr>`).join('');
-  box.innerHTML=`<div class="msg info">已辨識 ${pendingFormImports.length} 份不同來源的表單，以下是準備覆蓋的資料。各來源分開執行交易，請先備份既有資料。</div>
+  box.innerHTML=`<div class="msg info">已辨識 ${pendingFormImports.length} 份不同來源的表單，請選擇「新增」或「覆蓋」模式；各來源分開處理。</div>
   <div class="table-wrap"><table><thead><tr><th>檔案</th><th>來源</th><th>回覆數</th><th>登記場次</th><th>異常</th></tr></thead><tbody>${rows}</tbody></table></div>
-  <div class="small" style="margin:10px 0;color:#9a3412">注意：覆蓋匯入將移除該來源舊 Google 表單登記紀錄，包含原有抽籤及公告狀態；人工資料及其他未選取的場地不會清除。已成功匯入的來源不會因後一份失敗而回滾。</div>
-  <button id="commitBatchFormImportBtn" class="btn btn-primary" style="margin-top:8px">確認批次覆蓋匯入（${pendingFormImports.length} 份）</button>
+  <fieldset style="border:1px solid #dce4ed;border-radius:12px;margin:12px 0;padding:14px">
+    <legend style="font-weight:700">本次匯入方式</legend>
+    <label style="display:block;margin:8px 0"><input type="radio" name="batchGoogleImportMode" value="append" checked> <strong>只新增尚未匯入的資料（建議）</strong><span class="small" style="display:block;margin-left:25px">保留舊登記、資格審查及抽籤結果；重複回覆不再新增。</span></label>
+    <label style="display:block;margin:8px 0"><input type="radio" name="batchGoogleImportMode" value="replace"> <strong>整批覆蓋該來源舊資料</strong><span class="small" style="display:block;margin-left:25px;color:#9a3412">移除該來源既有 Google 表單匯入登記再重建，相關抽籤及公告狀態可能遺失。請先備份。</span></label>
+  </fieldset>
+  <div class="small">各來源獨立交易；後一份失敗不會回滾先前成功的資料。</div>
+  <button id="commitBatchFormImportBtn" class="btn btn-primary" style="margin-top:8px">確認批次匯入（${pendingFormImports.length} 份）</button>
   <div id="batchFormImportProgress" style="margin-top:12px" aria-live="polite"></div>`;
   document.getElementById('commitBatchFormImportBtn').onclick=commitBatchGoogleFormImports;
 }
@@ -8711,8 +8716,9 @@ async function commitBatchGoogleFormImports(){
   if(!files.length)return;
   const {data:userData,error:userError}=await importDb.auth.getUser();
   if(userError||!userData?.user){alert('請先登入授權的資料庫管理帳號。');return;}
+  const importMode=document.querySelector('input[name="batchGoogleImportMode"]:checked')?.value||'append';
   const msg=files.map(p=>`${p.sourceType}：${p.submissions.length} 份回覆、${p.records.length} 筆場次`).join('\n');
-  if(!confirm('確定要分別覆蓋以下表單？\n'+msg+'\n\n此操作會刪除各來源原有匯入登記及抽籤結果。請先備份。\n若後續檔案失敗，先前成功的匯入不會自動回滾。'))return;
+  if(!confirm((importMode==='replace'?'整批覆蓋將移除舊登記與抽籤結果，請先備份。':'只新增未匯入資料，保留既有登記及抽籤結果。')+'\n'+msg+'\n\n確定執行？'))return;
   const btn=document.getElementById('commitBatchFormImportBtn');
   const progress=document.getElementById('batchFormImportProgress');
   btn.disabled=true;btn.textContent='批次匯入中…';
@@ -8720,12 +8726,12 @@ async function commitBatchGoogleFormImports(){
   for(const p of files){
     if(progress)progress.textContent='正在處理：'+p.sourceType+'｜已完成 '+lines.length+' / '+files.length;
     try{
-      const {data,error}=await importDb.rpc('replace_google_form_source_v50',{p_payload:{
+      const {data,error}=await importDb.rpc(importMode==='replace'?'replace_google_form_source_v50':'import_google_form_batch_v3',{p_payload:{
         batch_key:crypto.randomUUID(),source_type:p.sourceType,
         submissions:p.submissions,records:p.records,anomalies:p.anomalies
       }});
       if(error)throw error;
-      lines.push({ok:true,text:p.sourceType+'：成功重建 '+(data?.replaced_records??0)+' 筆'});
+      lines.push({ok:true,text:p.sourceType+(importMode==='replace'?'：成功重建 '+(data?.replaced_records??0)+' 筆':'：新增 '+(data?.inserted_records??0)+' 筆，略過重複 '+(data?.duplicate_records??0)+' 筆')});
     }catch(e){
       lines.push({ok:false,text:p.sourceType+'：失敗（'+(e.message||String(e))+'）'});
       break;
