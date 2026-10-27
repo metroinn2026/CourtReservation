@@ -4046,6 +4046,13 @@ async function loginWithCourtAuth(){
   currentAdmin=data;
   await enterApp();
 }
+async function deleteCourtRecords(ids){
+ if(!courtAuthLoginActive)return db.from(RECORD_TABLE).delete().in('id',ids);
+ const {data,error}=await authMigrationClient.rpc('court_admin_delete_records_v1',{p_ids:ids});
+ if(error)return {error};
+ if(data!==ids.length)return {error:new Error('刪除筆數與選取筆數不符，請重新整理並確認')};
+ return {error:null};
+}
 const ADMIN_TABLE = 'admin_users';
 const RECORD_TABLE = 'lottery_records';
 const CAPACITY_TABLE = 'lottery_capacity_settings';
@@ -5886,7 +5893,7 @@ function confirmDelete(id){
   showModal('確認刪除',`確定刪除 ${escapeHtml(r?.name||'')} 的登記資料嗎？`,async()=>{
     const serial=r?.serial_number;
     const ids=allRecords.filter(x=>x.serial_number===serial).map(x=>x.id);
-    const {error}=await db.from(RECORD_TABLE).delete().in('id',ids);
+    const {error}=await deleteCourtRecords(ids);
     if(error){ alert('刪除失敗'); console.error(error); return; }
     await writeOperationLog('刪除登記資料', {serial_number:serial, name:r?.name||'', phone:r?.phone||'', total:ids.length}, ids);
     selectedRecordIds.clear();
@@ -5948,7 +5955,7 @@ function batchDeleteSelectedRecords(){
   const ids=[...selectedRecordIds];
   if(ids.length===0){ alert('請先勾選要刪除的資料'); return; }
   showModal('確認批次刪除',`確定要刪除已勾選的 ${ids.length} 筆登記資料嗎？刪除後無法復原。`,async()=>{
-    const {error}=await db.from(RECORD_TABLE).delete().in('id',ids);
+    const {error}=await deleteCourtRecords(ids);
     if(error){ alert('批次刪除失敗'); console.error(error); return; }
     await writeOperationLog('批次刪除登記資料', {total:ids.length}, ids);
     selectedRecordIds.clear();
