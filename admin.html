@@ -4564,7 +4564,7 @@ function randomSalt(){ return crypto.getRandomValues(new Uint8Array(16)).reduce(
 async function makeHash(password, salt){ return sha256(`${salt}:${password}`); }
 
 async function loadAdmins(){
-  const {data,error}=await db.from(ADMIN_TABLE).select('*').order('created_at',{ascending:true});
+  const {data,error}=courtAuthLoginActive ? await authMigrationClient.rpc('court_admin_list_accounts_v1') : await db.from(ADMIN_TABLE).select('*').order('created_at',{ascending:true});
   if(error){ showMsg('loginMsg','讀取管理帳號失敗。請確認 admin_users 資料表已建立。','error'); console.error(error); return null; }
   return data||[];
 }
@@ -8431,7 +8431,13 @@ function renderAccountsPage(){
     </div>
   `;
 
+  if(courtAuthLoginActive){
+    document.getElementById('addAccountBtn').disabled=true;
+    document.getElementById('addAccountBtn').title='新帳號須先建立 Supabase Auth 身分與管理員對應';
+    document.querySelector('.accounts-create-panel .accounts-inline-note').textContent='新版登入已改用 Supabase Auth；新增帳號須先核准 Auth 帳號並建立權限對應，目前暫停舊式新增及密碼重設。';
+  }
   document.getElementById('addAccountBtn').onclick=async()=>{
+    if(courtAuthLoginActive){alert('請先完成 Supabase Auth 帳號建立與核准對應');return;}
     const username=document.getElementById('newUser').value.trim();
     const display_name=document.getElementById('newName').value.trim();
     const password=document.getElementById('newPass').value;
@@ -8491,18 +8497,20 @@ async function loadAccountList(){
     );
     if(!okConfirm) return;
 
-    await db.from(ADMIN_TABLE)
-      .update({is_active:!active,updated_at:new Date().toISOString()})
-      .eq('id',btn.dataset.toggle);
+    const {error}=courtAuthLoginActive ? await authMigrationClient.rpc('court_admin_toggle_account_v1',{p_id:btn.dataset.toggle,p_active:!active}) : await db.from(ADMIN_TABLE).update({is_active:!active,updated_at:new Date().toISOString()}).eq('id',btn.dataset.toggle);
+    if(error){alert('更新帳號狀態失敗：'+error.message);return;}
 
     loadAccountList();
   });
 
   document.querySelectorAll('[data-reset]').forEach(btn=>{
+    btn.disabled=courtAuthLoginActive;
+    btn.title=courtAuthLoginActive?'請透過 Supabase Auth 重設密碼':'';
     btn.onclick=()=>resetPassword(btn.dataset.reset);
   });
 }
 function resetPassword(id){
+  if(courtAuthLoginActive){alert('新版帳號請使用 Supabase Auth 密碼重設方式');return;}
   showModal('重設密碼','請輸入新密碼：',async(input)=>{
     if(!input){alert('請輸入密碼');return;}
     const salt=randomSalt(); const password_hash=await makeHash(input,salt);
