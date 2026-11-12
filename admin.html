@@ -4775,15 +4775,6 @@ async function callAdminAccountManager(payload){
 
 async function createAdminAccount({email,display_name,password,role='staff'}){
   return callAdminAccountManager({action:'create',email,displayName:display_name,password,role});
-}){
-  const accountClient=await accountManagementClient();
-  if(!accountClient) throw new Error('請先完成 Supabase 管理員授權');
-  const salt=randomSalt();
-  const password_hash=await makeHash(password,salt);
-  const {error}=await accountClient.rpc('court_admin_create_legacy_account_v1',{
-    p_username:username,p_display_name:display_name,p_role:role,p_salt:salt,p_password_hash:password_hash
-  });
-  if(error) throw error;
 }
 async function login(){
   const username=document.getElementById('loginUsername').value.trim();
