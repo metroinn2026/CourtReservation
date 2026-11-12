@@ -3331,13 +3331,13 @@
             <div>
               <label style="display:block; font-size:12px; color:#666; margin-bottom:4px; font-weight:600;">運動類型</label>
               <select id="capacity-venue" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
-                ${venues.map(v => `<option value="${v}">${v}</option>`).join('')}
+                ${venues.map(v => `<option value="${frontEscapeHtml(v)}">${frontEscapeHtml(v)}</option>`).join('')}
               </select>
             </div>
             <div>
               <label style="display:block; font-size:12px; color:#666; margin-bottom:4px; font-weight:600;">星期</label>
               <select id="capacity-day" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
-                ${days.map(d => `<option value="${d}">${d}</option>`).join('')}
+                ${days.map(d => `<option value="${frontEscapeHtml(d)}">${frontEscapeHtml(d)}</option>`).join('')}
               </select>
             </div>
             <div>
@@ -3594,7 +3594,7 @@
             <label style="font-size: 13px; font-weight: 600; color: #333; margin-right: 8px;">篩選日期:</label>
             <select id="chart-date-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
               <option value="">全部日期</option>
-              ${getUniqueValues('day_of_week').map(day => `<option value="${day}">${day}</option>`).join('')}
+              ${getUniqueValues('day_of_week').map(day => `<option value="${frontEscapeHtml(day)}">${frontEscapeHtml(day)}</option>`).join('')}
             </select>
           </div>
           <div id="chart-container">
@@ -3615,21 +3615,21 @@
               <label style="display: block; font-size: 12px; font-weight: 600; color: #666; margin-bottom: 6px;">運動類型</label>
               <select id="filter-venue" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
                 <option value="">全部</option>
-                ${venues.map(v => `<option value="${v}">${v}</option>`).join('')}
+                ${venues.map(v => `<option value="${frontEscapeHtml(v)}">${frontEscapeHtml(v)}</option>`).join('')}
               </select>
             </div>
             <div>
               <label style="display: block; font-size: 12px; font-weight: 600; color: #666; margin-bottom: 6px;">日期</label>
               <select id="filter-day" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
                 <option value="">全部</option>
-                ${days.map(d => `<option value="${d}">${d}</option>`).join('')}
+                ${days.map(d => `<option value="${frontEscapeHtml(d)}">${frontEscapeHtml(d)}</option>`).join('')}
               </select>
             </div>
             <div>
               <label style="display: block; font-size: 12px; font-weight: 600; color: #666; margin-bottom: 6px;">時段</label>
               <select id="filter-time" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
                 <option value="">全部</option>
-                ${times.map(t => `<option value="${t}">${t}</option>`).join('')}
+                ${times.map(t => `<option value="${frontEscapeHtml(t)}">${frontEscapeHtml(t)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -3799,16 +3799,16 @@
         
         html += `<tr style="border-bottom: 1px solid #e5e7eb; background: ${idx % 2 ? '#fff' : '#fafafa'};">
           <td style="padding: 10px; text-align: center; font-weight: 700; color: var(--primary-blue);">${idx + 1}</td>
-          <td style="padding: 10px; font-weight: 700; color: #333;">${r.serial_number}</td>
-          <td style="padding: 10px;">${r.name}</td>
-          <td style="padding: 10px;">${r.phone}</td>
-          <td style="padding: 10px;">${r.id_last4 || '-'}</td>
+          <td style="padding: 10px; font-weight: 700; color: #333;">${frontEscapeHtml(r.serial_number)}</td>
+          <td style="padding: 10px;">${frontEscapeHtml(r.name)}</td>
+          <td style="padding: 10px;">${frontEscapeHtml(r.phone)}</td>
+          <td style="padding: 10px;">${frontEscapeHtml(r.id_last4 || '-')}</td>
           <td style="padding: 10px; color: #b45309; font-weight: 700;">${suspiciousPhones[normalizePhoneNumber(r.phone)] ? '⚠️同手機多身分' : ''}</td>
-          <td style="padding: 10px; font-weight: 600; color: var(--primary-blue);">${r.venue_type}</td>
-          <td style="padding: 10px;">${r.day_of_week}</td>
-          <td style="padding: 10px; color: var(--primary-blue); font-weight: 600;">${displayTime}</td>
+          <td style="padding: 10px; font-weight: 600; color: var(--primary-blue);">${frontEscapeHtml(r.venue_type)}</td>
+          <td style="padding: 10px;">${frontEscapeHtml(r.day_of_week)}</td>
+          <td style="padding: 10px; color: var(--primary-blue); font-weight: 600;">${frontEscapeHtml(displayTime)}</td>
           <td style="padding: 10px; text-align: center; color: #40AF36; font-weight: 600;">${recordHours}小時</td>
-          <td style="padding: 10px; text-align: center;"><button data-id="${r.__backendId}" class="admin-delete" style="background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">刪除</button></td>
+          <td style="padding: 10px; text-align: center;"><button data-id="${frontEscapeHtml(r.__backendId)}" class="admin-delete" style="background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">刪除</button></td>
         </tr>`;
       });
       
@@ -3896,7 +3896,7 @@
       sortedTimeSlots.forEach((time, idx) => {
         const x = padding + idx * xSpacing;
         svg += `<line x1="${x}" y1="${padding + innerHeight}" x2="${x}" y2="${padding + innerHeight + 5}" stroke="#999" stroke-width="1"/>`;
-        svg += `<text x="${x}" y="${padding + innerHeight + 20}" font-size="11" text-anchor="middle" fill="#666">${time}</text>`;
+        svg += `<text x="${x}" y="${padding + innerHeight + 20}" font-size="11" text-anchor="middle" fill="#666">${frontEscapeHtml(time)}</text>`;
       });
       
       Object.entries(venues).forEach(([venueType, venueTimes]) => {
