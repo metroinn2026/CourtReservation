@@ -413,6 +413,47 @@ test('public dynamic text escapes HTML while preserving newlines',()=>{
   assert.match(front,/frontTextWithBreaks\(systemSettings\.register_notice\)/);
   assert.match(front,/frontEscapeHtml\(record\.serial_number/);
 });
+test('opening audit history refreshes records without modifying registrations',async()=>{
+  const start=admin.indexOf('async function refreshAdminOperationLogs(){');
+  const end=admin.indexOf('function summarizeAdminOperationLog(',start);
+  assert.ok(start>=0&&end>start);
+  let renders=0,queries=0;
+  const sandbox={
+    adminSessionEpoch:7,courtAuthLoginActive:true,adminSigningOut:false,currentPage:'logs',
+    allLogs:[],console:{warn:()=>{}},
+    reviewDbClient:()=>({rpc:async(name,args)=>{
+      queries++;
+      assert.equal(name,'court_admin_list_logs_v1');
+      assert.equal(args.p_limit,200);
+      return {data:[{action:'停用管理員帳號'}],error:null};
+    }}),
+    renderLogsPage:()=>{renders++;}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  await sandbox.refreshAdminOperationLogs();
+  assert.equal(queries,1);
+  assert.equal(sandbox.allLogs.length,1);
+  assert.equal(renders,1);
+});
+test('an old audit refresh cannot repopulate data after session logout',async()=>{
+  const start=admin.indexOf('async function refreshAdminOperationLogs(){');
+  const end=admin.indexOf('function summarizeAdminOperationLog(',start);
+  let resolveQuery;
+  const sandbox={
+    adminSessionEpoch:10,courtAuthLoginActive:true,adminSigningOut:false,currentPage:'logs',
+    allLogs:[],console:{warn:()=>{}},renderLogsPage:()=>{throw Error('stale data rendered');},
+    reviewDbClient:()=>({rpc:()=>new Promise(resolve=>{resolveQuery=resolve;})})
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  const pending=sandbox.refreshAdminOperationLogs();
+  sandbox.adminSessionEpoch=11;
+  sandbox.courtAuthLoginActive=false;
+  resolveQuery({data:[{action:'stale record'}],error:null});
+  await pending;
+  assert.equal(sandbox.allLogs.length,0);
+});
 test('account activation and role-change logs show clear before/after values',()=>{
   const start=admin.indexOf('function summarizeAdminOperationLog(log){');
   const end=admin.indexOf('function renderLogsPage()',start);
