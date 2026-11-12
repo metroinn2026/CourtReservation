@@ -4451,6 +4451,91 @@ body .ux-review-edit{align-items:end}
     .records-content-nav{align-items:flex-start!important;flex-direction:column!important;padding-bottom:8px!important;}
   }
 </style>
+
+<style id="records-lottery-visual-consistency-v16">
+  .records-main-panel-compact{
+    background:transparent!important;
+    border:0!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+    overflow:visible!important;
+  }
+
+  .records-main-panel-compact > .section-title-outside{
+    margin:0 0 10px 8px!important;
+    padding:0!important;
+    font-size:18px!important;
+    font-weight:900!important;
+    line-height:1.25!important;
+    color:var(--ui-text,#10233f)!important;
+  }
+  .records-main-panel-compact > .section-title-outside::before{
+    width:4px!important;
+    height:22px!important;
+    flex:0 0 4px!important;
+    border-radius:999px!important;
+    background:var(--ui-blue,#2563eb)!important;
+  }
+
+  .records-section-card{
+    background:#fff!important;
+    border:1px solid var(--ui-line,#dfe7f0)!important;
+    border-radius:18px!important;
+    box-shadow:none!important;
+    padding:18px!important;
+    margin:0 0 18px!important;
+    overflow:visible!important;
+  }
+
+  .records-list-section-title{
+    margin-top:0!important;
+  }
+
+  /* 第一區：摘要、工具、篩選維持精簡，但落在統一白卡內 */
+  .records-filter-section-card .records-compact-head{
+    padding:0 0 12px!important;
+    border-bottom:1px solid #eef2f6!important;
+  }
+  .records-filter-section-card .records-compact-filterbar{
+    padding:12px 0 0!important;
+    border-bottom:0!important;
+  }
+
+  /* 第二區：頁籤、控制列、資料表共用同一白卡 */
+  .records-list-section-card .records-content-nav{
+    padding:0!important;
+    border-bottom:1px solid #eef2f6!important;
+  }
+  .records-list-section-card #recordsWorkspace{
+    background:transparent!important;
+    border:0!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+  }
+  .records-list-section-card .records-table-meta-controls{
+    padding:10px 0!important;
+    margin:0!important;
+    border-bottom:1px solid #eef2f6!important;
+  }
+  .records-list-section-card .records-list-actionbar-active{
+    padding:8px 0!important;
+    margin:0!important;
+  }
+  .records-list-section-card #recordsWorkspace > #recordsTable .records-table-wrap{
+    margin:0!important;
+  }
+  .records-list-section-card #recordsWorkspace > #recordsTable .pager{
+    margin:10px 0 0!important;
+  }
+
+  @media(max-width:900px){
+    .records-section-card{
+      padding:16px!important;
+    }
+  }
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5867,6 +5952,8 @@ function renderRecordsPage(){
 
   document.getElementById('content').innerHTML=`
     <div class="panel records-main-panel records-main-panel-compact">
+      <div class="section-title-outside section-title-manual">登記資料管理</div>
+      <div class="records-section-card records-filter-section-card">
       <div class="records-compact-head">
         <div>
           <h3>登記資料</h3>
@@ -5911,6 +5998,10 @@ function renderRecordsPage(){
         <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
       </div>
 
+      </div>
+
+      <div class="section-title-outside section-title-manual records-list-section-title">登記清單</div>
+      <div class="records-section-card records-list-section-card">
       <div class="records-content-nav">
         <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
           <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
@@ -5927,6 +6018,7 @@ function renderRecordsPage(){
       </div>
 
       <div id="recordsWorkspace"></div>
+      </div>
     </div>
     <div id="courtImportModal" class="court-import-modal" hidden role="dialog" aria-modal="true" aria-labelledby="courtImportModalTitle">
       <div class="court-import-dialog" tabindex="-1">
