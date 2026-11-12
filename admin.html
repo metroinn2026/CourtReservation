@@ -4536,6 +4536,19 @@ body .ux-review-edit{align-items:end}
     }
   }
 </style>
+
+<style id="admin-email-link-style">
+  .admin-email-link{
+    color:#2563eb!important;
+    text-decoration:none!important;
+    font-weight:600!important;
+    cursor:pointer!important;
+  }
+  .admin-email-link:hover,
+  .admin-email-link:focus{
+    text-decoration:underline!important;
+  }
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -4994,7 +5007,10 @@ function courtVenueLabel(r){
 }
 function adminEmailCell(r){
   const email = (courtAuthLoginActive||secureIdentityAuthenticated) ? secureEmailBySubmission.get(String(r.import_submission_key||'')) : '';
-  return email ? `<span title="${escapeHtml(email)}">${escapeHtml(email)}</span>` : '<span class="small" title="登入資料庫授權帳號後可查閱">—</span>';
+  if(!email) return '<span class="small" title="登入資料庫授權帳號後可查閱">—</span>';
+  const safeEmail=escapeHtml(email);
+  const mailto='mailto:'+encodeURIComponent(String(email).trim());
+  return `<a class="admin-email-link" href="${mailto}" title="寄信給 ${safeEmail}">${safeEmail}</a>`;
 }
 function adminPhoneCell(r){
   // Go會員=會員綁定手機；會館會員=表單填寫的聯絡手機。
