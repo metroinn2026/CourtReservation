@@ -8815,17 +8815,22 @@ async function loadAccountList(){
     const body='確定要永久刪除「'+escapeHtml(name)+'」'+(username?'（'+escapeHtml(username)+'）':'')+'嗎？<br><br>此操作不可復原；既有操作紀錄會保留。';
     const okConfirm=await confirmModal('確認刪除管理員帳號',body);
     if(!okConfirm)return;
-    const {data,error}=await accountClient.rpc('court_admin_delete_account_v1',{p_id:btn.dataset.deleteAdmin});
-    if(error){
-      const msg=String(error.message||'');
+    try{
+      const result=await callAdminAccountManager({action:'delete_account',targetAdminId:btn.dataset.deleteAdmin});
+      if(result.warning==='auth_user_delete_failed'){
+        alert('後台權限已刪除，但 Auth 身分清理未完整完成，請通知系統管理員。');
+      }else{
+        alert('已刪除管理員帳號「'+name+'」。');
+      }
+      await loadAccountList();
+    }catch(e){
+      const msg=String(e.message||'');
       if(msg.includes('disable account before deletion')) alert('請先停用此帳號，再執行刪除。');
       else if(msg.includes('cannot delete current account')) alert('不能刪除目前登入中的帳號。');
       else if(msg.includes('cannot delete last active super admin')) alert('不能刪除最後一個啟用中的超級管理員。');
       else alert('刪除帳號失敗：'+msg);
       return;
     }
-    alert('已刪除管理員帳號「'+name+'」。');
-    await loadAccountList();
   });
 }
 function resetPassword(id){
