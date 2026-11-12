@@ -141,6 +141,28 @@ test('admin sessions terminate on Supabase logout and across same-origin tabs',(
   assert.match(admin,/event\.key===ADMIN_SESSION_LOGOUT_EVENT/);
   assert.match(admin,/localStorage\.setItem\(ADMIN_SESSION_LOGOUT_EVENT,String\(Date\.now\(\)\)\)/);
 });
+test('late database responses are discarded after logout',()=>{
+  const start=admin.indexOf('async function loadAllData(){');
+  const end=admin.indexOf('function parseSettingDate(',start);
+  assert.ok(start>=0&&end>start);
+  const body=admin.slice(start,end);
+  assert.match(body,/const requestEpoch=adminSessionEpoch/);
+  assert.match(body,/const requestStillAuthorized=\(\)=>courtAuthLoginActive&&!adminSigningOut&&requestEpoch===adminSessionEpoch/);
+  assert.match(body,/if\(!requestStillAuthorized\(\)\)return false;/);
+  assert.ok(body.indexOf('if(!requestStillAuthorized())return false;',body.indexOf('Promise.all'))
+    <body.indexOf('allRecords=(recordsRes.data'));
+  assert.match(admin,/adminSigningOut=true;\s*adminSessionEpoch\+\+;/);
+});
+test('session epochs prevent old asynchronous work from crossing a new login',()=>{
+  const originalEpoch=7;
+  const snapshot=originalEpoch;
+  const stillAuthorized=(current,active,signingOut)=>
+    active&&!signingOut&&snapshot===current;
+  assert.equal(stillAuthorized(7,true,false),true);
+  assert.equal(stillAuthorized(8,true,false),false);
+  assert.equal(stillAuthorized(7,false,false),false);
+  assert.equal(stillAuthorized(7,true,true),false);
+});
 test('admin logout clears local identity and masks sensitive UI',()=>{
   assert.match(admin,/clearAdminSessionMarkers\(\)/);
   assert.match(admin,/secureIdentityBySubmission\.clear\(\)/);
