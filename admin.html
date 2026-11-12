@@ -4050,6 +4050,111 @@ body .ux-review-edit{align-items:end}
     .records-shared-toolbar,.records-fixed-filter.show-advanced .records-shared-toolbar{grid-template-columns:repeat(2,minmax(140px,1fr))!important;}
   }
 </style>
+
+<style id="records-simple-filter-v13">
+  .records-main-panel > .records-fixed-filter{
+    display:block!important;
+    padding:16px 18px!important;
+  }
+  .records-fixed-filter-title{
+    margin:0 0 12px!important;
+  }
+  .records-shared-toolbar{
+    display:grid!important;
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+    gap:10px 12px!important;
+    align-items:center!important;
+    width:100%!important;
+  }
+  .records-shared-toolbar > *{
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+    box-sizing:border-box!important;
+  }
+  .records-advanced-filter{
+    display:block!important;
+  }
+  .records-filter-actions{
+    display:flex!important;
+    justify-content:flex-end!important;
+    align-items:center!important;
+    gap:10px!important;
+    margin-top:12px!important;
+  }
+  .records-filter-actions .btn{
+    min-width:140px!important;
+  }
+  #clearRecordFiltersBtn{
+    min-width:0!important;
+  }
+
+  .records-table-meta-controls{
+    margin:0 4px 10px!important;
+    padding:8px 0!important;
+    display:flex!important;
+    justify-content:space-between!important;
+    align-items:center!important;
+    gap:12px!important;
+    flex-wrap:wrap!important;
+    color:#64748b!important;
+    font-size:12.5px!important;
+  }
+  .records-meta-left{
+    display:flex!important;
+    align-items:center!important;
+    gap:12px!important;
+    flex-wrap:wrap!important;
+  }
+  .records-inline-control{
+    display:flex!important;
+    align-items:center!important;
+    gap:6px!important;
+    color:#475569!important;
+    font-weight:700!important;
+    white-space:nowrap!important;
+  }
+  .records-inline-control select{
+    height:36px!important;
+    min-width:108px!important;
+    padding:5px 30px 5px 9px!important;
+    border:1px solid #cfd9e4!important;
+    border-radius:9px!important;
+    background:#fff!important;
+    font-size:12.5px!important;
+  }
+  #recordsLotteryStatusFilter{min-width:126px!important;}
+  #recordsPerPage{min-width:94px!important;}
+
+  .records-list-actionbar{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    flex-wrap:nowrap!important;
+    gap:8px!important;
+    margin:0 0 12px!important;
+    padding:10px 12px!important;
+  }
+  .records-list-action-left{
+    display:flex!important;
+    align-items:center!important;
+    flex-wrap:nowrap!important;
+    gap:8px!important;
+    width:100%!important;
+    margin:0!important;
+  }
+  #savePendingRecordStatusBtn{margin-left:auto!important;}
+
+  @media(max-width:1200px){
+    .records-shared-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+    .records-list-actionbar,.records-list-action-left{flex-wrap:wrap!important;}
+    #savePendingRecordStatusBtn{margin-left:0!important;}
+  }
+  @media(max-width:720px){
+    .records-shared-toolbar{grid-template-columns:1fr!important;}
+    .records-filter-actions{justify-content:flex-start!important;flex-wrap:wrap!important;}
+  }
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5487,13 +5592,12 @@ function renderRecordsPage(){
           <input id="searchQ" placeholder="搜尋姓名／聯絡手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
           <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
           <select id="filterVenue" title="篩選運動場地"><option value="">全部場地類別</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
-          <select id="filterUsage" class="records-advanced-filter" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
+          <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
           <select id="filterTime" title="未選球類：每小時；羽球/桌球：每1小時；籃球：每2小時">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
-          <button id="recordsAdvancedToggle" type="button" class="btn btn-gray records-filter-tool-btn">進階篩選 ▾</button>
           <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray records-filter-tool-btn">清除篩選條件</button>
-          <select id="filterAnomaly" class="records-advanced-filter" title="篩選正常或指定異常狀態">
-            <option value="" ${recordState.anomaly===''?'selected':''}>全部</option>
+          <select id="filterAnomaly" title="篩選正常或指定異常狀態">
+            <option value="" ${recordState.anomaly===''?'selected':''}>全部異常狀態</option>
             <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
             ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','截止後登記'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
           </select>
@@ -5543,12 +5647,6 @@ function renderRecordsPage(){
   };
 
   document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
-  const advancedBtn=document.getElementById('recordsAdvancedToggle');
-  advancedBtn.onclick=()=>{
-    const panel=document.querySelector('.records-fixed-filter');
-    const active=panel.classList.toggle('show-advanced');
-    advancedBtn.textContent=active?'收起進階篩選 ▴':'進階篩選 ▾';
-  };
   document.getElementById('clearRecordFiltersBtn').onclick=()=>{
     recordState.q='';
     recordState.location=DEFAULT_LOCATION;
@@ -5804,156 +5902,7 @@ async function publishCurrentFilteredRange(published){
   }
 }
 
-function renderRecordsTable(){
-  const filtered=getFilteredRecords();
-  const totalPages=Math.max(1,Math.ceil(filtered.length/recordState.perPage));
-  if(recordState.page>totalPages) recordState.page=totalPages;
-  const start=(recordState.page-1)*recordState.perPage;
-  const rows=filtered.slice(start,start+recordState.perPage);
-  const isBatch=recordsActionTab!=='publish';
-  const pageIds=rows.map(r=>String(r.id));
-  const allPageSelected=isBatch && pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
 
-  let html=`<div class="small records-table-meta"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span>`;
-  if(isBatch) html+=`<span>已勾選 <strong>${selectedRecordIds.size}</strong> 筆｜已修改 <strong>${pendingRecordStatusChanges.size}</strong> 筆</span>`;
-  html+=`</div>`;
-  html+=`<div class="records-list-filterbar">
-    
-    <label for="recordsLotteryStatusFilter">抽籤狀態</label>
-    <select id="recordsLotteryStatusFilter" title="選擇後立即篩選">
-      <option value="">全部狀態</option><option value="__not_drawn__">未抽籤</option>
-      <option value="中籤">中籤</option><option value="__backup__">備取</option>
-      <option value="未中籤">未中籤</option><option value="放棄">放棄</option>
-    </select>
-    <label for="recordsPerPage">每頁顯示</label>
-    <select id="recordsPerPage" title="選擇清單每頁顯示筆數">
-      <option value="20">20筆</option>
-      <option value="50">50筆</option>
-      <option value="100">100筆</option>
-      <option value="200">200筆</option>
-      <option value="999999">全部</option>
-    </select>
-  
-  </div>`;
-  if(isBatch){
-    html+=`
-      <div class="records-list-actionbar">
-        <div class="records-batch-intro"><strong>3｜批次處理</strong><span>勾選後批次設定並儲存</span></div>
-        <div class="records-list-action-left">
-          <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
-            <option value="__none__">批次變更狀態</option>
-            <option value="中籤">中籤</option>
-            <option value="__rank__">備取（輸入順位…）</option>
-            <option value="放棄">放棄</option>
-            <option value="未中籤">未中籤</option>
-            <option value="__clear__">未抽籤</option>
-          </select>
-          <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將上方選取的狀態套用至勾選資料，需再儲存才會更新">套用至勾選</button>
-          <button id="markSelectedNotWonBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將勾選資料批次暫存為未中籤；請再按儲存狀態變更">將勾選設為未中籤</button>
-          <button id="deleteSelectedFromListBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>刪除勾選資料</button>
-          <button id="savePendingRecordStatusBtn" class="btn btn-primary" ${pendingRecordStatusChanges.size?'':'disabled'}>
-            儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
-          </button>
-        </div>
-      </div>`;
-  }
-
-  html+=`<div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr>`;
-  if(isBatch) html+=`<th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th>`;
-  html+=`<th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:96px;">${sortHeader('聯絡手機','phone')}</th><th style="width:190px;">Email</th><th style="width:130px;">${sortHeader('會員身分／識別末4碼','member_type')}</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th><th style="width:90px;">${sortHeader('登記時間','registered_at')}</th></tr></thead><tbody>`;
-
-  rows.forEach((r,i)=>{
-    html+=`<tr>`;
-    if(isBatch) html+=`<td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(String(r.id))?'checked':''}></td>`;
-    html+=`<td>${start+i+1}</td>
-      <td>${isBatch ? recordStatusSelect(r) : recordStatusTag(r.lottery_status)}</td>
-      <td>${publishStatusTag(r)}</td>
-      <td>${anomalyTags(r)}</td>
-      <td><strong>${escapeHtml(r.serial_number)}</strong></td>
-      <td>${escapeHtml(r.name)}</td>
-      <td>${escapeHtml(r.phone)}</td>
-      <td>${adminEmailCell(r)}</td>
-      <td>${memberIdentityCell(r)}</td>
-      <td>${escapeHtml(shortLocationName(recordLocation(r)))}</td>
-      <td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td>
-      <td>${escapeHtml(r.day_of_week)}</td>
-      <td>${escapeHtml(r.time_slot)}</td>
-      <td>${recordHours(r)}h</td></tr>`;
-  });
-
-  html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
-  document.getElementById('recordsTable').innerHTML=html;
-  bindIdentityReveal();
-
-  bindSortHeaders();
-  const anomalyHelpBtn=document.getElementById('anomalyHelpBtn');
-  if(anomalyHelpBtn) anomalyHelpBtn.onclick=showAnomalyDefinitionModal;
-
-  document.getElementById('prevPage').disabled=recordState.page<=1;
-  document.getElementById('nextPage').disabled=recordState.page>=totalPages;
-  document.getElementById('prevPage').onclick=()=>{recordState.page--;renderRecordsTable();};
-  document.getElementById('nextPage').onclick=()=>{recordState.page++;renderRecordsTable();};
-
-  if(!isBatch) return;
-
-  const selectPage=document.getElementById('selectPageRecords');
-  if(selectPage){
-    selectPage.onchange=()=>{
-      pageIds.forEach(id=>{ if(selectPage.checked) selectedRecordIds.add(id); else selectedRecordIds.delete(id); });
-      renderRecordsTable();
-    };
-  }
-  document.querySelectorAll('.record-check').forEach(chk=>{
-    chk.onchange=()=>{
-      const id=String(chk.dataset.id);
-      if(chk.checked) selectedRecordIds.add(id); else selectedRecordIds.delete(id);
-      renderRecordsTable();
-    };
-  });
-
-  document.querySelectorAll('.record-status-select').forEach(sel=>{
-    sel.onchange=()=>{
-      const id=String(sel.dataset.statusId);
-      const original=String(sel.dataset.original||'');
-      const next=sel.value==='__rank__'?promptBackupRank():String(sel.value||'');
-      if(next===null){renderRecordsTable();return;}
-      if(next===original) pendingRecordStatusChanges.delete(id);
-      else pendingRecordStatusChanges.set(id,next);
-      renderRecordsTable();
-    };
-  });
-
-  const applySelectedStatusBtn=document.getElementById('applySelectedStatusBtn');
-  if(applySelectedStatusBtn) applySelectedStatusBtn.onclick=stageSelectedRecordStatus;
-  const markSelectedNotWonBtn=document.getElementById('markSelectedNotWonBtn');
-  if(markSelectedNotWonBtn) markSelectedNotWonBtn.onclick=stageSelectedNotWon;
-
-  const deleteSelectedFromListBtn=document.getElementById('deleteSelectedFromListBtn');
-  if(deleteSelectedFromListBtn) deleteSelectedFromListBtn.onclick=batchDeleteSelectedRecords;
-
-  const saveStatusBtn=document.getElementById('savePendingRecordStatusBtn');
-  if(saveStatusBtn) saveStatusBtn.onclick=savePendingRecordStatusChanges;
-  const statusFilter=document.getElementById('recordsLotteryStatusFilter');
-  if(statusFilter){
-    statusFilter.value=recordState.lotteryFilter||'';
-    statusFilter.onchange=()=>{
-      recordState.lotteryFilter=statusFilter.value;
-      recordState.page=1;
-      selectedRecordIds.clear();
-      renderRecordsWorkspace();
-    };
-  }
-  const pageFilter=document.getElementById('recordsPerPage');
-  if(pageFilter){
-    pageFilter.value=String(recordState.perPage);
-    pageFilter.onchange=()=>{
-      recordState.perPage=Number(pageFilter.value)||20;
-      recordState.page=1;
-      selectedRecordIds.clear();
-      renderRecordsWorkspace();
-    };
-  }
-}
 
 function shortLocationName(value){
   const text=String(value||'').trim();
@@ -6118,7 +6067,31 @@ function renderRecordsTable(){
   const rows=filtered.slice(start,start+recordState.perPage);
   const pageIds=rows.map(r=>r.id);
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
-  let html=`<div class="small" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span><span>已勾選 <strong>${selectedRecordIds.size}</strong> 筆｜已修改 <strong>${pendingRecordStatusChanges.size}</strong> 筆</span></div>
+  let html=`<div class="records-table-meta records-table-meta-controls">
+    <div class="records-meta-left">
+      <span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span>
+      <label class="records-inline-control">抽籤狀態
+        <select id="recordsLotteryStatusFilter" title="選擇後立即篩選">
+          <option value="">全部狀態</option>
+          <option value="__not_drawn__">未抽籤</option>
+          <option value="中籤">中籤</option>
+          <option value="__backup__">備取</option>
+          <option value="未中籤">未中籤</option>
+          <option value="放棄">放棄</option>
+        </select>
+      </label>
+      <label class="records-inline-control">每頁顯示
+        <select id="recordsPerPage" title="選擇清單每頁顯示筆數">
+          <option value="20">20筆</option>
+          <option value="50">50筆</option>
+          <option value="100">100筆</option>
+          <option value="200">200筆</option>
+          <option value="999999">全部</option>
+        </select>
+      </label>
+    </div>
+    <span>已勾選 <strong>${selectedRecordIds.size}</strong> 筆｜已修改 <strong>${pendingRecordStatusChanges.size}</strong> 筆</span>
+  </div>
   <div class="records-list-actionbar">
     <div class="records-list-action-left">
       <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
@@ -6180,6 +6153,29 @@ function renderRecordsTable(){
 
   const saveStatusBtn=document.getElementById('savePendingRecordStatusBtn');
   if(saveStatusBtn) saveStatusBtn.onclick=savePendingRecordStatusChanges;
+
+  const statusFilter=document.getElementById('recordsLotteryStatusFilter');
+  if(statusFilter){
+    statusFilter.value=recordState.lotteryFilter||'';
+    statusFilter.onchange=()=>{
+      recordState.lotteryFilter=statusFilter.value;
+      recordState.page=1;
+      selectedRecordIds.clear();
+      renderRecordsWorkspace();
+    };
+  }
+
+  const pageFilter=document.getElementById('recordsPerPage');
+  if(pageFilter){
+    pageFilter.value=String(recordState.perPage);
+    pageFilter.onchange=()=>{
+      const next=Number(pageFilter.value);
+      recordState.perPage=[20,50,100,200,999999].includes(next)?next:20;
+      recordState.page=1;
+      selectedRecordIds.clear();
+      renderRecordsWorkspace();
+    };
+  }
 }
 function confirmDelete(id){
   const r=allRecords.find(x=>x.id===id);
