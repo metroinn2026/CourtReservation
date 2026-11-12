@@ -4025,6 +4025,31 @@ body .ux-review-edit{align-items:end}
   cursor:not-allowed!important;
 }
 </style>
+<style id="records-layout-refine-v12">
+  .records-shared-toolbar{
+    grid-template-columns:minmax(220px,1.45fr) repeat(4,minmax(120px,1fr)) auto auto!important;
+    align-items:center!important;
+  }
+  .records-filter-tool-btn{min-width:122px!important;height:42px!important;padding:8px 12px!important;white-space:nowrap!important;}
+  .records-fixed-filter.show-advanced .records-shared-toolbar{grid-template-columns:minmax(220px,1.45fr) repeat(5,minmax(115px,1fr)) auto auto!important;}
+  .records-filter-actions{justify-content:flex-end!important;margin-top:10px!important;}
+  .records-list-filterbar{justify-content:flex-start!important;margin-bottom:10px!important;}
+  #recordsLotteryStatusFilter{min-width:140px!important;}
+  #recordsPerPage{min-width:100px!important;}
+  .records-list-actionbar{display:flex!important;align-items:center!important;justify-content:flex-start!important;flex-wrap:nowrap!important;gap:14px!important;padding:10px 14px!important;}
+  .records-batch-intro{display:flex!important;align-items:center!important;gap:8px!important;margin:0!important;flex:0 0 auto!important;white-space:nowrap!important;}
+  .records-batch-intro span{font-size:12px!important;color:#64748b!important;}
+  .records-list-action-left{display:flex!important;align-items:center!important;flex-wrap:nowrap!important;gap:8px!important;margin:0!important;flex:1 1 auto!important;}
+  .records-list-action-left .btn,#listBatchStatus{flex:0 0 auto!important;white-space:nowrap!important;}
+  #savePendingRecordStatusBtn{margin-left:auto!important;}
+  @media(max-width:1350px){
+    .records-shared-toolbar,.records-fixed-filter.show-advanced .records-shared-toolbar{grid-template-columns:repeat(4,minmax(150px,1fr))!important;}
+    .records-list-actionbar,.records-list-action-left{flex-wrap:wrap!important;}
+  }
+  @media(max-width:900px){
+    .records-shared-toolbar,.records-fixed-filter.show-advanced .records-shared-toolbar{grid-template-columns:repeat(2,minmax(140px,1fr))!important;}
+  }
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5465,6 +5490,8 @@ function renderRecordsPage(){
           <select id="filterUsage" class="records-advanced-filter" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
           <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
           <select id="filterTime" title="未選球類：每小時；羽球/桌球：每1小時；籃球：每2小時">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
+          <button id="recordsAdvancedToggle" type="button" class="btn btn-gray records-filter-tool-btn">進階篩選 ▾</button>
+          <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray records-filter-tool-btn">清除篩選條件</button>
           <select id="filterAnomaly" class="records-advanced-filter" title="篩選正常或指定異常狀態">
             <option value="" ${recordState.anomaly===''?'selected':''}>全部</option>
             <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
@@ -5473,18 +5500,6 @@ function renderRecordsPage(){
         </div>
         <div class="records-filter-actions">
           <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
-          <label class="records-per-page-control" for="perPage">
-            <span>每頁顯示</span>
-            <select id="perPage" title="選擇清單每頁顯示筆數">
-              <option value="20" ${recordState.perPage===20?'selected':''}>20 筆</option>
-              <option value="50" ${recordState.perPage===50?'selected':''}>50 筆</option>
-              <option value="100" ${recordState.perPage===100?'selected':''}>100 筆</option>
-              <option value="200" ${recordState.perPage===200?'selected':''}>200 筆</option>
-              <option value="999999" ${recordState.perPage===999999?'selected':''}>全部</option>
-            </select>
-          </label>
-          <button id="recordsAdvancedToggle" type="button" class="btn btn-gray">進階篩選 ▾</button>
-          <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray">清除篩選條件</button>
           <button id="exportBtn" class="btn btn-gray">匯出目前名單</button>
           <button id="exportQualifiedBtn" class="btn btn-gray" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
         </div>
@@ -5528,16 +5543,6 @@ function renderRecordsPage(){
   };
 
   document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
-  const perPageSelect=document.getElementById('perPage');
-  if(perPageSelect){
-    perPageSelect.onchange=()=>{
-      const next=Number(perPageSelect.value);
-      recordState.perPage=[20,50,100,200,999999].includes(next)?next:20;
-      recordState.page=1;
-      selectedRecordIds.clear();
-      renderRecordsWorkspace();
-    };
-  }
   const advancedBtn=document.getElementById('recordsAdvancedToggle');
   advancedBtn.onclick=()=>{
     const panel=document.querySelector('.records-fixed-filter');
@@ -5821,13 +5826,19 @@ function renderRecordsTable(){
       <option value="未中籤">未中籤</option><option value="放棄">放棄</option>
     </select>
     <label for="recordsPerPage">每頁顯示</label>
-    <select id="recordsPerPage"><option value="20">20筆</option><option value="50">50筆</option><option value="100">100筆</option></select>
+    <select id="recordsPerPage" title="選擇清單每頁顯示筆數">
+      <option value="20">20筆</option>
+      <option value="50">50筆</option>
+      <option value="100">100筆</option>
+      <option value="200">200筆</option>
+      <option value="999999">全部</option>
+    </select>
   
   </div>`;
   if(isBatch){
     html+=`
       <div class="records-list-actionbar">
-        <div class="records-batch-intro"><strong>3｜批次處理</strong><span>勾選紀錄 → 設定狀態 → 儲存變更</span></div>
+        <div class="records-batch-intro"><strong>3｜批次處理</strong><span>勾選後批次設定並儲存</span></div>
         <div class="records-list-action-left">
           <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
             <option value="__none__">批次變更狀態</option>
@@ -5840,10 +5851,10 @@ function renderRecordsTable(){
           <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將上方選取的狀態套用至勾選資料，需再儲存才會更新">套用至勾選</button>
           <button id="markSelectedNotWonBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將勾選資料批次暫存為未中籤；請再按儲存狀態變更">將勾選設為未中籤</button>
           <button id="deleteSelectedFromListBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>刪除勾選資料</button>
+          <button id="savePendingRecordStatusBtn" class="btn btn-primary" ${pendingRecordStatusChanges.size?'':'disabled'}>
+            儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
+          </button>
         </div>
-        <button id="savePendingRecordStatusBtn" class="btn btn-primary" ${pendingRecordStatusChanges.size?'':'disabled'}>
-          儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
-        </button>
       </div>`;
   }
 
