@@ -2509,6 +2509,37 @@
       flex-wrap:wrap!important;
     }
   }
+  .records-per-page-control{
+    display:flex!important;
+    align-items:center!important;
+    gap:8px!important;
+    min-height:42px!important;
+    padding:0 10px!important;
+    border:1px solid #d1d5db!important;
+    border-radius:10px!important;
+    background:#fff!important;
+    color:#475569!important;
+    font-size:13px!important;
+    font-weight:800!important;
+    white-space:nowrap!important;
+  }
+  .records-per-page-control select{
+    width:auto!important;
+    min-width:88px!important;
+    border:0!important;
+    padding:4px 26px 4px 4px!important;
+    background-color:transparent!important;
+    box-shadow:none!important;
+    font-size:13px!important;
+  }
+  .records-per-page-control select:focus{
+    outline:none!important;
+    box-shadow:none!important;
+  }
+  @media(max-width:760px){
+    .records-per-page-control{width:100%!important;justify-content:space-between!important;}
+    .records-per-page-control select{min-width:120px!important;}
+  }
 </style>
 
 
@@ -5231,6 +5262,16 @@ function renderRecordsPage(){
         </div>
         <div class="records-filter-actions">
           <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
+          <label class="records-per-page-control" for="perPage">
+            <span>每頁顯示</span>
+            <select id="perPage" title="選擇清單每頁顯示筆數">
+              <option value="20" ${recordState.perPage===20?'selected':''}>20 筆</option>
+              <option value="50" ${recordState.perPage===50?'selected':''}>50 筆</option>
+              <option value="100" ${recordState.perPage===100?'selected':''}>100 筆</option>
+              <option value="200" ${recordState.perPage===200?'selected':''}>200 筆</option>
+              <option value="999999" ${recordState.perPage===999999?'selected':''}>全部</option>
+            </select>
+          </label>
           <button id="recordsAdvancedToggle" type="button" class="btn btn-gray">進階篩選 ▾</button>
           <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray">清除篩選條件</button>
           <button id="exportBtn" class="btn btn-gray">匯出目前名單</button>
@@ -5276,6 +5317,16 @@ function renderRecordsPage(){
   };
 
   document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
+  const perPageSelect=document.getElementById('perPage');
+  if(perPageSelect){
+    perPageSelect.onchange=()=>{
+      const next=Number(perPageSelect.value);
+      recordState.perPage=[20,50,100,200,999999].includes(next)?next:20;
+      recordState.page=1;
+      selectedRecordIds.clear();
+      renderRecordsWorkspace();
+    };
+  }
   const advancedBtn=document.getElementById('recordsAdvancedToggle');
   advancedBtn.onclick=()=>{
     const panel=document.querySelector('.records-fixed-filter');
