@@ -278,4 +278,24 @@ begin
 end
 $function$
 ;
+
+-- Service-only Auth account actions also honor the shared account-change lock.
+do $service_lock$
+declare name text;f_oid oid;src text;
+begin
+ foreach name in array array[
+   'court_admin_create_auth_account_v2','court_admin_link_existing_auth_v2',
+   'court_admin_delete_account_service_v2','court_admin_mark_temp_password_v2'
+ ] loop
+  select p.oid into f_oid from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname='public' and p.proname=name;
+  if f_oid is null then raise exception 'Missing service account RPC %',name;end if;
+  src:=pg_get_functiondef(f_oid);
+  if src like '%pg_advisory_xact_lock(150710,1)%' then continue;end if;
+  if strpos(src,E'\nbegin\n')=0 then raise exception 'Unexpected service RPC structure %',name;end if;
+  execute replace(src,E'\nbegin\n',
+    E'\nbegin\n  perform pg_advisory_xact_lock(150710,1);\n');
+ end loop;
+end $service_lock$;
+
 commit;
