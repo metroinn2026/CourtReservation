@@ -35,6 +35,63 @@ test('future timestamps and missing timestamps fail closed',()=>{
   assert.equal(policy.expired(now+1000,now),true);
   assert.equal(policy.mustReauthenticate(null,now),true);
 });
+test('capacity writes submit version snapshots and cache server-returned versions',async()=>{
+  const start=admin.indexOf('async function saveAuthorizedCapacity(rows){');
+  const end=admin.indexOf('const ADMIN_TABLE',start);
+  assert.ok(start>=0 && end>start);
+  const captured=[];
+  const savedTime='2026-11-13T01:02:03.123456+00:00';
+  const sandbox={
+    courtAuthLoginActive:true,
+    capacityVersions:{'羽球|周一|08:00-09:59':'2026-11-12T02:00:00+00:00'},
+    capacitySettings:{},closedSlotSettings:{},
+    settingKey:(v,d,t)=>v+'|'+d+'|'+t,
+    authMigrationClient:{rpc:async(name,args)=>{
+      captured.push({name,args});
+      return {error:null,data:{updated:1,rows:[{
+        ...args.p_rows[0],updated_at:savedTime
+      }]}};
+    }}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  const result=await sandbox.saveAuthorizedCapacity({
+    venue_type:'羽球',day_of_week:'周一',time_slot:'08:00-09:59',
+    winner_count:2,is_closed:false
+  });
+  assert.equal(result.error,null);
+  assert.equal(captured[0].name,'court_admin_save_capacity_v2');
+  assert.equal(captured[0].args.p_rows[0].expected_updated_at,'2026-11-12T02:00:00+00:00');
+  assert.equal(sandbox.capacityVersions['羽球|周一|08:00-09:59'],savedTime);
+  assert.equal(sandbox.capacitySettings['羽球|周一|08:00-09:59'],2);
+});
+test('concurrent capacity conflict does not overwrite local cached versions',async()=>{
+  const start=admin.indexOf('async function saveAuthorizedCapacity(rows){');
+  const end=admin.indexOf('const ADMIN_TABLE',start);
+  const sandbox={
+    courtAuthLoginActive:true,
+    capacityVersions:{},capacitySettings:{},closedSlotSettings:{},
+    settingKey:(v,d,t)=>v+'|'+d+'|'+t,
+    authMigrationClient:{rpc:async()=>({data:null,error:{message:'capacity_conflict: 羽球 周二 08:00'}})}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  const result=await sandbox.saveAuthorizedCapacity({
+    venue_type:'羽球',day_of_week:'周二',time_slot:'08:00',
+    winner_count:1,is_closed:true
+  });
+  assert.ok(result.error);
+  assert.equal(Object.keys(sandbox.capacitySettings).length,0);
+  assert.equal(Object.keys(sandbox.capacityVersions).length,0);
+  assert.match(sandbox.capacitySaveErrorMessage(result.error),/其他同仁更新/);
+});
+test('batch capacity save sends edited cells only',()=>{
+  const start=admin.indexOf('async function saveAllCapacity(){');
+  const end=admin.indexOf('async function updateRecordLotteryStatus(',start);
+  const fn=admin.slice(start,end);
+  assert.match(fn,/querySelectorAll\('\.capacity-cell\[data-capacity-draft="true"\] \.cap-input'\)/);
+  assert.doesNotMatch(fn,/document\.querySelectorAll\('\.cap-input'\)/);
+});
 test('unsaved capacity drafts prompt before switching sport or location',()=>{
   const start=admin.indexOf('function confirmDiscardCapacityDraft(onConfirm){');
   const end=admin.indexOf('function markCapacityCellDraft(',start);
