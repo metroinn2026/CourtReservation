@@ -413,6 +413,40 @@ test('public dynamic text escapes HTML while preserving newlines',()=>{
   assert.match(front,/frontTextWithBreaks\(systemSettings\.register_notice\)/);
   assert.match(front,/frontEscapeHtml\(record\.serial_number/);
 });
+test('account activation and role-change logs show clear before/after values',()=>{
+  const start=admin.indexOf('function summarizeAdminOperationLog(log){');
+  const end=admin.indexOf('function renderLogsPage()',start);
+  assert.ok(start>=0 && end>start);
+  const sandbox={roleName:role=>role==='super_admin'?'超級管理員':'一般管理員'};
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  const activation=sandbox.summarizeAdminOperationLog({
+    detail:{target_display_name:'測試同仁',before_active:true,after_active:false}
+  });
+  assert.equal(activation.target,'測試同仁');
+  assert.equal(activation.description,'啟用 → 停用');
+  const role=sandbox.summarizeAdminOperationLog({
+    detail:{target_username:'staff_test',before_role:'staff',after_role:'super_admin'}
+  });
+  assert.equal(role.target,'staff_test');
+  assert.equal(role.description,'一般管理員 → 超級管理員');
+});
+test('capacity audit summaries expose edited slot count without displaying raw JSON',()=>{
+  const start=admin.indexOf('function summarizeAdminOperationLog(log){');
+  const end=admin.indexOf('function renderLogsPage()',start);
+  const sandbox={roleName:role=>role};
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  const result=sandbox.summarizeAdminOperationLog({detail:{changes:[{
+    venue_type:'羽球',day_of_week:'周一',time_slot:'08:00-09:59',
+    before:{winner_count:1,is_closed:false},
+    after:{winner_count:2,is_closed:true}
+  }]}});
+  assert.equal(result.scope,'羽球｜周一｜08:00-09:59');
+  assert.match(result.description,/調整 1 格/);
+  assert.match(result.description,/名額 1 → 2/);
+  assert.match(result.description,/開放 → 不開放/);
+});
 test('public browser code never includes privileged server keys',()=>{
   for(const name of ['index.html','admin.html','applicant-safe.html']){
     const html=load(name);
