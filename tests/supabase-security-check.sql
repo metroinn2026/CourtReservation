@@ -34,6 +34,23 @@ begin
     or has_function_privilege('authenticated',v_helper_oid,'EXECUTE') then
     raise exception 'Private session guard is absent or public';
   end if;
+  -- Concurrent capacity saves must be version-checked, audited and callable only by logged-in admins.
+  if exists(
+    select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.proname='court_admin_save_capacity_v1'
+      and has_function_privilege('authenticated',p.oid,'EXECUTE')
+  ) then raise exception 'Legacy unversioned capacity write API is still available';end if;
+
+  if not exists(
+    select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.proname='court_admin_save_capacity_v2'
+      and not has_function_privilege('anon',p.oid,'EXECUTE')
+      and has_function_privilege('authenticated',p.oid,'EXECUTE')
+      and pg_get_functiondef(p.oid) like '%expected_updated_at%'
+      and pg_get_functiondef(p.oid) like '%capacity_conflict%'
+      and pg_get_functiondef(p.oid) like '%admin_operation_logs%'
+      and pg_get_functiondef(p.oid) like '%court_admin_session_active_v1%'
+  ) then raise exception 'Audited concurrency-safe capacity API not configured';end if;
 end $check$;
 
 -- Live-session check uses a temporary request.jwt.claims setting, no table changes.
