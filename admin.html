@@ -4080,6 +4080,20 @@ const importDb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storag
 const authMigrationClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storageKey:'court-admin-auth-migration-test',persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}});
 let courtAuthLoginActive=false;
 function reviewDbClient(){return courtAuthLoginActive?authMigrationClient:importDb;}
+async function accountManagementClient(){
+  if(courtAuthLoginActive) return authMigrationClient;
+  try{
+    const {data:{user},error:userError}=await importDb.auth.getUser();
+    if(userError||!user) return null;
+    const {data,error}=await importDb.rpc('get_court_admin_identity_v1');
+    if(error||!data||data.role!=='super_admin') return null;
+    if(currentAdmin?.id && String(data.id)!==String(currentAdmin.id)) return null;
+    return importDb;
+  }catch(e){
+    console.warn('帳號管理授權檢查失敗',e);
+    return null;
+  }
+}
 async function loadCourtAdminEmails(){
   if(!courtAuthLoginActive)return;
   const keys=[...new Set(allRecords.map(r=>r.import_submission_key).filter(Boolean))];
@@ -8573,8 +8587,9 @@ async function loadAccountList(){
   `).join('') : '<tr><td colspan="5" class="accounts-loading">目前尚無管理員帳號</td></tr>';
 
   document.querySelectorAll('.account-role-select').forEach(sel=>sel.onchange=async()=>{
-    if(!courtAuthLoginActive){
-      alert('權限調整僅開放新版 Supabase Auth 後台使用。');
+    const accountClient=await accountManagementClient();
+    if(!accountClient){
+      alert('請先完成 Supabase 資料庫授權，且須使用目前登入帳號所對應的超級管理員身分。');
       sel.value=sel.dataset.currentRole||'staff';
       return;
     }
@@ -8590,7 +8605,7 @@ async function loadAccountList(){
       sel.value=currentRole;
       return;
     }
-    const {error}=await authMigrationClient.rpc('court_admin_set_account_role_v1',{p_id:sel.dataset.roleAdmin,p_role:nextRole});
+    const {error}=await accountClient.rpc('court_admin_set_account_role_v1',{p_id:sel.dataset.roleAdmin,p_role:nextRole});
     if(error){
       const msg=String(error.message||'');
       if(msg.includes('cannot change current account role')) alert('不能修改目前登入中的帳號權限。');
@@ -8611,7 +8626,12 @@ async function loadAccountList(){
     );
     if(!okConfirm) return;
 
-    const {error}=courtAuthLoginActive ? await authMigrationClient.rpc('court_admin_toggle_account_v1',{p_id:btn.dataset.toggle,p_active:!active}) : await db.from(ADMIN_TABLE).update({is_active:!active,updated_at:new Date().toISOString()}).eq('id',btn.dataset.toggle);
+    const accountClient=await accountManagementClient();
+    if(!accountClient){
+      alert('請先完成 Supabase 資料庫授權，且須使用目前登入帳號所對應的超級管理員身分。');
+      return;
+    }
+    const {error}=await accountClient.rpc('court_admin_toggle_account_v1',{p_id:btn.dataset.toggle,p_active:!active});
     if(error){alert('更新帳號狀態失敗：'+error.message);return;}
 
     loadAccountList();
@@ -8624,8 +8644,9 @@ async function loadAccountList(){
   });
 
   document.querySelectorAll('[data-delete-admin]').forEach(btn=>btn.onclick=async()=>{
-    if(!courtAuthLoginActive){
-      alert('刪除管理員帳號僅開放新版 Supabase Auth 後台使用。');
+    const accountClient=await accountManagementClient();
+    if(!accountClient){
+      alert('請先完成 Supabase 資料庫授權，且須使用目前登入帳號所對應的超級管理員身分。');
       return;
     }
     const name=btn.dataset.deleteName||btn.dataset.deleteUsername||'此帳號';
@@ -8633,7 +8654,7 @@ async function loadAccountList(){
     const body='確定要永久刪除「'+escapeHtml(name)+'」'+(username?'（'+escapeHtml(username)+'）':'')+'嗎？<br><br>此操作不可復原；既有操作紀錄會保留。';
     const okConfirm=await confirmModal('確認刪除管理員帳號',body);
     if(!okConfirm)return;
-    const {data,error}=await authMigrationClient.rpc('court_admin_delete_account_v1',{p_id:btn.dataset.deleteAdmin});
+    const {data,error}=await accountClient.rpc('court_admin_delete_account_v1',{p_id:btn.dataset.deleteAdmin});
     if(error){
       const msg=String(error.message||'');
       if(msg.includes('disable account before deletion')) alert('請先停用此帳號，再執行刪除。');
