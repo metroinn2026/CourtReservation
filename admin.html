@@ -5417,8 +5417,30 @@ async function updateAuthorizedRecords(ids,changes,options={}){
 }
 async function saveAuthorizedCapacity(rows){
  if(!courtAuthLoginActive)return {error:new Error('請先完成 Supabase Auth 管理員登入')};
- const {error}=await authMigrationClient.rpc('court_admin_save_capacity_v1',{p_rows:Array.isArray(rows)?rows:[rows]});
- return {error};
+ const payload=(Array.isArray(rows)?rows:[rows]).map(row=>{
+   const key=settingKey(row.venue_type,row.day_of_week,row.time_slot);
+   return {
+     venue_type:row.venue_type,day_of_week:row.day_of_week,time_slot:row.time_slot,
+     winner_count:row.winner_count,is_closed:row.is_closed,
+     expected_updated_at:capacityVersions[key] ?? null
+   };
+ });
+ // v2 performs atomic optimistic-lock checks; no writes occur if any slot was updated elsewhere.
+ const {data,error}=await authMigrationClient.rpc('court_admin_save_capacity_v2',{p_rows:payload});
+ if(!error && data?.rows){
+   data.rows.forEach(row=>{
+     const key=settingKey(row.venue_type,row.day_of_week,row.time_slot);
+     capacitySettings[key]=Number(row.winner_count);
+     closedSlotSettings[key]=row.is_closed===true;
+     capacityVersions[key]=row.updated_at;
+   });
+ }
+ return {data,error};
+}
+function capacitySaveErrorMessage(error){
+ return String(error?.message||'').includes('capacity_conflict')
+   ? '此場次的名額或開放狀態已由其他同仁更新。請重新整理名額設定，確認最新內容後再操作。'
+   : '名額設定儲存失敗，請稍後重試。';
 }
 const ADMIN_TABLE = 'admin_users';
 const RECORD_TABLE = 'lottery_records';
@@ -5433,6 +5455,7 @@ let allRecords = [];
 let allLogs = [];
 let capacitySettings = {};
 let closedSlotSettings = {};
+let capacityVersions = {};
 let systemSettings = {};
 let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', usage:'', day:'', time:'', anomaly:'', lotteryFilter:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let recordsActionTab = 'filter';
@@ -6049,12 +6072,16 @@ async function loadAllData(){
 
   capacitySettings={};
   closedSlotSettings={};
+  capacityVersions={};
   if(!capRes.error){
     (capRes.data||[]).forEach(row=>{
       const key=settingKey(row.venue_type,row.day_of_week,row.time_slot);
       capacitySettings[key] = Number(row.winner_count||0);
       closedSlotSettings[key] = row.is_closed === true;
+      capacityVersions[key] = row.updated_at ?? null;
     });
+  }else{
+    console.warn('無法讀取名額版本資料，將禁止覆蓋既有名額。',capRes.error);
   }
 
   systemSettings={
@@ -7624,7 +7651,7 @@ function renderBulkCapacityTable(){
         if(capInput) capInput.disabled=previousClosed;
         if(cell) cell.classList.toggle('is-closed', previousClosed);
         if(statusEl){ statusEl.textContent='儲存失敗'; statusEl.className='capacity-save-status error'; }
-        alert('場次開放狀態儲存失敗，請稍後再試。');
+        alert(capacitySaveErrorMessage(error));
         return;
       }
 
@@ -7699,8 +7726,9 @@ function setAllCapacityClosed(closed){
 }
 
 async function saveAllCapacity(){
-  const inputs=[...document.querySelectorAll('.cap-input')];
-  if(inputs.length===0){ alert('沒有可儲存的名額資料'); return; }
+  // Write only edited cells: a stale full-table save could overwrite another administrator's work.
+  const inputs=[...document.querySelectorAll('.capacity-cell[data-capacity-draft="true"] .cap-input')];
+  if(inputs.length===0){ alert('目前沒有未儲存的名額調整。'); return; }
 
   const rows=[];
   for(const input of inputs){
@@ -7732,7 +7760,7 @@ async function saveAllCapacity(){
   btn.textContent='儲存目前類型';
 
   if(error){
-    alert('名額儲存失敗，請稍後再試');
+    alert(capacitySaveErrorMessage(error));
     console.error(error);
     return;
   }
