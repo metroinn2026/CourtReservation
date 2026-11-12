@@ -141,6 +141,25 @@ test('admin sessions terminate on Supabase logout and across same-origin tabs',(
   assert.match(admin,/event\.key===ADMIN_SESSION_LOGOUT_EVENT/);
   assert.match(admin,/localStorage\.setItem\(ADMIN_SESSION_LOGOUT_EVENT,String\(Date\.now\(\)\)\)/);
 });
+test('local admin Auth storage is cleared even if network logout fails',()=>{
+  const start=admin.indexOf('function clearAdminSessionMarkers(){');
+  const end=admin.indexOf('function markAdminActivity(',start);
+  assert.ok(start>=0&&end>start);
+  const fnSource=admin.slice(start,end);
+  const calls=[];
+  const sandbox={
+    sessionStorage:{removeItem:key=>calls.push(key)},
+    ADMIN_SESSION_LAST_KEY:'idle',
+    ADMIN_SESSION_START_KEY:'started'
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(fnSource,sandbox);
+  sandbox.clearAdminSessionMarkers();
+  assert.ok(calls.includes('court-admin-auth'));
+  assert.ok(calls.includes('venue_admin_session'));
+  assert.ok(calls.includes('idle'));
+  assert.ok(calls.includes('started'));
+});
 test('late database responses are discarded after logout',()=>{
   const start=admin.indexOf('async function loadAllData(){');
   const end=admin.indexOf('function parseSettingDate(',start);
