@@ -3718,6 +3718,25 @@
     background:#e5edf6!important;
   }
 
+  /* 名額設定：上方星期、左側時間，保持固定的時間欄與清楚的橫向對齊。 */
+  #bulkCapTable .capacity-transposed-table th.capacity-time-heading{
+    min-width:122px!important;
+    width:122px!important;
+    white-space:nowrap;
+    font-weight:700;
+    text-align:center;
+    background:#f8fafc!important;
+    color:#334155;
+  }
+  #bulkCapTable .capacity-transposed-table thead th:first-child{
+    min-width:122px!important;
+    width:122px!important;
+    white-space:nowrap;
+  }
+  #bulkCapTable .capacity-transposed-table thead th:not(:first-child){
+    min-width:116px;
+  }
+
   .capacity-main-panel > #bulkCapTable .capacity-scroll-top{
     width:100%;
     height:16px;
@@ -7465,19 +7484,20 @@ function renderBulkCapacityTable(){
       <div class="capacity-scroll-top-inner"></div>
     </div>
     <div class="table-wrap capacity-table-scroll">
-      <table style="min-width:760px;">
+      <table class="capacity-transposed-table" style="min-width:760px;">
         <thead>
           <tr>
-            <th style="width:90px;">星期</th>
-            ${times.map(st=>`<th style="text-align:center;">${formatTimeSlotDisplay(st,venue)}</th>`).join('')}
+            <th scope="col" style="width:122px;">時間</th>
+            ${days.map(day=>`<th scope="col" style="text-align:center;">${escapeHtml(day)}</th>`).join('')}
           </tr>
         </thead>
         <tbody>
-          ${days.map(day=>`
+          ${times.map(st=>{
+            const slot=formatTimeSlotDisplay(st,venue);
+            return `
             <tr>
-              <td><strong>${day}</strong></td>
-              ${times.map(st=>{
-                const slot=formatTimeSlotDisplay(st,venue);
+              <th scope="row" class="capacity-time-heading">${escapeHtml(slot)}</th>
+              ${days.map(day=>{
                 const key=settingKey(venue,day,slot);
                 const val=capacitySettings[key] ?? capacityMap[venue] ?? 0;
                 const isClosed=closedSlotSettings[key] === true;
@@ -7485,10 +7505,10 @@ function renderBulkCapacityTable(){
                 return `
                   <td class="capacity-cell ${isClosed?'is-closed':''}" style="text-align:center;vertical-align:top;">
                     <input class="cap-input"
-                           data-venue="${venue}"
-                           data-day="${day}"
-                           data-start="${st}"
-                           data-slot="${slot}"
+                           data-venue="${escapeHtml(venue)}"
+                           data-day="${escapeHtml(day)}"
+                           data-start="${escapeHtml(st)}"
+                           data-slot="${escapeHtml(slot)}"
                            type="number"
                            min="1"
                            value="${val > 0 ? val : 1}"
@@ -7497,10 +7517,10 @@ function renderBulkCapacityTable(){
                     <label class="capacity-closed-toggle">
                       <input class="cap-closed-input"
                              type="checkbox"
-                             data-venue="${venue}"
-                             data-day="${day}"
-                             data-start="${st}"
-                             data-slot="${slot}"
+                             data-venue="${escapeHtml(venue)}"
+                             data-day="${escapeHtml(day)}"
+                             data-start="${escapeHtml(st)}"
+                             data-slot="${escapeHtml(slot)}"
                              ${isClosed?'checked':''}>
                       <span>不開放</span>
                     </label>
@@ -7508,8 +7528,8 @@ function renderBulkCapacityTable(){
                     <div class="capacity-save-status" aria-live="polite"></div>
                   </td>`;
               }).join('')}
-            </tr>
-          `).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>
