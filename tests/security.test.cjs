@@ -35,6 +35,29 @@ test('future timestamps and missing timestamps fail closed',()=>{
   assert.equal(policy.expired(now+1000,now),true);
   assert.equal(policy.mustReauthenticate(null,now),true);
 });
+test('unsaved capacity drafts prompt before switching sport or location',()=>{
+  const start=admin.indexOf('function confirmDiscardCapacityDraft(onConfirm){');
+  const end=admin.indexOf('function markCapacityCellDraft(',start);
+  assert.ok(start>=0&&end>start);
+  const code=admin.slice(start,end);
+  let switched=0,prompted=0,hasDraft=true;
+  const sandbox={
+    document:{querySelector:()=>hasDraft?{}:null},
+    showModal:(_title,_msg,confirm)=>{prompted++;sandbox.confirm=confirm;}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(code,sandbox);
+  sandbox.confirmDiscardCapacityDraft(()=>switched++);
+  assert.equal(prompted,1);
+  assert.equal(switched,0);
+  sandbox.confirm();
+  assert.equal(switched,1);
+  hasDraft=false;
+  sandbox.confirmDiscardCapacityDraft(()=>switched++);
+  assert.equal(switched,2);
+  assert.equal(prompted,1);
+  assert.match(admin,/confirmDiscardCapacityDraft\(\(\)=>\{/);
+});
 test('bulk capacity toggles never trigger immediate database writes',()=>{
   const start=admin.indexOf('function setAllCapacityClosed(closed){');
   const end=admin.indexOf('async function saveAllCapacity()',start);
