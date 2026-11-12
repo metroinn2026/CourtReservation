@@ -3907,7 +3907,41 @@ body .ux-review-case-head{margin-bottom:10px}
 body .ux-review-edit{align-items:end}
 @media(max-width:650px){body .ux-review-reasons{align-items:flex-start;flex-wrap:wrap;gap:4px}}
 </style>
-\n<style id="v59-compact-settings-and-meaningful-colors">\n/* 設定區：一個區域兩組內容，桌面不再上下疊兩張大卡 */\n@media(min-width:1100px){\n  .compact-registration-settings{display:grid;grid-template-columns:minmax(360px,0.94fr) minmax(460px,1.16fr);gap:14px;align-items:start;margin-bottom:10px}\n  .compact-registration-settings>.capacity-section-divider{display:none}\n  .compact-registration-settings>.capacity-registration-window{margin:0;min-width:0;height:100%;padding:14px 16px;background:#fff;border:1px solid #dce4ed;box-shadow:none}\n  .compact-registration-settings .capacity-window-head{margin-bottom:8px}\n  .compact-registration-settings .capacity-window-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}\n  .compact-registration-settings .single-limit-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}\n  .compact-registration-settings .registration-limit-head{margin-bottom:9px;gap:8px}\n  .compact-registration-settings .capacity-window-state{margin-top:6px}\n  .compact-registration-settings .field{margin-bottom:7px}\n  .compact-registration-settings .registration-limit-actions{margin-top:8px}\n  .compact-registration-settings .cross-limit-list{margin-top:8px}\n}\n@media(max-width:1099px){.compact-registration-settings{display:block}.compact-registration-settings>.capacity-registration-window{background:#fff}}\n/* 預設白底／灰底，僅辨識類別使用低飽和色；嚴重異常才紅色 */\n.records-compact-table .tag.identity-go{background:#edf3ff!important;color:#355c96!important;border:1px solid #dce7fa!important}\n.records-compact-table .tag.identity-hall{background:#edf5f1!important;color:#326653!important;border:1px solid #d7e7de!important}\n.records-compact-table .tag.sport-usage-tag{background:#f1f4f8!important;color:#354b65!important;border:1px solid #e3e8f0!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="匹克球"]{background:#f5f0fb!important;color:#69518b!important;border-color:#e9ddf5!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="籃球"]{background:#eef3fc!important;color:#365c92!important;border-color:#dce7fa!important}\n.records-compact-table .tag.sport-usage-tag[data-usage="桌球"]{background:#f2f5ed!important;color:#596f3c!important;border-color:#e1e9d9!important}\n.records-compact-table .tag.review-qualified{background:#e9f5ef!important;color:#226447!important;border:1px solid #cfe7d9!important}\n.records-compact-table .tag.review-pending{background:#fff3df!important;color:#885914!important;border:1px solid #f3dfb4!important}\n.records-compact-table .tag.review-correction{background:#fff0da!important;color:#955a12!important;border:1px solid #f1d8a8!important}\n.records-compact-table .tag.review-invalid{background:#feecea!important;color:#b42318!important;border:1px solid #f5d0c9!important}\n.records-compact-table .tag.gray:not(.review-qualified):not(.review-pending){background:#f2f4f7;color:#526174}\n.records-compact-table td{border-bottom:1px solid #edf0f4}\n.records-compact-table tr:hover td{background:#f7f9fc}\n.records-compact-table [data-qopen]{white-space:nowrap}\n/* 提示只紅在真正異常，不以警示色覆蓋一般資料 */\n.records-compact-table .tag.anomaly-red{color:#b42318!important;background:#fff1ef!important;border:1px solid #f4d0cb!important}\n</style>\n
+\n<style id="v59-compact-settings-and-meaningful-colors">
+/* 設定區：一個區域兩組內容，桌面不再上下疊兩張大卡 */
+@media(min-width:1100px){
+  .compact-registration-settings{display:grid;grid-template-columns:minmax(360px,0.94fr) minmax(460px,1.16fr);gap:14px;align-items:start;margin-bottom:10px}
+  .compact-registration-settings>.capacity-section-divider{display:none}
+  .compact-registration-settings>.capacity-registration-window{margin:0;min-width:0;height:100%;padding:14px 16px;background:#fff;border:1px solid #dce4ed;box-shadow:none}
+  .compact-registration-settings .capacity-window-head{margin-bottom:8px}
+  .compact-registration-settings .capacity-window-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+  .compact-registration-settings .single-limit-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .compact-registration-settings .registration-limit-head{margin-bottom:9px;gap:8px}
+  .compact-registration-settings .capacity-window-state{margin-top:6px}
+  .compact-registration-settings .field{margin-bottom:7px}
+  .compact-registration-settings .registration-limit-actions{margin-top:8px}
+  .compact-registration-settings .cross-limit-list{margin-top:8px}
+}
+@media(max-width:1099px){.compact-registration-settings{display:block}.compact-registration-settings>.capacity-registration-window{background:#fff}}
+/* 預設白底／灰底，僅辨識類別使用低飽和色；嚴重異常才紅色 */
+.records-compact-table .tag.identity-go{background:#edf3ff!important;color:#355c96!important;border:1px solid #dce7fa!important}
+.records-compact-table .tag.identity-hall{background:#edf5f1!important;color:#326653!important;border:1px solid #d7e7de!important}
+.records-compact-table .tag.sport-usage-tag{background:#f1f4f8!important;color:#354b65!important;border:1px solid #e3e8f0!important}
+.records-compact-table .tag.sport-usage-tag[data-usage="匹克球"]{background:#f5f0fb!important;color:#69518b!important;border-color:#e9ddf5!important}
+.records-compact-table .tag.sport-usage-tag[data-usage="籃球"]{background:#eef3fc!important;color:#365c92!important;border-color:#dce7fa!important}
+.records-compact-table .tag.sport-usage-tag[data-usage="桌球"]{background:#f2f5ed!important;color:#596f3c!important;border-color:#e1e9d9!important}
+.records-compact-table .tag.review-qualified{background:#e9f5ef!important;color:#226447!important;border:1px solid #cfe7d9!important}
+.records-compact-table .tag.review-pending{background:#fff3df!important;color:#885914!important;border:1px solid #f3dfb4!important}
+.records-compact-table .tag.review-correction{background:#fff0da!important;color:#955a12!important;border:1px solid #f1d8a8!important}
+.records-compact-table .tag.review-invalid{background:#feecea!important;color:#b42318!important;border:1px solid #f5d0c9!important}
+.records-compact-table .tag.gray:not(.review-qualified):not(.review-pending){background:#f2f4f7;color:#526174}
+.records-compact-table td{border-bottom:1px solid #edf0f4}
+.records-compact-table tr:hover td{background:#f7f9fc}
+.records-compact-table [data-qopen]{white-space:nowrap}
+/* 提示只紅在真正異常，不以警示色覆蓋一般資料 */
+.records-compact-table .tag.anomaly-red{color:#b42318!important;background:#fff1ef!important;border:1px solid #f4d0cb!important}
+</style>
+
 <style id="v60-structure-and-scannability">
 /* Settings are a one-line overview unless somebody explicitly edits them. */
 .registration-settings-fold{border:1px solid #dce4ee;border-radius:12px;background:#fff;margin:0 0 16px;overflow:hidden}
@@ -4007,7 +4041,7 @@ body .ux-review-edit{align-items:end}
     <div class="login-wrap">
       <div class="login-card">
         <h2>後台登入</h2>
-        <p>請使用已核准的 Supabase Auth 管理員帳號登入。登入後即可依角色權限存取後台資料。</p>
+        <p>請使用管理員 Email 與密碼登入。登入後即可依角色權限存取後台資料。</p>
         <div id="bootstrapBox" class="hidden">
           <div class="msg info">目前尚未建立後台帳號，請先建立第一位超級管理員。</div>
           <div class="small" style="margin:10px 0">請先以已授權的 Supabase Auth 帳號驗證身分；此帳號需先加入匯入管理員名單。</div>
@@ -4023,6 +4057,7 @@ body .ux-review-edit{align-items:end}
           <div class="field"><label id="loginUserLabel">管理員 Email</label><input id="loginUsername" type="email" autocomplete="username" placeholder="請輸入 管理員 Email"></div>
           <div class="field"><label>密碼</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="請輸入密碼"></div>
           <button id="loginBtn" class="btn btn-primary" style="width:100%;">登入後台</button>
+          <button id="forgotPasswordBtn" type="button" class="btn btn-gray" style="width:100%;margin-top:10px;">忘記密碼／重設密碼</button>
           <button id="legacyLoginToggle" type="button" class="btn btn-gray" style="width:100%;margin-top:10px;">尚未移轉帳號：使用舊版帳號驗證</button>
         </div>
         <div id="authMigrationTestBox" style="display:none;margin-top:20px;border-top:1px solid #dce4ed;padding-top:18px">
@@ -4083,7 +4118,7 @@ const authMigrationClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     storage:window.sessionStorage,
     persistSession:true,
     autoRefreshToken:true,
-    detectSessionInUrl:false
+    detectSessionInUrl:true
   }
 });
 const importDb = authMigrationClient;
@@ -4114,6 +4149,52 @@ async function loadCourtAdminEmails(){
     (data||[]).forEach(r=>{if(r.contact_email)secureEmailBySubmission.set(String(r.submission_key),String(r.contact_email));});
   }
 }
+async function requestAdminPasswordReset(){
+  const email=String(document.getElementById('loginUsername')?.value||'').trim().toLowerCase();
+  if(!email||!email.includes('@')){
+    showMsg('loginMsg','請先在「管理員 Email」輸入要重設密碼的 Email');
+    return;
+  }
+  const redirectTo=location.origin+'/admin.html?password-recovery=1';
+  const {error}=await authMigrationClient.auth.resetPasswordForEmail(email,{redirectTo});
+  if(error){
+    console.error('password reset request failed',error);
+    showMsg('loginMsg','重設信寄送失敗：'+error.message,'error');
+    return;
+  }
+  showMsg('loginMsg','如果此 Email 為有效管理員帳號，系統已寄出密碼重設信，請至信箱查看。','info');
+}
+
+async function finishAdminPasswordRecovery(){
+  while(true){
+    const first=prompt('請設定新的管理員密碼（至少 10 碼）：');
+    if(first===null) return;
+    if(String(first).length<10){alert('新密碼至少需要 10 碼。');continue;}
+    const second=prompt('請再次輸入新的管理員密碼：');
+    if(second===null) continue;
+    if(first!==second){alert('兩次輸入的密碼不一致。');continue;}
+
+    const {error}=await authMigrationClient.auth.updateUser({password:first});
+    if(error){
+      alert('密碼更新失敗：'+error.message);
+      continue;
+    }
+
+    history.replaceState({},document.title,location.origin+'/admin.html');
+    await authMigrationClient.auth.signOut().catch(()=>{});
+    sessionStorage.removeItem('venue_admin_session');
+    alert('密碼已更新，請使用管理員 Email 與新密碼重新登入。');
+    location.href='/admin.html';
+    return;
+  }
+}
+
+authMigrationClient.auth.onAuthStateChange((event)=>{
+  if(event==='PASSWORD_RECOVERY'){
+    setTimeout(()=>finishAdminPasswordRecovery(),0);
+  }
+});
+
 async function loginWithCourtAuth(){
   const email=document.getElementById('loginUsername').value.trim();
   const password=document.getElementById('loginPassword').value;
@@ -8898,22 +8979,26 @@ function setAdminLoginMode(mode='auth'){
   const label=document.getElementById('loginUserLabel');
   const btn=document.getElementById('loginBtn');
   const toggle=document.getElementById('legacyLoginToggle');
+  const forgot=document.getElementById('forgotPasswordBtn');
   if(legacyLoginMode){
     if(label)label.textContent='舊版管理員帳號';
     if(user){user.type='text';user.placeholder='請輸入舊版管理員帳號';user.value='';}
     if(btn){btn.textContent='驗證舊版帳號';btn.onclick=login;}
-    if(toggle)toggle.textContent='返回 Supabase Auth 登入';
+    if(toggle)toggle.textContent='返回管理員 Email 登入';
+    if(forgot)forgot.style.display='none';
   }else{
     if(label)label.textContent='管理員 Email';
     if(user){user.type='email';user.placeholder='請輸入 管理員 Email';user.value='';}
     if(btn){btn.textContent='登入後台';btn.onclick=loginWithCourtAuth;}
     if(toggle)toggle.textContent='尚未移轉帳號：使用舊版帳號驗證';
+    if(forgot)forgot.style.display='block';
   }
   document.getElementById('loginPassword').value='';
   const msg=document.getElementById('loginMsg');if(msg)msg.innerHTML='';
 }
 document.getElementById('loginBtn').onclick=loginWithCourtAuth;
 document.getElementById('legacyLoginToggle').onclick=()=>setAdminLoginMode(legacyLoginMode?'auth':'legacy');
+document.getElementById('forgotPasswordBtn').onclick=requestAdminPasswordReset;
 document.getElementById('createFirstAdminBtn').onclick=async()=>{
   const username=document.getElementById('firstUsername').value.trim(), display_name=document.getElementById('firstDisplayName').value.trim(), password=document.getElementById('firstPassword').value;
   const authEmail=document.getElementById('bootstrapAuthEmail').value.trim(), authPassword=document.getElementById('bootstrapAuthPassword').value;
