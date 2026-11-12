@@ -7388,7 +7388,7 @@ function renderCapacityPage(){
         </div>
       </div>
 
-      <div class="capacity-open-note">「不開放」會立即同步前台。</div>
+      <div class="capacity-open-note">單一場次「不開放」立即生效；全頁調整與名額變更需按「儲存目前類型」。</div>
       <div id="bulkCapTable"></div>
       </div>
     </div>
@@ -7511,6 +7511,9 @@ function renderBulkCapacityTable(){
                            data-slot="${escapeHtml(slot)}"
                            type="number"
                            min="1"
+                           max="100"
+                           step="1"
+                           aria-label="${escapeHtml(day)} ${escapeHtml(slot)}名額"
                            value="${val > 0 ? val : 1}"
                            ${isClosed?'disabled':''}
                            style="width:64px;text-align:center;border:1px solid #d1d5db;border-radius:8px;padding:7px;">
@@ -7572,6 +7575,10 @@ function renderBulkCapacityTable(){
     window.addEventListener('resize', syncScrollWidth, { once:true });
   }
 
+  container.querySelectorAll('.cap-input').forEach(input=>{
+    input.addEventListener('input',()=>markCapacityCellDraft(input.closest('.capacity-cell')));
+  });
+
   document.querySelectorAll('.cap-closed-input').forEach(checkbox=>{
     checkbox.onchange=async()=>{
       const cell=checkbox.closest('.capacity-cell');
@@ -7613,6 +7620,7 @@ function renderBulkCapacityTable(){
       const key=settingKey(payload.venue_type,payload.day_of_week,payload.time_slot);
       capacitySettings[key]=winnerCount;
       closedSlotSettings[key]=payload.is_closed;
+      if(cell)delete cell.dataset.capacityDraft;
       if(statusEl){
         statusEl.textContent='已儲存';
         statusEl.className='capacity-save-status ok';
@@ -7622,24 +7630,49 @@ function renderBulkCapacityTable(){
   });
 }
 
+function markCapacityCellDraft(cell){
+  if(!cell)return;
+  cell.dataset.capacityDraft='true';
+  const statusEl=cell.querySelector('.capacity-save-status');
+  if(statusEl){
+    statusEl.textContent='未儲存';
+    statusEl.className='capacity-save-status';
+  }
+}
+
 function fillDefaultCapacity(){
-  const val = Math.max(1, Number(document.getElementById('defaultCapValue').value || 1));
+  const raw=Number(document.getElementById('defaultCapValue').value);
+  if(!Number.isInteger(raw)||raw<1||raw>100){
+    alert('統一名額請輸入 1 至 100 的整數。');
+    return;
+  }
   document.querySelectorAll('.capacity-cell').forEach(cell=>{
     const closed=cell.querySelector('.cap-closed-input')?.checked;
     const input=cell.querySelector('.cap-input');
-    if(input && !closed) input.value = val;
+    if(input && !closed){
+      input.value=raw;
+      markCapacityCellDraft(cell);
+    }
   });
 }
 
 function setAllCapacityClosed(closed){
   const title=closed ? '確認全頁不開放' : '確認全頁開放';
   const message=closed
-    ? '確定將目前球類所有場次標示為「不開放」嗎？尚未按「儲存目前類型」前不會寫入資料庫。'
-    : '確定將目前球類所有場次改為開放嗎？開放場次名額至少為 1。尚未按「儲存目前類型」前不會寫入資料庫。';
-  showModal(title,message,async()=>{
+    ? '確定將目前球類所有場次標示為「不開放」嗎？按「儲存目前類型」後才會同步前台。'
+    : '確定將目前球類所有場次改為開放嗎？按「儲存目前類型」後才會同步前台。';
+  showModal(title,message,()=>{
     document.querySelectorAll('.cap-closed-input').forEach(checkbox=>{
       checkbox.checked=closed;
-      checkbox.dispatchEvent(new Event('change'));
+      const cell=checkbox.closest('.capacity-cell');
+      const input=cell?.querySelector('.cap-input');
+      if(input){
+        input.disabled=closed;
+        if(!closed && Number(input.value)<1)input.value=1;
+      }
+      cell?.classList.toggle('is-closed',closed);
+      // Bulk changes stay local. Individual checkbox onchange writes to the DB.
+      markCapacityCellDraft(cell);
     });
   });
 }
@@ -7652,9 +7685,9 @@ async function saveAllCapacity(){
   for(const input of inputs){
     const cell=input.closest('.capacity-cell');
     const isClosed=cell?.querySelector('.cap-closed-input')?.checked === true;
-    const winnerCount=Number(input.value || 0);
-    if(!isClosed && winnerCount < 1){
-      alert(`${input.dataset.day} ${input.dataset.slot} 為開放場次，名額至少須為 1。`);
+    const winnerCount=Number(input.value);
+    if(!Number.isInteger(winnerCount)||winnerCount<1||winnerCount>100){
+      alert(`${input.dataset.day} ${input.dataset.slot} 名額須為 1 至 100 的整數。`);
       input.focus();
       return;
     }
@@ -7662,7 +7695,7 @@ async function saveAllCapacity(){
       venue_type: input.dataset.venue,
       day_of_week: input.dataset.day,
       time_slot: input.dataset.slot,
-      winner_count: Math.max(1, winnerCount || 1),
+      winner_count: winnerCount,
       is_closed: isClosed,
       updated_at: new Date().toISOString()
     });
