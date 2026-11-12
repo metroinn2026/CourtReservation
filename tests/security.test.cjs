@@ -51,14 +51,46 @@ test('admin has idle, foreground and role revalidation',()=>{
   assert.match(admin,/if\(!beginAdminSession\(true\)\)/);
   assert.match(admin,/if\(!beginAdminSession\(false\)\)/);
 });
-test('first click after idle does not extend an expired admin session',()=>{
+test('expired first interaction is checked before renewing activity',()=>{
   const start=admin.indexOf('function markAdminActivity(event){');
   const end=admin.indexOf('function adminSessionHasExpired(',start);
   assert.ok(start>=0 && end>start);
   const handler=admin.slice(start,end);
-  assert.ok(handler.indexOf('adminSessionHasExpired(now)')>=0);
-  assert.ok(handler.indexOf('adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now)')>handler.indexOf('adminSessionHasExpired(now)'));
+  assert.ok(handler.includes('adminSigningOut || adminSessionHasExpired(Date.now())'));
+  assert.ok(handler.indexOf('adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now)')
+    >handler.indexOf('adminSigningOut || adminSessionHasExpired(Date.now())'));
+  assert.match(admin,/\['pointerdown','click','submit','keydown','touchstart'\]/);
   assert.match(admin,/addEventListener\(type,markAdminActivity,\{capture:true,passive:false\}\)/);
+});
+test('click after expired pointerdown is blocked during signout',()=>{
+  const start=admin.indexOf('function markAdminActivity(event){');
+  const end=admin.indexOf('function adminSessionHasExpired(',start);
+  const sandbox={
+    courtAuthLoginActive:true,adminSigningOut:false,
+    ADMIN_SESSION_LAST_KEY:'last',
+    Date:{now:()=>1700000000000},
+    adminSessionHasExpired:()=>true,
+    adminStoredTimestamp:()=>1699999999000,
+    adminSaveTimestamp:()=>{throw Error('expired session extended');},
+    endAdminSession:()=>{sandbox.adminSigningOut=true;sandbox.courtAuthLoginActive=false;sandbox.logoutCalls++;return Promise.resolve();},
+    logoutCalls:0
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  const makeEvent=()=>({cancelable:true,
+    preventDefault(){this.prevented=true;},
+    stopImmediatePropagation(){this.stopped=true;}});
+  const down=makeEvent();
+  sandbox.markAdminActivity(down);
+  const click=makeEvent();
+  sandbox.markAdminActivity(click);
+  const submit=makeEvent();
+  sandbox.markAdminActivity(submit);
+  assert.equal(down.prevented,true);
+  assert.equal(click.prevented,true);
+  assert.equal(click.stopped,true);
+  assert.equal(submit.prevented,true);
+  assert.equal(sandbox.logoutCalls,1);
 });
 test('expired first interaction is cancelled before activity renews',()=>{
   const start=admin.indexOf('function markAdminActivity(event){');
