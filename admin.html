@@ -5151,6 +5151,7 @@ const ADMIN_SESSION_POLICY=window.CourtAdminSessionPolicy;
 let adminIdleTimer=null;
 let adminCheckingSession=null;
 let adminLastVerifiedAt=0;
+let adminSessionEpoch=0;
 let adminSigningOut=false;
 let adminSessionListenersBound=false;
 function adminStoredTimestamp(key){
@@ -5184,6 +5185,7 @@ function adminSessionHasExpired(now=Date.now()){
 async function endAdminSession(reason='signed-out',notify=false){
   if(adminSigningOut)return;
   adminSigningOut=true;
+  adminSessionEpoch++;
   courtAuthLoginActive=false;
   currentAdmin=null;
   clearAdminSessionMarkers();
@@ -5241,6 +5243,7 @@ function beginAdminSession(restored=false){
     // Existing sessions from an older release must authenticate again rather than bypass the timer.
     if(adminSessionHasExpired(now))return false;
   }
+  adminSessionEpoch++;
   adminLastVerifiedAt=now;
   if(!adminSessionListenersBound){
     adminSessionListenersBound=true;
@@ -5958,6 +5961,9 @@ async function enterApp(){
 function logout(){void endAdminSession('manual',false);}
 
 async function loadAllData(){
+  const requestEpoch=adminSessionEpoch;
+  const requestStillAuthorized=()=>courtAuthLoginActive&&!adminSigningOut&&requestEpoch===adminSessionEpoch;
+  if(!requestStillAuthorized())return false;
   let recordsPromise;
   try{
     const secureClient=reviewDbClient();
@@ -5973,6 +5979,7 @@ async function loadAllData(){
     db.from(CAPACITY_TABLE).select('*'),
     db.from(SETTINGS_TABLE).select('*')
   ]);
+  if(!requestStillAuthorized())return false;
 
   if(recordsRes.error){
     console.error(recordsRes.error);
@@ -5986,7 +5993,9 @@ async function loadAllData(){
 
   allRecords=(recordsRes.data||[]).map(r=>({...r,__backendId:r.id}));
   await loadSensitiveIdentifiers();
+  if(!requestStillAuthorized()){allRecords=[];return false;}
   await loadQualificationReviews();
+  if(!requestStillAuthorized()){allRecords=[];return false;}
 
   let logsRes={data:[],error:null};
   const reviewClient=reviewDbClient();
@@ -5994,6 +6003,7 @@ async function loadAllData(){
     const {data:{user}}=await reviewClient.auth.getUser();
     if(user) logsRes=await reviewClient.rpc('court_admin_list_logs_v1',{p_limit:200});
   }catch(e){logsRes={data:[],error:e};}
+  if(!requestStillAuthorized())return false;
   allLogs = logsRes.error ? [] : (logsRes.data || []);
   if(logsRes.error) console.warn('操作紀錄讀取失敗，需先完成 Supabase 管理員授權。', logsRes.error);
 
