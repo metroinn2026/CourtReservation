@@ -4058,7 +4058,6 @@ body .ux-review-edit{align-items:end}
           <div class="field"><label>密碼</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="請輸入密碼"></div>
           <button id="loginBtn" class="btn btn-primary" style="width:100%;">登入後台</button>
           <button id="forgotPasswordBtn" type="button" class="btn btn-gray" style="width:100%;margin-top:10px;">忘記密碼／重設密碼</button>
-          <button id="legacyLoginToggle" type="button" class="btn btn-gray" style="width:100%;margin-top:10px;">尚未移轉帳號：使用舊版帳號驗證</button>
         </div>
         <div id="authMigrationTestBox" style="display:none;margin-top:20px;border-top:1px solid #dce4ed;padding-top:18px">
   <strong>Supabase Auth 登入驗證（測試入口）</strong>
@@ -8964,31 +8963,21 @@ function showModal(title,body,onOk,withInput=false,onCancel=null){
   document.getElementById('mOk').onclick=async()=>{ const input=withInput?document.getElementById('modalInput').value:undefined; await onOk(input); el.remove(); };
 }
 
-function setAdminLoginMode(mode='auth'){
-  legacyLoginMode=mode==='legacy';
+function setAdminLoginMode(){
+  legacyLoginMode=false;
   const user=document.getElementById('loginUsername');
   const label=document.getElementById('loginUserLabel');
   const btn=document.getElementById('loginBtn');
-  const toggle=document.getElementById('legacyLoginToggle');
   const forgot=document.getElementById('forgotPasswordBtn');
-  if(legacyLoginMode){
-    if(label)label.textContent='舊版管理員帳號';
-    if(user){user.type='text';user.placeholder='請輸入舊版管理員帳號';user.value='';}
-    if(btn){btn.textContent='驗證舊版帳號';btn.onclick=login;}
-    if(toggle)toggle.textContent='返回管理員 Email 登入';
-    if(forgot)forgot.style.display='none';
-  }else{
-    if(label)label.textContent='管理員 Email';
-    if(user){user.type='email';user.placeholder='請輸入 管理員 Email';user.value='';}
-    if(btn){btn.textContent='登入後台';btn.onclick=loginWithCourtAuth;}
-    if(toggle)toggle.textContent='尚未移轉帳號：使用舊版帳號驗證';
-    if(forgot)forgot.style.display='block';
-  }
+  if(label) label.textContent='管理員 Email';
+  if(user){ user.type='email'; user.placeholder='請輸入管理員 Email'; }
+  if(btn){ btn.textContent='登入後台'; btn.onclick=loginWithCourtAuth; }
+  if(forgot) forgot.style.display='block';
   document.getElementById('loginPassword').value='';
-  const msg=document.getElementById('loginMsg');if(msg)msg.innerHTML='';
+  const msg=document.getElementById('loginMsg');
+  if(msg) msg.innerHTML='';
 }
 document.getElementById('loginBtn').onclick=loginWithCourtAuth;
-document.getElementById('legacyLoginToggle').onclick=()=>setAdminLoginMode(legacyLoginMode?'auth':'legacy');
 document.getElementById('forgotPasswordBtn').onclick=requestAdminPasswordReset;
 document.getElementById('createFirstAdminBtn').onclick=async()=>{
   const username=document.getElementById('firstUsername').value.trim(), display_name=document.getElementById('firstDisplayName').value.trim(), password=document.getElementById('firstPassword').value;
