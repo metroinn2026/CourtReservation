@@ -7895,19 +7895,43 @@ async function writeOperationLog(action, detail={}, recordIds=[]){
   }
 }
 
+function summarizeAdminOperationLog(log){
+  const detail=log?.detail && typeof log.detail==='object' ? log.detail : {};
+  const capacityChanges=Array.isArray(detail.changes)?detail.changes:[];
+  const first=capacityChanges[0]||{};
+  const scope=[detail.venue_type||first.venue_type,detail.day_of_week||first.day_of_week,detail.time_slot||first.time_slot]
+    .filter(Boolean).join('｜') || detail.scope || '-';
+  const target=detail.target_display_name||detail.target_username||detail.name||'';
+  let description='';
+  if(typeof detail.before_active==='boolean' && typeof detail.after_active==='boolean'){
+    description=`${detail.before_active?'啟用':'停用'} → ${detail.after_active?'啟用':'停用'}`;
+  }else if(detail.before_role && detail.after_role){
+    description=`${roleName(detail.before_role)} → ${roleName(detail.after_role)}`;
+  }else if(capacityChanges.length){
+    const prior=first.before||{};
+    const next=first.after||{};
+    const priorCount=Number.isInteger(prior.winner_count)?prior.winner_count:'未設定';
+    const nextCount=Number.isInteger(next.winner_count)?next.winner_count:'未設定';
+    description=`調整 ${capacityChanges.length} 格｜首筆名額 ${priorCount} → ${nextCount}｜${prior.is_closed?'不開放':'開放'} → ${next.is_closed?'不開放':'開放'}`;
+  }else if(detail.before_status&&detail.after_status){
+    description=`${detail.before_status} → ${detail.after_status}`;
+  }else if(detail.summary){
+    const s=detail.summary;
+    description=`總${s.total||0}｜中籤${s.winner||0}｜候補${s.waitlist||0}｜未中籤${s.loser||0}｜未抽籤${s.noResult||0}`;
+  }
+  return {scope:String(scope),target:String(target),description:String(description)};
+}
 function renderLogsPage(){
   const rows=allLogs || [];
   const htmlRows=rows.map(log=>{
-    const detail=log.detail || {};
-    const scope=[detail.venue_type,detail.day_of_week,detail.time_slot].filter(Boolean).join('｜') || detail.scope || '-';
-    const summary=detail.summary ? `總${detail.summary.total||0}｜中籤${detail.summary.winner||0}｜候補${detail.summary.waitlist||0}｜未中籤${detail.summary.loser||0}｜未抽籤${detail.summary.noResult||0}` : '';
+    const {scope,target,description}=summarizeAdminOperationLog(log);
     return `<tr>
       <td>${log.created_at?new Date(log.created_at).toLocaleString('zh-TW',{hour12:false}):''}</td>
       <td><strong>${escapeHtml(log.admin_display_name||log.admin_username||'-')}</strong></td>
       <td><span class="tag blue">${escapeHtml(log.action||'')}</span></td>
       <td>${escapeHtml(scope)}</td>
-      <td>${escapeHtml(detail.name||'')}</td>
-      <td>${escapeHtml((detail.before_status&&detail.after_status)?`${detail.before_status} → ${detail.after_status}`:summary)}</td>
+      <td>${escapeHtml(target)}</td>
+      <td>${escapeHtml(description)}</td>
     </tr>`;
   }).join('');
 
