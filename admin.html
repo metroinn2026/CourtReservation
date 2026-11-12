@@ -5252,21 +5252,14 @@ async function loginWithCourtAuth(){
   await enterApp();
 }
 async function deleteCourtRecords(ids){
- if(!courtAuthLoginActive)return db.from(RECORD_TABLE).delete().in('id',ids);
+ if(!courtAuthLoginActive)return {error:new Error('請先完成 Supabase Auth 管理員登入')};
  const {data,error}=await authMigrationClient.rpc('court_admin_delete_records_v1',{p_ids:ids});
  if(error)return {error};
  if(data!==ids.length)return {error:new Error('刪除筆數與選取筆數不符，請重新整理並確認')};
  return {error:null};
 }
 async function updateAuthorizedRecords(ids,changes,options={}){
- if(!courtAuthLoginActive){
-  let query=updateAuthorizedRecords([item.id],changes);
-  query=options.single?query.eq('id',ids[0]):query.in('id',ids);
-  if(options.expectUnpublished)query=query.eq('result_published',false);
-  if(options.expectUnlocked)query=query.eq('lottery_locked',false);
-  if(options.select)return query.select('id');
-  return query;
- }
+ if(!courtAuthLoginActive) return {data:[],error:new Error('請先完成 Supabase Auth 管理員登入')};
  const {data,error}=await authMigrationClient.rpc('court_admin_update_records_v1',{
   p_ids:ids,p_changes:changes,
   p_expect_unpublished:!!options.expectUnpublished,p_expect_unlocked:!!options.expectUnlocked
@@ -5274,7 +5267,7 @@ async function updateAuthorizedRecords(ids,changes,options={}){
  return {data:options.select?data:undefined,error};
 }
 async function saveAuthorizedCapacity(rows){
- if(!courtAuthLoginActive)return db.from(CAPACITY_TABLE).upsert(rows,{onConflict:'venue_type,day_of_week,time_slot'});
+ if(!courtAuthLoginActive)return {error:new Error('請先完成 Supabase Auth 管理員登入')};
  const {error}=await authMigrationClient.rpc('court_admin_save_capacity_v1',{p_rows:Array.isArray(rows)?rows:[rows]});
  return {error};
 }
@@ -5780,21 +5773,13 @@ async function loadAdmins(){
       return data||[];
     }
   }
-  const {data,error}=await db.rpc('admin_users_exist');
-  if(error){console.error(error);return null;}
-  return data ? [{id:'__exists__',username:'',display_name:'',role:'staff',is_active:true}] : [];
+  // 停用舊版匿名管理員存在檢查；管理員名單只允許 Supabase Auth 授權查詢。
+  return null;
 }
 async function checkBootstrap(){
-  sessionStorage.removeItem('venue_admin_session_bad');
-  const admins=await loadAdmins();
-  if(!admins) return;
-  if(admins.length===0){
-    document.getElementById('bootstrapBox').classList.remove('hidden');
-    document.getElementById('loginBox').classList.add('hidden');
-  }else{
-    document.getElementById('bootstrapBox').classList.add('hidden');
-    document.getElementById('loginBox').classList.remove('hidden');
-  }
+  // 正式系統已完成 Auth 移轉，不開放網頁端建立第一位舊制管理員。
+  document.getElementById('bootstrapBox')?.classList.add('hidden');
+  document.getElementById('loginBox')?.classList.remove('hidden');
 }
 async function callAdminAccountManager(payload){
   const {data:{session}}=await authMigrationClient.auth.getSession();
@@ -5816,28 +5801,6 @@ async function callAdminAccountManager(payload){
 
 async function createAdminAccount({email,display_name,password,role='staff'}){
   return callAdminAccountManager({action:'create',email,displayName:display_name,password,role});
-}
-async function login(){
-  const username=document.getElementById('loginUsername').value.trim();
-  const password=document.getElementById('loginPassword').value;
-  if(!username||!password){ showMsg('loginMsg','請輸入帳號與密碼'); return; }
-  const {data,error}=await db.rpc('admin_login',{p_username:username,p_password:password});
-  document.getElementById('loginPassword').value='';
-  if(error||!data){ showMsg('loginMsg','帳號或密碼錯誤'); return; }
-
-  const {data:{user}}=await authMigrationClient.auth.getUser();
-  if(user){
-    const {data:identity,error:identityError}=await authMigrationClient.rpc('get_court_admin_identity_v1');
-    if(!identityError&&identity&&String(identity.id)===String(data.id)){
-      courtAuthLoginActive=true;
-      currentAdmin=identity;
-      sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
-      await enterApp();
-      return;
-    }
-  }
-
-  showMsg('loginMsg','舊版帳密驗證成功，但此安全後台需要 Supabase Auth 授權。請改用已核准的 管理員 Email 登入。','info');
 }
 async function requireFirstPasswordChange(){
   if(!currentAdmin?.must_change_password) return true;
@@ -6962,10 +6925,10 @@ async function savePendingRecordStatusChanges(){
         payload.result_published=false;
       }
 
-      const {error}=await db.from(RECORD_TABLE).update(payload,{single:true,select:false});
-      if(error){
+      const {error,data}=await updateAuthorizedRecords([item.id],payload,{single:true,select:true,expectUnpublished:true});
+      if(error || data?.length!==1){
         console.error(error);
-        alert(`儲存失敗：${item.record?.name||item.id}`);
+        alert(`儲存失敗：${item.record?.name||item.id}，請重新整理後確認資料狀態。`);
         return;
       }
       updated++;
@@ -7604,18 +7567,12 @@ async function publishRecords(recordIds, published, meta={}){
     return false;
   }
 
-  const publishPayload={result_published:published, updated_at:new Date().toISOString(), published_at: published ? new Date().toISOString() : null};
   let error, data;
   if(courtAuthLoginActive){
     ({error,data}=await authMigrationClient.rpc('court_admin_publish_v1',{p_ids:recordIds,p_published:published}));
   }else{
-    let result=await db.from(RECORD_TABLE).update(publishPayload).in('id',recordIds).select('id');
-    error=result.error; data=result.data;
-    if(error && String(error.message||'').includes('published_at')){
-      console.warn('published_at 欄位尚未建立，改用無公布時間模式更新。',error);
-      result=await db.from(RECORD_TABLE).update({result_published:published,updated_at:new Date().toISOString()}).in('id',recordIds).select('id');
-      error=result.error; data=result.data;
-    }
+    alert('請先完成 Supabase Auth 管理員登入');
+    return false;
   }
 
   if(error){
