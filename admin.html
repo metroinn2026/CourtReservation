@@ -3975,6 +3975,21 @@ body .ux-review-edit{align-items:end}
   color:#991b1b!important;
   border-color:#fca5a5!important;
 }
+
+.account-role-select{
+  min-width:140px!important;
+  height:40px!important;
+  border:1px solid #d1d5db!important;
+  border-radius:10px!important;
+  padding:7px 34px 7px 10px!important;
+  background:#fff!important;
+  font-size:14px!important;
+}
+.account-role-select:disabled{
+  background:#f8fafc!important;
+  color:#64748b!important;
+  cursor:not-allowed!important;
+}
 </style>
 </head>
 <body>
@@ -8536,7 +8551,12 @@ async function loadAccountList(){
     <tr>
       <td><strong>${escapeHtml(a.display_name)}</strong></td>
       <td>${escapeHtml(a.username)}</td>
-      <td>${escapeHtml(roleName(a.role))}</td>
+      <td>
+        <select class="account-role-select" data-role-admin="${a.id}" data-current-role="${a.role}" ${String(a.id)===String(currentAdmin?.id||'')?'disabled title="不能修改自己目前登入中的權限"':''}>
+          <option value="super_admin" ${a.role==='super_admin'?'selected':''}>超級管理員</option>
+          <option value="staff" ${a.role==='staff'?'selected':''}>一般管理員</option>
+        </select>
+      </td>
       <td>
         <span class="accounts-status ${a.is_active?'active':'inactive'}">
           ${a.is_active?'啟用中':'已停用'}
@@ -8551,6 +8571,37 @@ async function loadAccountList(){
       </td>
     </tr>
   `).join('') : '<tr><td colspan="5" class="accounts-loading">目前尚無管理員帳號</td></tr>';
+
+  document.querySelectorAll('.account-role-select').forEach(sel=>sel.onchange=async()=>{
+    if(!courtAuthLoginActive){
+      alert('權限調整僅開放新版 Supabase Auth 後台使用。');
+      sel.value=sel.dataset.currentRole||'staff';
+      return;
+    }
+    const currentRole=sel.dataset.currentRole||'staff';
+    const nextRole=sel.value;
+    if(nextRole===currentRole)return;
+    const displayName=sel.closest('tr')?.querySelector('td strong')?.textContent||'此帳號';
+    const okConfirm=await confirmModal(
+      '確認修改管理員權限',
+      '確定要將「'+escapeHtml(displayName)+'」的角色由「'+escapeHtml(roleName(currentRole))+'」改為「'+escapeHtml(roleName(nextRole))+'」嗎？'
+    );
+    if(!okConfirm){
+      sel.value=currentRole;
+      return;
+    }
+    const {error}=await authMigrationClient.rpc('court_admin_set_account_role_v1',{p_id:sel.dataset.roleAdmin,p_role:nextRole});
+    if(error){
+      const msg=String(error.message||'');
+      if(msg.includes('cannot change current account role')) alert('不能修改目前登入中的帳號權限。');
+      else if(msg.includes('cannot demote last active super admin')) alert('不能將最後一個啟用中的超級管理員降為一般管理員。');
+      else alert('修改權限失敗：'+msg);
+      sel.value=currentRole;
+      return;
+    }
+    alert('管理員權限已更新。');
+    await loadAccountList();
+  });
 
   document.querySelectorAll('[data-toggle]').forEach(btn=>btn.onclick=async()=>{
     const active=btn.dataset.active==='true';
