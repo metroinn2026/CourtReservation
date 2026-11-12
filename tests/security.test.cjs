@@ -51,6 +51,15 @@ test('admin has idle, foreground and role revalidation',()=>{
   assert.match(admin,/if\(!beginAdminSession\(true\)\)/);
   assert.match(admin,/if\(!beginAdminSession\(false\)\)/);
 });
+test('first click after idle does not extend an expired admin session',()=>{
+  const start=admin.indexOf('function markAdminActivity(event){');
+  const end=admin.indexOf('function adminSessionHasExpired(',start);
+  assert.ok(start>=0 && end>start);
+  const handler=admin.slice(start,end);
+  assert.ok(handler.indexOf('adminSessionHasExpired(now)')>=0);
+  assert.ok(handler.indexOf('adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now)')>handler.indexOf('adminSessionHasExpired(now)'));
+  assert.match(admin,/addEventListener\(type,markAdminActivity,\{capture:true,passive:false\}\)/);
+});
 test('admin logout clears local identity and masks sensitive UI',()=>{
   assert.match(admin,/clearAdminSessionMarkers\(\)/);
   assert.match(admin,/secureIdentityBySubmission\.clear\(\)/);
