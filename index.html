@@ -2348,7 +2348,16 @@
       }
 
       await loadSystemSettings();
-      if(!window.__registrationStateTimer){window.__registrationStateTimer=setInterval(renderRegistrationState,60000);}
+      if(!window.__registrationStateTimer){
+        window.__registrationStateTimer=setInterval(()=>{
+          renderRegistrationState();
+          const lockAt=new Date(systemSettings.applicant_delete_lock_at||'2026-11-13T00:00:00+08:00');
+          if(!Number.isNaN(lockAt.getTime()) && Date.now()>=lockAt.getTime()){
+            (allRecords||[]).forEach(r=>r.delete_allowed=false);
+            renderRecords();
+          }
+        },60000);
+      }
 
       // Setup all event listeners AFTER SDK is ready
       setupAllEventListeners();
@@ -3137,12 +3146,12 @@
               </div>
             </div>
           </div>
-          ${records[0].lottery_status ? `
-            <div style="font-size:12px;color:#64748b;flex-shrink:0;margin-left:12px;">已抽籤<br>不可刪除</div>
-          ` : `
+          ${records[0].delete_allowed ? `
             <button data-serial="${serialNum}" class="delete-btn" style="background: none; border: none; cursor: pointer; padding: 4px; color: #7f1d1d; flex-shrink: 0; margin-left: 12px;" title="刪除">
               <span data-lucide="trash-2" aria-hidden="true"></span>
             </button>
+          ` : `
+            <div style="font-size:12px;color:#64748b;flex-shrink:0;margin-left:12px;">已鎖定<br>不可刪除</div>
           `}
         </div>
       `}).join('');
