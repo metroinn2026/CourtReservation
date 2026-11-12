@@ -60,6 +60,49 @@ test('first click after idle does not extend an expired admin session',()=>{
   assert.ok(handler.indexOf('adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now)')>handler.indexOf('adminSessionHasExpired(now)'));
   assert.match(admin,/addEventListener\(type,markAdminActivity,\{capture:true,passive:false\}\)/);
 });
+test('expired first interaction is cancelled before activity renews',()=>{
+  const start=admin.indexOf('function markAdminActivity(event){');
+  const end=admin.indexOf('function adminSessionHasExpired(',start);
+  assert.ok(start>=0&&end>start);
+  const handlerSource=admin.slice(start,end);
+  const sandbox={
+    courtAuthLoginActive:true,adminSigningOut:false,
+    ADMIN_SESSION_LAST_KEY:'last',
+    Date:{now:()=>1700000000000},
+    adminSessionHasExpired:()=>true,
+    adminStoredTimestamp:()=>1699999999000,
+    adminSaveTimestamp:()=>{throw new Error('expired event renewed login');},
+    endAdminSession:()=>{sandbox.signedOut=true;return Promise.resolve();},
+    signedOut:false
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(handlerSource,sandbox);
+  const event={cancelable:true,
+    preventDefault(){this.prevented=true;},
+    stopImmediatePropagation(){this.stopped=true;}};
+  sandbox.markAdminActivity(event);
+  assert.equal(event.prevented,true);
+  assert.equal(event.stopped,true);
+  assert.equal(sandbox.signedOut,true);
+});
+test('valid interaction can refresh activity without forcing logout',()=>{
+  const start=admin.indexOf('function markAdminActivity(event){');
+  const end=admin.indexOf('function adminSessionHasExpired(',start);
+  const sandbox={
+    courtAuthLoginActive:true,adminSigningOut:false,
+    ADMIN_SESSION_LAST_KEY:'last',
+    Date:{now:()=>1700000000000},
+    adminSessionHasExpired:()=>false,
+    adminStoredTimestamp:()=>1699999980000,
+    adminSaveTimestamp:(key,value)=>{sandbox.lastSaved={key,value};},
+    endAdminSession:()=>{throw new Error('valid session signed out');}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  sandbox.markAdminActivity({cancelable:true});
+  assert.equal(sandbox.lastSaved.key,'last');
+  assert.equal(sandbox.lastSaved.value,1700000000000);
+});
 test('admin sessions terminate on Supabase logout and across same-origin tabs',()=>{
   assert.match(admin,/event==='SIGNED_OUT' && courtAuthLoginActive && !adminSigningOut/);
   assert.match(admin,/addEventListener\('storage',event=>/);
