@@ -4656,6 +4656,312 @@ body .ux-review-edit{align-items:end}
     .capacity-toolbar{padding:12px!important;}
   }
 </style>
+
+<style id="admin-unified-clean-v18">
+  :root{
+    --admin-bg:#f6f8fb;
+    --admin-card:#ffffff;
+    --admin-line:#e4eaf1;
+    --admin-line-soft:#eef2f6;
+    --admin-text:#172033;
+    --admin-muted:#667085;
+    --admin-blue:#2563eb;
+    --admin-blue-soft:#eff6ff;
+  }
+
+  body{background:var(--admin-bg)!important;color:var(--admin-text)!important;}
+  .app{grid-template-columns:232px minmax(0,1fr)!important;}
+  .sidebar{padding:18px 14px!important;border-right:1px solid var(--admin-line)!important;}
+  .brand{padding:4px 8px 15px!important;margin-bottom:2px!important;}
+  .brand h1{font-size:16px!important;line-height:1.45!important;margin:0 0 3px!important;}
+  .brand span{font-size:11px!important;}
+  .nav{gap:4px!important;}
+  .nav button{min-height:40px!important;padding:9px 11px!important;border-radius:9px!important;font-size:13px!important;}
+  .side-footer{padding:14px 8px 0!important;}
+  .topbar{height:64px!important;padding:0 24px!important;}
+  .topbar h2{font-size:19px!important;font-weight:900!important;}
+  .content{padding:20px 24px 32px!important;max-width:none!important;}
+
+  .panel{margin-bottom:16px!important;}
+  .admin-section-card,
+  .records-section-card,
+  .compact-page-card,
+  .accounts-page-panel,
+  .registration-settings-fold,
+  .capacity-workspace-card,
+  .lottery-context,
+  .lottery-advanced,
+  .dashboard-tasks-panel,
+  .anomaly-center-clean,
+  #dayCheckTable > .panel{
+    background:var(--admin-card)!important;
+    border:1px solid var(--admin-line)!important;
+    border-radius:14px!important;
+    box-shadow:none!important;
+  }
+
+  .admin-section-head{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:12px!important;
+    min-height:30px!important;
+    margin:0 0 12px!important;
+    padding:0 0 11px!important;
+    border-bottom:1px solid var(--admin-line-soft)!important;
+  }
+  .admin-section-head h3,
+  .records-compact-head h3,
+  .lottery-main-panel > h3{
+    margin:0!important;
+    color:var(--admin-text)!important;
+    font-size:16px!important;
+    line-height:1.35!important;
+    font-weight:900!important;
+  }
+
+  #content .btn{
+    min-height:34px!important;
+    height:auto!important;
+    padding:6px 11px!important;
+    border-radius:8px!important;
+    font-size:12.5px!important;
+    line-height:1.25!important;
+  }
+  #content input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  #content select{
+    height:36px!important;
+    min-height:36px!important;
+    border-radius:8px!important;
+    font-size:12.5px!important;
+  }
+  #content textarea{border-radius:9px!important;font-size:13px!important;}
+  #content .small{font-size:12px!important;line-height:1.55!important;}
+
+  /* 登記資料：兩張卡、少量工具、篩選自然換行 */
+  .records-main-panel-compact{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+    margin:0!important;
+  }
+  .records-section-card{padding:16px!important;margin:0 0 16px!important;}
+  .records-filter-section-card .records-compact-head{
+    padding:0 0 11px!important;
+    margin:0!important;
+    border-bottom:1px solid var(--admin-line-soft)!important;
+  }
+  .records-summary-line{gap:8px!important;font-size:11.5px!important;}
+  .records-utility-actions{gap:6px!important;}
+  .records-compact-filterbar{
+    display:flex!important;
+    flex-wrap:wrap!important;
+    gap:8px!important;
+    align-items:center!important;
+    padding:11px 0 0!important;
+    border:0!important;
+  }
+  .records-compact-filterbar .records-search{
+    flex:1 1 280px!important;
+    min-width:230px!important;
+    width:auto!important;
+  }
+  .records-compact-filterbar select{
+    flex:0 1 135px!important;
+    width:auto!important;
+    min-width:108px!important;
+    max-width:160px!important;
+  }
+  .records-compact-filterbar #filterAnomaly{min-width:130px!important;}
+  .records-clear-link{
+    margin-left:auto!important;
+    min-height:34px!important;
+    padding:6px 10px!important;
+    border:1px solid var(--admin-line)!important;
+    border-radius:8px!important;
+    background:#fff!important;
+    color:#64748b!important;
+    font-size:12.5px!important;
+    font-weight:700!important;
+    white-space:nowrap!important;
+  }
+  .records-clear-link:hover{background:#f8fafc!important;color:var(--admin-blue)!important;}
+  .records-list-head{margin-bottom:0!important;}
+  .records-content-nav{
+    min-height:42px!important;
+    padding:0!important;
+    border-bottom:1px solid var(--admin-line-soft)!important;
+  }
+  .records-content-nav .records-function-tabs{margin:0!important;}
+  .records-function-tab{min-height:36px!important;padding:8px 10px!important;font-size:12.5px!important;}
+  .records-list-section-card #recordsWorkspace{padding:0!important;}
+  .records-table-meta-controls{padding:8px 0!important;min-height:42px!important;}
+  .records-list-actionbar-active{padding:7px 0!important;}
+  .records-list-section-card #recordsWorkspace > #recordsTable .pager{margin:9px 0 0!important;}
+  .records-auth-popover{width:330px!important;padding:10px!important;}
+  .records-export-popover{min-width:190px!important;}
+
+  /* 名額設定：規則一張卡，場次名額一張卡 */
+  .capacity-main-panel{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+    margin:0!important;
+  }
+  .registration-settings-fold{margin:0 0 16px!important;overflow:hidden!important;}
+  .registration-settings-summary{padding:13px 16px!important;min-height:52px!important;}
+  .registration-summary-heading{font-size:15px!important;}
+  .registration-summary-limits{font-size:11.5px!important;}
+  .capacity-workspace-card{padding:16px!important;}
+  .capacity-workspace-card .capacity-toolbar{
+    padding:0 0 12px!important;
+    margin:0!important;
+    border:0!important;
+    border-radius:0!important;
+    background:transparent!important;
+  }
+  .capacity-toolbar-main,.capacity-toolbar-actions{gap:10px!important;}
+  .capacity-action-buttons{gap:6px!important;}
+  .capacity-open-note{padding:0 0 9px!important;margin:0!important;}
+  .capacity-workspace-card #bulkCapTable{
+    padding:0!important;
+    margin:0!important;
+    border:0!important;
+    border-radius:0!important;
+    background:transparent!important;
+  }
+  .capacity-compact-summary{margin:0 0 8px!important;}
+
+  /* 抽籤作業：三個主要操作，其餘收進更多 */
+  .lottery-main-panel{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+    margin:0!important;
+  }
+  .lottery-main-panel > h3{margin:0 0 10px 4px!important;}
+  .lottery-context{padding:15px!important;margin-bottom:14px!important;}
+  .lottery-context-grid{gap:10px!important;}
+  .lottery-filter-actions{
+    position:relative!important;
+    display:flex!important;
+    align-items:flex-end!important;
+    gap:6px!important;
+    flex-wrap:wrap!important;
+  }
+  .lottery-more-menu{position:relative!important;}
+  .lottery-more-menu > summary{list-style:none!important;cursor:pointer!important;}
+  .lottery-more-menu > summary::-webkit-details-marker{display:none!important;}
+  .lottery-more-popover{
+    position:absolute!important;
+    right:0!important;
+    top:39px!important;
+    z-index:40!important;
+    width:190px!important;
+    padding:6px!important;
+    background:#fff!important;
+    border:1px solid var(--admin-line)!important;
+    border-radius:9px!important;
+    box-shadow:0 10px 24px rgba(15,23,42,.12)!important;
+  }
+  .lottery-more-popover .btn{
+    display:block!important;
+    width:100%!important;
+    margin:0!important;
+    text-align:left!important;
+    background:#fff!important;
+    color:#334155!important;
+    border:0!important;
+  }
+  .lottery-more-popover .btn:hover{background:#f8fafc!important;}
+  .lottery-advanced{margin-top:14px!important;padding:11px 14px!important;}
+
+  /* 文字設定、操作紀錄 */
+  .settings-compact-card,.logs-compact-card{padding:16px!important;}
+  .settings-compact-card .admin-tabs{margin:0 0 12px!important;}
+  .settings-save-actions{display:flex!important;justify-content:flex-end!important;margin-top:10px!important;}
+  .logs-compact-card .table-wrap{
+    margin:0 -16px -16px!important;
+    border-left:0!important;
+    border-right:0!important;
+    border-bottom:0!important;
+    border-radius:0 0 14px 14px!important;
+  }
+
+  /* 帳號權限：建立帳號與清單各一張卡，每列僅顯示一顆操作 */
+  .accounts-page-panel{padding:16px!important;margin-bottom:16px!important;}
+  .accounts-create-grid{gap:10px!important;}
+  .accounts-inline-note{margin-top:6px!important;}
+  .accounts-create-actions{margin-top:8px!important;}
+  .accounts-list-panel{padding:16px!important;}
+  .accounts-list-panel .accounts-table-wrap{
+    margin:0 -16px -16px!important;
+    border-left:0!important;
+    border-right:0!important;
+    border-bottom:0!important;
+    border-radius:0 0 14px 14px!important;
+  }
+  .accounts-action-cell{text-align:right!important;min-width:92px!important;}
+  .row-action-menu{display:inline-block!important;min-width:74px!important;text-align:left!important;}
+  .row-action-menu > summary{list-style:none!important;cursor:pointer!important;text-align:center!important;}
+  .row-action-menu > summary::-webkit-details-marker{display:none!important;}
+  .row-action-popover{
+    display:flex!important;
+    gap:5px!important;
+    flex-wrap:wrap!important;
+    justify-content:flex-end!important;
+    padding-top:6px!important;
+    min-width:250px!important;
+  }
+  .row-action-popover .btn{
+    min-height:30px!important;
+    padding:5px 8px!important;
+    font-size:11.5px!important;
+    background:#fff!important;
+    color:#334155!important;
+    border:1px solid var(--admin-line)!important;
+  }
+  .row-action-popover .btn:hover{background:#f8fafc!important;}
+  .row-action-popover .btn-danger-outline{color:#b42318!important;border-color:#f3c7c3!important;}
+
+  /* 作業總覽與異常清單也使用同一密度 */
+  .workflow-status-strip{padding:9px 12px!important;border-radius:10px!important;}
+  .dashboard-status-cards{gap:10px!important;margin:12px 0 16px!important;}
+  .dashboard-status-card{min-height:82px!important;padding:12px 14px!important;border-radius:12px!important;}
+  .dashboard-card-num{font-size:24px!important;}
+  .dashboard-tasks-panel{padding:16px!important;}
+  .ux-review-panel{padding:14px!important;}
+  .ux-review-case{border-radius:10px!important;padding:11px!important;}
+  .ux-review-toolbar{gap:7px!important;}
+
+  /* 表單匯入視窗 */
+  .court-import-dialog{padding:18px!important;border-radius:14px!important;}
+  .court-import-head{top:-18px!important;padding:6px 0 11px!important;margin-bottom:12px!important;}
+  .court-import-head h3{margin:0!important;font-size:16px!important;}
+  .court-import-dialog .panel{padding:14px!important;margin-bottom:12px!important;}
+
+  @media(max-width:1180px){
+    .app{grid-template-columns:210px minmax(0,1fr)!important;}
+    .content{padding:18px!important;}
+    .lottery-context-grid{grid-template-columns:repeat(2,minmax(150px,1fr))!important;}
+    .records-compact-filterbar .records-search{flex-basis:100%!important;}
+  }
+  @media(max-width:900px){
+    .app{grid-template-columns:1fr!important;}
+    .sidebar{padding:12px!important;}
+    .nav{grid-template-columns:repeat(3,minmax(0,1fr))!important;}
+    .content{padding:14px!important;}
+    .records-section-card,.capacity-workspace-card,.settings-compact-card,.logs-compact-card,.accounts-page-panel{padding:14px!important;}
+    .records-compact-filterbar select{flex:1 1 130px!important;max-width:none!important;}
+    .records-clear-link{margin-left:0!important;}
+    .lottery-context-grid{grid-template-columns:1fr!important;}
+    .row-action-popover{min-width:0!important;justify-content:flex-start!important;}
+  }
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5732,7 +6038,7 @@ function countSuspiciousPhones(){
 }
 function setActiveNav(page){
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
-  const title={dashboard:'作業總覽',records:'登記資料',capacity:'名額設定',lottery:'抽籤作業',settings:'文字設定中心',logs:'操作紀錄',accounts:'帳號權限管理','form-import':'Google 表單匯入與異常管理'}[page] || '';
+  const title={dashboard:'作業總覽',records:'登記資料',capacity:'名額設定',lottery:'抽籤作業',settings:'文字設定',logs:'操作紀錄',accounts:'帳號權限','form-import':'表單匯入'}[page] || '';
   document.getElementById('pageTitle').textContent=title;
 }
 function renderPage(page){
@@ -6071,7 +6377,6 @@ function renderRecordsPage(){
 
   document.getElementById('content').innerHTML=`
     <div class="panel records-main-panel records-main-panel-compact">
-      <div class="section-title-outside section-title-manual">登記資料管理</div>
       <div class="records-section-card records-filter-section-card">
       <div class="records-compact-head">
         <div>
@@ -6118,8 +6423,8 @@ function renderRecordsPage(){
 
       </div>
 
-      <div class="section-title-outside section-title-manual records-list-section-title">登記清單</div>
       <div class="records-section-card records-list-section-card">
+      <div class="admin-section-head records-list-head"><h3>登記清單</h3></div>
       <div class="records-content-nav">
         <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
           <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
@@ -6819,6 +7124,8 @@ function renderCapacityPage(){
       </details>
       <div class="capacity-section-divider"></div>
 
+      <div class="admin-section-card capacity-workspace-card">
+        <div class="admin-section-head"><h3>場次名額</h3></div>
       <div class="capacity-toolbar">
         <div class="capacity-toolbar-main">
           <div class="capacity-field">
@@ -6853,6 +7160,7 @@ function renderCapacityPage(){
 
       <div class="capacity-open-note">「不開放」會立即同步前台。</div>
       <div id="bulkCapTable"></div>
+      </div>
     </div>
   `;
 
@@ -7297,8 +7605,8 @@ function renderLogsPage(){
   }).join('');
 
   document.getElementById('content').innerHTML=`
-    <div class="section-title-outside">操作紀錄</div>
     <div class="panel compact-page-card logs-compact-card">
+      <div class="admin-section-head"><h3>操作紀錄</h3></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>時間</th><th>管理員</th><th>操作</th><th>範圍</th><th>對象</th><th>內容</th></tr></thead>
@@ -7460,11 +7768,16 @@ function renderLotteryPage(){
           </div>
           <div class="lottery-filter-actions">
             <button id="refreshLotteryContext" class="btn btn-gray">篩選</button>
-            <button id="exportDayCheckBtn" class="btn btn-primary">匯出目前篩選</button>
-            <button id="exportPendingLotteryBtn" class="btn btn-primary">下載待抽籤名單 ZIP</button>
-            <button id="importLotteryResultBtn" class="btn btn-primary">批次匯入抽籤結果</button>
-            <button id="pendingPublishBtn" class="btn btn-primary">待發布結果</button>
-            <button id="promotionSuggestionBtn" class="btn btn-primary">遞補建議</button>
+            <button id="exportPendingLotteryBtn" class="btn btn-primary">下載抽籤名單</button>
+            <button id="importLotteryResultBtn" class="btn btn-primary">匯入抽籤結果</button>
+            <details class="lottery-more-menu">
+              <summary class="btn btn-gray">更多 ▾</summary>
+              <div class="lottery-more-popover">
+                <button id="exportDayCheckBtn" class="btn btn-gray">匯出目前篩選</button>
+                <button id="pendingPublishBtn" class="btn btn-gray">待發布結果</button>
+                <button id="promotionSuggestionBtn" class="btn btn-gray">遞補建議</button>
+              </div>
+            </details>
             <input id="importLotteryFile" type="file" accept=".xlsx,.xls,.csv,.zip" multiple style="display:none;">
           </div>
         </div>
@@ -8941,8 +9254,8 @@ function renderLotteryResult(result,title,locked){
 function renderSettingsPage(){
 
   document.getElementById('content').innerHTML=`
-    <div class="section-title-outside">文字設定</div>
     <div class="panel compact-page-card settings-compact-card">
+      <div class="admin-section-head"><h3>文字設定</h3></div>
 
       <div class="admin-tabs" role="tablist" aria-label="文字設定分類">
         <button id="tabRules" class="admin-tab active" role="tab">登記辦法</button>
@@ -9135,8 +9448,8 @@ function renderAccountsPage(){
   if(currentAdmin.role!=='super_admin') return;
 
   document.getElementById('content').innerHTML=`
-    <div class="section-title-outside">新增後台帳號</div>
     <div class="panel accounts-page-panel accounts-section accounts-create-panel">
+      <div class="admin-section-head"><h3>新增後台帳號</h3></div>
       <div class="accounts-create-grid">
         <div class="field">
           <label>管理員 Email</label>
@@ -9164,8 +9477,8 @@ function renderAccountsPage(){
       </div>
     </div>
 
-    <div class="section-title-outside">管理員清單</div>
     <div class="panel accounts-page-panel accounts-list-panel">
+      <div class="admin-section-head"><h3>管理員清單</h3></div>
       <div class="table-wrap accounts-table-wrap">
         <table class="accounts-table">
           <thead>
@@ -9239,6 +9552,9 @@ async function loadAccountList(){
         </span>
       </td>
       <td class="accounts-action-cell">
+        <details class="row-action-menu">
+          <summary class="btn btn-gray btn-compact">操作 ▾</summary>
+          <div class="row-action-popover">
         ${!a.auth_linked ? `<button class="btn btn-gray" data-link-auth="${a.id}" data-link-name="${escapeHtml(a.display_name)}">建立登入</button>` : ''}
         <button class="btn btn-gray" data-edit-profile="${a.id}" data-edit-name="${escapeHtml(a.display_name)}" data-edit-username="${escapeHtml(a.username)}">編輯資料</button>
         <button class="btn btn-gray" data-reset="${a.id}" data-auth-linked="${a.auth_linked}" ${!a.auth_linked?'disabled title="請先建立安全登入"':''}>改密碼</button>
@@ -9246,6 +9562,9 @@ async function loadAccountList(){
           ${a.is_active?'停用':'啟用'}
         </button>
         ${!a.is_active && String(a.id)!==String(currentAdmin?.id||'') ? '<button class="btn btn-danger-outline" data-delete-admin="'+a.id+'" data-delete-name="'+escapeHtml(a.display_name||a.username)+'" data-delete-username="'+escapeHtml(a.username)+'">刪除</button>' : ''}
+      
+          </div>
+        </details>
       </td>
     </tr>
   `).join('') : '<tr><td colspan="5" class="accounts-loading">目前尚無管理員帳號</td></tr>';
@@ -9890,73 +10209,6 @@ async function testSupabaseAdminAuthMigration(){
   await checkBootstrap();
 })();
 </script>
-
-<script id="safe-section-title-script">
-(function(){
-  function cleanTitle(text){
-    return (text || '')
-      .replace(/^[\s🎯📊📋⚠️➕🔐]+/g,'')
-      .replace(/\s+/g,' ')
-      .trim();
-  }
-
-  function movePanelTitles(){
-    const root=document.getElementById('content');
-    if(!root) return;
-
-    const headings=root.querySelectorAll(
-      '.panel > h3:first-child,' +
-      '.panel > .anomaly-center-head:first-child > h3:first-child,' +
-      '.panel > .dashboard-panel-heading:first-child > h3:first-child'
-    );
-
-    headings.forEach(function(h){
-      const panel=h.closest('.panel');
-      if(!panel || panel.dataset.titleOutside==='1') return;
-
-      const title=cleanTitle(h.textContent);
-      if(!title) return;
-
-      const outside=document.createElement('div');
-      outside.className='section-title-outside';
-      outside.textContent=title;
-      panel.parentNode.insertBefore(outside,panel);
-
-      panel.dataset.titleOutside='1';
-      panel.classList.add('section-title-moved');
-
-      const wrapper=h.parentElement;
-      h.remove();
-
-      if(wrapper && wrapper!==panel &&
-         (wrapper.classList.contains('anomaly-center-head') ||
-          wrapper.classList.contains('dashboard-panel-heading')) &&
-         wrapper.children.length===0){
-        wrapper.remove();
-      }
-    });
-  }
-
-  function bindObserver(){
-    const root=document.getElementById('content');
-    if(!root || root.dataset.titleObserver==='1') return;
-
-    const observer=new MutationObserver(function(){
-      movePanelTitles();
-    });
-    observer.observe(root,{childList:true,subtree:true});
-    root.dataset.titleObserver='1';
-    movePanelTitles();
-  }
-
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',bindObserver);
-  }else{
-    bindObserver();
-  }
-})();
-</script>
-
 
 <script id="admin-font-size-control-script-v1">
 (function(){
