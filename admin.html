@@ -5081,31 +5081,12 @@ body .ux-review-edit{align-items:end}
       <div class="login-card">
         <h2>後台登入</h2>
         <p>請使用管理員 Email 與密碼登入。登入後即可依角色權限存取後台資料。</p>
-        <div id="bootstrapBox" class="hidden">
-          <div class="msg info">目前尚未建立後台帳號，請先建立第一位超級管理員。</div>
-          <div class="small" style="margin:10px 0">請先以已授權的 Supabase Auth 帳號驗證身分；此帳號需先加入匯入管理員名單。</div>
-          <div class="field"><label>管理員 Email</label><input id="bootstrapAuthEmail" type="email" autocomplete="username"></div>
-          <div class="field"><label>Supabase Auth 密碼</label><input id="bootstrapAuthPassword" type="password" autocomplete="current-password"></div>
-          <div class="field"><label>管理員帳號</label><input id="firstUsername" placeholder="例如 admin"></div>
-          <div class="field"><label>顯示名稱</label><input id="firstDisplayName" placeholder="例如 Christina"></div>
-          <div class="field"><label>密碼</label><input id="firstPassword" type="password" placeholder="請設定高強度密碼"></div>
-          <button id="createFirstAdminBtn" class="btn btn-green" style="width:100%;">建立第一位超級管理員</button>
-          <hr style="border:none;border-top:1px solid var(--border);margin:22px 0;">
-        </div>
         <div id="loginBox">
           <div class="field"><label id="loginUserLabel">管理員 Email</label><input id="loginUsername" type="email" autocomplete="username" placeholder="請輸入 管理員 Email"></div>
           <div class="field"><label>密碼</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="請輸入密碼"></div>
           <button id="loginBtn" class="btn btn-primary" style="width:100%;">登入後台</button>
           <button id="forgotPasswordBtn" type="button" class="btn btn-gray" style="width:100%;margin-top:10px;">忘記密碼／重設密碼</button>
         </div>
-        <div id="authMigrationTestBox" style="display:none;margin-top:20px;border-top:1px solid #dce4ed;padding-top:18px">
-  <strong>Supabase Auth 登入驗證（測試入口）</strong>
-  <p class="small">僅供管理員驗證新的身分機制。此處不會登入正式後台，也不會自動授予權限。</p>
-  <div class="field"><label>Supabase Auth 電子郵件</label><input id="authTestEmail" type="email" autocomplete="off"></div>
-  <div class="field"><label>Supabase Auth 密碼</label><input id="authTestPassword" type="password" autocomplete="off"></div>
-  <button id="authTestBtn" type="button" class="btn btn-gray">測試登入及角色對應</button>
-  <div id="authTestResult" class="small" role="status" style="margin-top:10px"></div>
-</div>
 <div id="loginMsg"></div>
       </div>
     </div>
@@ -5777,8 +5758,6 @@ async function loadAdmins(){
   return null;
 }
 async function checkBootstrap(){
-  // 正式系統已完成 Auth 移轉，不開放網頁端建立第一位舊制管理員。
-  document.getElementById('bootstrapBox')?.classList.add('hidden');
   document.getElementById('loginBox')?.classList.remove('hidden');
 }
 async function callAdminAccountManager(payload){
@@ -9843,21 +9822,6 @@ function setAdminLoginMode(){
 }
 document.getElementById('loginBtn').onclick=loginWithCourtAuth;
 document.getElementById('forgotPasswordBtn').onclick=requestAdminPasswordReset;
-document.getElementById('createFirstAdminBtn').onclick=async()=>{
-  const username=document.getElementById('firstUsername').value.trim(), display_name=document.getElementById('firstDisplayName').value.trim(), password=document.getElementById('firstPassword').value;
-  const authEmail=document.getElementById('bootstrapAuthEmail').value.trim(), authPassword=document.getElementById('bootstrapAuthPassword').value;
-  if(!authEmail||!authPassword||!username||!display_name||!password){showMsg('loginMsg','請填寫 Supabase Auth 帳密及完整的後台管理員資料');return;}
-  try{
-    const {error:authError}=await importDb.auth.signInWithPassword({email:authEmail,password:authPassword});
-    if(authError) throw new Error(`Supabase Auth 登入失敗：${authError.message}`);
-    const salt=randomSalt(), password_hash=await makeHash(password,salt);
-    const {error}=await importDb.rpc('bootstrap_first_super_admin',{p_username:username,p_display_name:display_name,p_salt:salt,p_password_hash:password_hash});
-    if(error) throw error;
-    showMsg('loginMsg','第一位管理員已建立，請登入。','ok');
-    document.getElementById('bootstrapBox').classList.add('hidden');
-    document.getElementById('loginBox').classList.remove('hidden');
-  }catch(e){ showMsg('loginMsg',`建立失敗：${e.message||'請確認 Supabase Auth 管理員授權及資料庫 SQL。'}`); console.error(e); }
-};
 document.getElementById('logoutBtn').onclick=logout;
 function normalizeFormDay(value){const m=String(value||'').match(/週([一二三四五六日])/);return m?`周${m[1]}`:'';}
 function normalizeFormTime(value){
@@ -10219,30 +10183,8 @@ async function loadFormAnomalies(){
 
 document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage(btn.dataset.page));
 
-async function testSupabaseAdminAuthMigration(){
-  const email=document.getElementById('authTestEmail')?.value.trim();
-  const password=document.getElementById('authTestPassword')?.value;
-  const output=document.getElementById('authTestResult');
-  if(!email||!password){output.textContent='請輸入測試用 管理員 Email 與密碼';return;}
-  const btn=document.getElementById('authTestBtn');btn.disabled=true;
-  try{
-    const {error}=await authMigrationClient.auth.signInWithPassword({email,password});
-    if(error)throw error;
-    const {data,error:roleError}=await authMigrationClient.rpc('get_court_admin_identity_v1');
-    if(roleError)throw roleError;
-    output.textContent=data ? '新登入驗證成功；已核對角色：'+roleName(data.role)+'。正式登入尚未切換。' : '已通過 Supabase Auth，但此帳號尚未經管理員核准對應後台角色。';
-  }catch(e){output.textContent='驗證未完成：'+(e.message||String(e));}
-  finally{document.getElementById('authTestPassword').value='';await authMigrationClient.auth.signOut().catch(()=>{});btn.disabled=false;}
-}
 (async function init(){
   const url=new URL(location.href);
-  const testBox=document.getElementById('authMigrationTestBox');
-
-  if(url.searchParams.get('auth-test')==='1'&&testBox){
-    testBox.style.display='block';
-    document.getElementById('authTestBtn').onclick=testSupabaseAdminAuthMigration;
-  }
-
   if(url.searchParams.get('reset')==='1'){
     sessionStorage.removeItem('venue_admin_session');
     await authMigrationClient.auth.signOut().catch(()=>{});
