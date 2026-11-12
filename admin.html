@@ -4960,6 +4960,113 @@ body .ux-review-edit{align-items:end}
     .lottery-context-grid{grid-template-columns:1fr!important;}
     .row-action-popover{min-width:0!important;justify-content:flex-start!important;}
   }
+
+  /* 共用版型：功能區標題在白卡內；合併歷次視覺覆蓋 */
+  #content .admin-section-card,
+  #content .dashboard-anomaly-card,
+  #content .dashboard-tasks-panel,
+  #content .records-section-card,
+  #content .accounts-page-panel,
+  #content .capacity-workspace-card,
+  #content .settings-compact-card,
+  #content .logs-compact-card,
+  #content .lottery-context,
+  #content #dayCheckTable > .panel{
+    display:block!important;width:100%!important;max-width:100%!important;
+    min-width:0!important;box-sizing:border-box!important;
+    background:#fff!important;border:1px solid var(--admin-line)!important;
+    border-radius:14px!important;box-shadow:none!important;
+    margin:0 0 16px!important;padding:16px!important;
+  }
+  #content .admin-section-head{
+    display:flex!important;align-items:center!important;justify-content:space-between!important;
+    gap:12px!important;border-bottom:1px solid var(--admin-line-soft)!important;
+    margin:0 0 12px!important;padding:0 0 12px!important;min-height:0!important;
+  }
+  #content .admin-section-head h3{
+    display:flex!important;align-items:center!important;gap:10px!important;
+    margin:0!important;padding:0!important;border:0!important;
+    background:transparent!important;color:var(--admin-text)!important;
+    font-size:16px!important;font-weight:900!important;line-height:1.4!important;
+  }
+  #content .admin-section-head h3::before{
+    content:""!important;display:block!important;width:4px!important;height:19px!important;
+    flex:0 0 4px!important;background:var(--admin-blue)!important;border-radius:4px!important;
+  }
+  #content .admin-section-head::before{content:none!important;display:none!important;}
+  #content .dashboard-anomaly-card,
+  #content .dashboard-tasks-panel{
+    margin:0 0 16px!important;padding:16px!important;overflow:visible!important;background:#fff!important;
+  }
+  #content .dashboard-anomaly-card .anomaly-info-row,
+  #content .dashboard-tasks-panel .pending-stage-info-row{
+    margin:0 0 12px!important;padding:0!important;width:100%!important;
+  }
+  #content .dashboard-anomaly-card .flat-empty{
+    background:#f8fafc!important;border:1px solid var(--admin-line-soft)!important;
+    border-radius:10px!important;margin:0!important;padding:12px 14px!important;
+  }
+  #content .dashboard-anomaly-card .anomaly-flat-list{
+    background:#fff!important;border:0!important;border-radius:0!important;
+  }
+  #content .records-list-section-card .admin-inner-section{
+    background:transparent!important;border:0!important;border-radius:0!important;
+    box-shadow:none!important;padding:12px 0 0!important;margin:0!important;
+  }
+  #content .capacity-workspace-card .capacity-toolbar,
+  #content .capacity-workspace-card #bulkCapTable{
+    background:transparent!important;border:0!important;border-radius:0!important;box-shadow:none!important;
+  }
+  #content .lottery-main-panel{
+    background:transparent!important;border:0!important;box-shadow:none!important;
+    padding:0!important;margin:0!important;min-width:0!important;
+  }
+  #content .lottery-main-panel .lottery-context{padding:16px!important;background:#fff!important;}
+  #content #dayCheckTable > .panel{background:#fff!important;}
+  #content .logs-compact-card > .table-wrap,
+  #content .accounts-list-panel > .accounts-table-wrap{
+    margin:0 -16px -16px!important;width:calc(100% + 32px)!important;
+    border-left:0!important;border-right:0!important;border-bottom:0!important;
+    border-radius:0 0 14px 14px!important;
+  }
+  #content .records-section-card .records-compact-head h3{
+    display:flex!important;align-items:center!important;gap:10px!important;
+    font-size:16px!important;color:var(--admin-text)!important;
+  }
+  #content .records-section-card .records-compact-head h3::before{
+    content:""!important;width:4px!important;height:19px!important;
+    border-radius:4px!important;background:var(--admin-blue)!important;flex:0 0 4px!important;
+  }
+  .court-import-dialog .admin-import-notice,
+  .court-import-dialog .admin-section-card{
+    background:#fff!important;border:1px solid var(--admin-line)!important;
+    border-radius:14px!important;box-shadow:none!important;
+    padding:16px!important;margin:0 0 14px!important;
+  }
+  .court-import-dialog .admin-section-head{
+    display:flex!important;align-items:center!important;border-bottom:1px solid var(--admin-line-soft)!important;
+    margin-bottom:12px!important;padding-bottom:12px!important;
+  }
+  .court-import-dialog .admin-section-head h3{
+    display:flex!important;align-items:center!important;gap:10px!important;
+    margin:0!important;font-size:16px!important;font-weight:900!important;color:var(--admin-text)!important;
+  }
+  .court-import-dialog .admin-section-head h3::before{
+    content:"";display:block;width:4px;height:19px;flex:0 0 4px;
+    background:var(--admin-blue);border-radius:4px;
+  }
+  @media(max-width:900px){
+    #content .admin-section-card,#content .dashboard-anomaly-card,
+    #content .dashboard-tasks-panel,#content .records-section-card,
+    #content .accounts-page-panel,#content .capacity-workspace-card,
+    #content .settings-compact-card,#content .logs-compact-card,
+    #content .lottery-context,#content #dayCheckTable > .panel{padding:14px!important;}
+    #content .logs-compact-card > .table-wrap,
+    #content .accounts-list-panel > .accounts-table-wrap{
+      margin:0 -14px -14px!important;width:calc(100% + 28px)!important;
+    }
+    #content .lottery-context-grid{grid-template-columns:1fr!important;}
+  }
 </style>
 
 </head>
@@ -5620,8 +5727,8 @@ function buildDataAnomalies(){
 function renderAnomalyCenter(issues){
   if(!issues.length){
     return `
-      <div class="panel anomaly-center-clean flat-section" id="anomalyCenter">
-        <div class="anomaly-center-head"><h3>異常檢核中心</h3></div>
+      <div class="panel admin-section-card dashboard-anomaly-card anomaly-center-clean" id="anomalyCenter">
+        <div class="admin-section-head"><h3>異常檢核中心</h3></div>
         <div class="anomaly-info-row">
           <div class="small">需要確認的資料請至「登記資料 → 異常清單」處理。</div>
           <div class="anomaly-total-line">0 項待確認</div>
@@ -5650,8 +5757,8 @@ function renderAnomalyCenter(issues){
   }).join('');
 
   return `
-    <div class="panel anomaly-center-clean flat-section" id="anomalyCenter">
-      <div class="anomaly-center-head"><h3>異常檢核中心</h3></div>
+    <div class="panel admin-section-card dashboard-anomaly-card anomaly-center-clean" id="anomalyCenter">
+      <div class="admin-section-head"><h3>異常檢核中心</h3></div>
       <div class="anomaly-info-row">
         <div class="small">這裡是登記清單的即時檢核提示；審查進度請至「登記資料 → 待確認資料」處理。已審查資料不需重新匯入。</div>
         <div class="anomaly-total-line">${issues.length} 項檢核提示</div>
@@ -6138,10 +6245,8 @@ function renderDashboard(){
 
     ${renderAnomalyCenter(anomalyIssues)}
 
-    <div class="panel dashboard-tasks-panel">
-      <div class="dashboard-panel-heading">
-        <h3>待處理場次</h3>
-      </div>
+    <div class="panel admin-section-card dashboard-tasks-panel">
+      <div class="admin-section-head"><h3>待處理場次</h3></div>
       <div class="pending-stage-info-row">
         <div class="small">只列出尚待抽籤或尚待公告的場次，完成後會自動移除。</div>
         <div class="pending-stage-total">共 ${pendingLotteryStages.length+pendingPublishStages.length} 個待辦場次</div>
@@ -6564,7 +6669,7 @@ async function renderQualificationReview(container){
   await loadQualificationReviews();
   if(!qualificationReviewsLoaded){
     const filtered=allRecords.filter(r=>qualificationIssueTypes(r).length>0);
-    container.innerHTML=`<div class="panel ux-review-panel ux-review-simple">
+    container.innerHTML=`<div class="panel ux-review-panel ux-review-simple admin-inner-section">
       <p class="ux-review-help"><strong>異常案件查看</strong>｜一般承辦人可直接查閱需要確認的申請。若要變更處理結果並儲存，需完成資料授權。</p>
       <div class="ux-review-toolbar"><span class="small">偵測到 ${filtered.length} 筆需確認申請</span>
       <button id="refreshQualificationReadOnly" class="btn btn-gray">重新整理清單</button></div>
@@ -6588,7 +6693,7 @@ async function renderQualificationReview(container){
   const focus=window.qualificationFocusId;
   const displayed=focus?allRecords.filter(r=>String(r.id)===focus):rows;
   const options=[['qualified','合格'],['pending','待確認'],['correction','待補正'],['invalid','不合格']];
-  container.innerHTML=`<div class="panel ux-review-panel ux-review-simple">
+  container.innerHTML=`<div class="panel ux-review-panel ux-review-simple admin-inner-section">
     <p class="ux-review-help">這裡只顯示目前不能列入抽籤的申請。請先確認申請資料及原因，再選擇審查結果並儲存；改為「合格」後，該筆就能列入合格抽籤名單。</p>
     <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待確認／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
     <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
@@ -7746,9 +7851,8 @@ function renderLotteryPage(){
 
   document.getElementById('content').innerHTML=`
     <div class="panel lottery-main-panel">
-      <h3>抽籤作業中心</h3>
-
-      <div class="lottery-context">
+      <div class="lottery-context admin-section-card">
+        <div class="admin-section-head"><h3>抽籤作業中心</h3></div>
         <div class="lottery-context-grid" style="grid-template-columns:repeat(4,minmax(150px,1fr)) auto;">
           <div>
             <label class="small" style="font-weight:900;color:#334155;">場地</label>
@@ -8465,8 +8569,8 @@ async function applyPromotionSuggestion(stage){
     );
 
     table.innerHTML=`
-      <div class="panel" style="background:#f8fafc;">
-        <h3>場次處理清單</h3>
+      <div class="panel admin-section-card">
+        <div class="admin-section-head"><h3>場次處理清單</h3></div>
 
         <div class="stage-list-filters">
           <div class="stage-list-filter-field">
@@ -8511,8 +8615,8 @@ async function applyPromotionSuggestion(stage){
           </tr>`).join('') : `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">目前選擇條件沒有場次</td></tr>`}
         </tbody></table></div>
       </div>
-      <div class="panel">
-        <h3>篩選結果清單</h3>
+      <div class="panel admin-section-card">
+        <div class="admin-section-head"><h3>篩選結果清單</h3></div>
         <div class="table-wrap"><table><thead><tr><th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>後4碼</th><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記時間</th></tr></thead><tbody>
           ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(locationLabel(recordLocation(r)))}</td><td>${escapeHtml(r.venue_type||'')}</td><td>${escapeHtml(r.day_of_week||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
         </tbody></table></div>
@@ -9971,7 +10075,7 @@ function closeCourtImportModal(){
 }
 function renderGoogleFormImportPage(mount, mode='all'){
   const target=mount || document.getElementById('content');
-  target.innerHTML=`<div class="panel" style="background:#f5f8ff"><div class="small">🔐 共用登記資料上方的 Supabase 授權帳號。請先於主畫面登入，再進行匯入或異常處理。</div><div id="formAuthState" class="small" style="margin-top:6px"></div></div><div class="panel"><h3>Google 表單回覆 Excel｜批次匯入</h3><div class="alert">可一次選取羽球、籃球、桌球三份不同來源的原始回覆 Excel；系統逐份辨識及預覽，確認後依來源逐份覆蓋。不得同時上傳兩份相同來源檔案，以免互相覆蓋。重複申請會列為待審異常，不應因唯一性限制使整批失敗。完整會館會員證號僅存入受限資料表；Go會員不保存身分證字號。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls" multiple aria-label="選擇一至三份 Google 表單回覆 Excel"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">批次解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel"><h3>待確認資料</h3><div class="small">異常提示不等於資格不合格；已完成審查的紀錄會保留且不重複出現在待處理清單。</div><select id="anomalyReviewFilter" aria-label="審查狀態篩選" style="margin:8px 10px 8px 0"><option value="open">待處理（待確認／待補正）</option><option value="done">已完成</option><option value="all">全部審查紀錄</option><option value="valid">已確認正常</option><option value="invalid">資格不符</option></select><span id="anomalyReviewCount" class="small"></span><br><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
+  target.innerHTML=`<div class="panel admin-import-notice"><div class="small">🔐 共用登記資料上方的 Supabase 授權帳號。請先於主畫面登入，再進行匯入或異常處理。</div><div id="formAuthState" class="small" style="margin-top:6px"></div></div><div class="panel admin-section-card"><div class="admin-section-head"><h3>Google 表單回覆 Excel｜批次匯入</h3></div><div class="alert">可一次選取羽球、籃球、桌球三份不同來源的原始回覆 Excel；系統逐份辨識及預覽，確認後依來源逐份覆蓋。不得同時上傳兩份相同來源檔案，以免互相覆蓋。重複申請會列為待審異常，不應因唯一性限制使整批失敗。完整會館會員證號僅存入受限資料表；Go會員不保存身分證字號。</div><input id="formWorkbook" type="file" accept=".xlsx,.xls" multiple aria-label="選擇一至三份 Google 表單回覆 Excel"><button id="previewFormBtn" class="btn btn-primary" style="margin-left:8px">批次解析與預覽</button><div id="formImportPreview" style="margin-top:16px"></div></div><div class="panel admin-section-card"><div class="admin-section-head"><h3>待確認資料</h3></div><div class="small">異常提示不等於資格不合格；已完成審查的紀錄會保留且不重複出現在待處理清單。</div><select id="anomalyReviewFilter" aria-label="審查狀態篩選" style="margin:8px 10px 8px 0"><option value="open">待處理（待確認／待補正）</option><option value="done">已完成</option><option value="all">全部審查紀錄</option><option value="valid">已確認正常</option><option value="invalid">資格不符</option></select><span id="anomalyReviewCount" class="small"></span><br><button id="refreshFormAnomalies" class="btn btn-gray">重新載入</button><div id="formAnomalyList" style="margin-top:12px"></div></div>`;
   if(mode==='review'){
     const panels=target.querySelectorAll(':scope > .panel');
     if(panels[0])panels[0].remove();
