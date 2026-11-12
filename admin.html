@@ -5146,6 +5146,7 @@ const importDb = authMigrationClient;
 /* 管理員 Session 風險控管：每頁籤 20 分鐘閒置退出、最長 8 小時、每 5 分鐘重驗權限。 */
 const ADMIN_SESSION_LAST_KEY='court-admin-last-activity-v1';
 const ADMIN_SESSION_START_KEY='court-admin-started-at-v1';
+const ADMIN_SESSION_LOGOUT_EVENT='court-admin-logout-signal-v1';
 const ADMIN_SESSION_POLICY=window.CourtAdminSessionPolicy;
 let adminIdleTimer=null;
 let adminCheckingSession=null;
@@ -5186,6 +5187,8 @@ async function endAdminSession(reason='signed-out',notify=false){
   courtAuthLoginActive=false;
   currentAdmin=null;
   clearAdminSessionMarkers();
+  // Notify other admin tabs; only a timestamp is shared, never tokens or identity.
+  try{localStorage.setItem(ADMIN_SESSION_LOGOUT_EVENT,String(Date.now()));}catch(_){}
   if(adminIdleTimer){clearInterval(adminIdleTimer);adminIdleTimer=null;}
   // Hide sensitive records synchronously before making any async network requests.
   allRecords=[];allLogs=[];
@@ -5247,6 +5250,11 @@ function beginAdminSession(restored=false){
       if(!document.hidden)void checkAdminIdleSession();
     });
     window.addEventListener('focus',()=>{void checkAdminIdleSession();});
+    window.addEventListener('storage',event=>{
+      if(event.key===ADMIN_SESSION_LOGOUT_EVENT && event.newValue
+        && courtAuthLoginActive && !adminSigningOut)
+        void endAdminSession('authorization',false);
+    });
   }
   if(adminIdleTimer)clearInterval(adminIdleTimer);
   adminIdleTimer=setInterval(()=>{void checkAdminIdleSession();},30000);
@@ -5323,6 +5331,10 @@ async function finishAdminPasswordRecovery(){
 authMigrationClient.auth.onAuthStateChange((event)=>{
   if(event==='PASSWORD_RECOVERY'){
     setTimeout(()=>finishAdminPasswordRecovery(),0);
+  }
+  if(event==='SIGNED_OUT' && courtAuthLoginActive && !adminSigningOut){
+    // Supabase may invalidate a session without a manual logout click.
+    setTimeout(()=>{void endAdminSession('authorization',false);},0);
   }
 });
 
