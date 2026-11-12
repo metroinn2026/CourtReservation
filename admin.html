@@ -6308,7 +6308,10 @@ function renderPage(page){
   if(page==='capacity') renderCapacityPage();
   if(page==='lottery') renderLotteryPage();
   if(page==='settings') renderSettingsPage();
-  if(page==='logs') renderLogsPage();
+  if(page==='logs'){
+    renderLogsPage();
+    void refreshAdminOperationLogs();
+  }
   if(page==='accounts') renderAccountsPage();
   if(page==='form-import'){ recordsActionTab='filter'; renderPage('records'); setTimeout(()=>openCourtImportModal('import'),0); return; }
 }
@@ -7895,6 +7898,20 @@ async function writeOperationLog(action, detail={}, recordIds=[]){
   }
 }
 
+async function refreshAdminOperationLogs(){
+  // Load fresh audit rows whenever this section opens; do not reuse stale login-time data.
+  const epoch=adminSessionEpoch;
+  if(!courtAuthLoginActive||adminSigningOut)return;
+  try{
+    const {data,error}=await reviewDbClient().rpc('court_admin_list_logs_v1',{p_limit:200});
+    if(!courtAuthLoginActive||adminSigningOut||adminSessionEpoch!==epoch||currentPage!=='logs')return;
+    if(error){console.warn('操作紀錄更新失敗',error);return;}
+    allLogs=data||[];
+    renderLogsPage();
+  }catch(e){
+    console.warn('操作紀錄更新失敗',e);
+  }
+}
 function summarizeAdminOperationLog(log){
   const detail=log?.detail && typeof log.detail==='object' ? log.detail : {};
   const capacityChanges=Array.isArray(detail.changes)?detail.changes:[];
