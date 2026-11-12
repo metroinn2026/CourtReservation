@@ -2221,6 +2221,9 @@
 
     let turnstileToken = '';
     let pendingSecondFactorChallenge = '';
+    let applicantLastActivityAt = 0;
+    let applicantIdleTimer = null;
+    const APPLICANT_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
     window.onTurnstileSuccess = function(token) {
       turnstileToken = token || '';
@@ -4049,8 +4052,77 @@
       }
     }
 
+    function hasApplicantSession(){
+      try{return !!sessionStorage.getItem('court_applicant_session_v2');}catch(e){return false;}
+    }
+
+    async function forceApplicantLogout(reason='idle'){
+      const token=(()=>{
+        try{return sessionStorage.getItem('court_applicant_session_v2')||'';}catch(e){return '';}
+      })();
+
+      try{
+        const client=window.__venueLotterySupabaseClient;
+        if(token&&client) await client.rpc('court_applicant_logout_v2',{p_session_token:token});
+      }catch(e){}
+
+      try{sessionStorage.removeItem('court_applicant_session_v2');}catch(e){}
+      applicantLastActivityAt=0;
+      pendingSecondFactorChallenge='';
+      if(applicantIdleTimer){clearInterval(applicantIdleTimer);applicantIdleTimer=null;}
+
+      const logoutBtn=document.getElementById('logout-btn');
+      if(logoutBtn){
+        logoutBtn.click();
+        if(reason==='idle') setTimeout(()=>alert('因 10 分鐘未操作，系統已自動登出。'),0);
+      }else if(reason==='idle'){
+        location.reload();
+      }
+    }
+
+    async function touchApplicantSession(){
+      if(!hasApplicantSession()) return;
+      applicantLastActivityAt=Date.now();
+      try{
+        const client=window.__venueLotterySupabaseClient;
+        const token=sessionStorage.getItem('court_applicant_session_v2')||'';
+        if(client&&token){
+          const {data,error}=await client.rpc('court_applicant_touch_session_v2',{p_session_token:token});
+          if(error||data!==true) await forceApplicantLogout('expired');
+        }
+      }catch(e){}
+    }
+
+    function startApplicantIdleTracking(){
+      applicantLastActivityAt=Date.now();
+      if(applicantIdleTimer) clearInterval(applicantIdleTimer);
+      applicantIdleTimer=setInterval(()=>{
+        if(!hasApplicantSession()) return;
+        if(Date.now()-applicantLastActivityAt>=APPLICANT_IDLE_TIMEOUT_MS){
+          forceApplicantLogout('idle');
+        }
+      },15000);
+    }
+
+    function registerApplicantActivityListeners(){
+      const events=['click','keydown','mousemove','touchstart','scroll'];
+      let lastTouch=0;
+      events.forEach(evt=>{
+        window.addEventListener(evt,()=>{
+          if(!hasApplicantSession()) return;
+          const now=Date.now();
+          applicantLastActivityAt=now;
+          if(now-lastTouch>60000){
+            lastTouch=now;
+            touchApplicantSession();
+          }
+        },{passive:true});
+      });
+    }
+
     function setupAllEventListeners() {
       initFrontFontSize();
+      registerApplicantActivityListeners();
 
       const verifyBtn = document.getElementById('verify-btn');
       const logoutBtn = document.getElementById('logout-btn');
@@ -4125,6 +4197,8 @@
 
                 if(result.code==='challenge_locked'||result.code==='invalid_or_expired_challenge'){
                   pendingSecondFactorChallenge='';
+          applicantLastActivityAt=0;
+          if(applicantIdleTimer){clearInterval(applicantIdleTimer);applicantIdleTimer=null;}
                   if(secondPanel) secondPanel.style.display='none';
                   if(turnstileWrap) turnstileWrap.style.display='block';
                   if(typeEl) typeEl.value='';
@@ -4176,6 +4250,7 @@
             }
 
             sessionStorage.setItem('court_applicant_session_v2',result.session_token);
+            startApplicantIdleTracking();
             pendingSecondFactorChallenge='';
             if(secondPanel) secondPanel.style.display='none';
             if(turnstileWrap) turnstileWrap.style.display='block';
