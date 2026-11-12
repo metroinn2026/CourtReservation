@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>申請人安全查詢測試｜北投會館</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0"></script>
 <style>
 :root{font-family:system-ui,"Noto Sans TC",sans-serif;color:#263238;background:#f4f6f7}
 *{box-sizing:border-box}body{margin:0}.wrap{max-width:820px;margin:32px auto;padding:16px}
@@ -84,7 +84,8 @@ button.secondary{background:#eef3f5;color:#32505c}.actions{display:flex;gap:10px
 (()=>{'use strict';
 const URL='https://wsvsdwuksuzcjisnpyin.supabase.co';
 const KEY='sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
-const db=supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});\nlet sendingOtp=false;
+const db=supabase.createClient(URL,KEY,{auth:{storageKey:"court-applicant-legacy-auth",storage:window.sessionStorage,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+let sendingOtp=false;
 const $=id=>document.getElementById(id);
 function msg(id,text,ok=false){const el=$(id);el.textContent=text;el.className='status '+(ok?'ok':'err');}
 function normPhone(v){return String(v||'').replace(/\D/g,'');}
