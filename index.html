@@ -2044,13 +2044,28 @@
        <div class="form-group">
         <label for="member-phone-last3">手機末三碼 *</label> <input type="text" id="member-phone-last3" maxlength="3" inputmode="numeric" autocomplete="off" placeholder="例如 369">
        </div>
-       <div class="turnstile-wrap">
+       <div class="turnstile-wrap" id="turnstile-wrap">
         <div class="cf-turnstile"
              data-sitekey="0x4AAAAAAEv4A9v3BlxDIMDi"
              data-callback="onTurnstileSuccess"
              data-expired-callback="onTurnstileExpired"
              data-error-callback="onTurnstileError"
              data-theme="light"></div>
+       </div>
+       <div id="second-factor-panel" style="display:none;background:#f8fafc;border:1px solid #dbe4ea;border-radius:8px;padding:12px;margin:12px 0;">
+        <div style="font-size:13px;line-height:1.6;color:#475569;margin-bottom:10px;">此聯絡方式對應多個會員身分，請再確認會員資料。</div>
+        <div class="form-group">
+         <label for="member-type">會員類別 *</label>
+         <select id="member-type">
+          <option value="">請選擇</option>
+          <option value="台北捷運Go會員">台北捷運Go會員</option>
+          <option value="北投會館會員">北投會館會員</option>
+         </select>
+        </div>
+        <div class="form-group">
+         <label for="member-identifier-last4">會員識別資料末四碼 *</label>
+         <input type="text" id="member-identifier-last4" maxlength="4" inputmode="text" autocomplete="off" placeholder="請輸入末四碼">
+        </div>
        </div>
        <button class="btn btn-primary" id="verify-btn">驗證登記資料並進入</button>
        <div id="verification-message"></div>
@@ -2205,6 +2220,7 @@
     let pendingDeleteRecord = null;
 
     let turnstileToken = '';
+    let pendingSecondFactorChallenge = '';
 
     window.onTurnstileSuccess = function(token) {
       turnstileToken = token || '';
@@ -4058,46 +4074,112 @@
       if (verifyBtn) {
         verifyBtn.addEventListener('click', async function(e) {
           e.preventDefault();
+
           const emailEl=document.getElementById('member-email');
           const last3El=document.getElementById('member-phone-last3');
-          const email=String(emailEl?.value||'').trim().toLowerCase();
-          const last3=String(last3El?.value||'').replace(/\D/g,'');
+          const typeEl=document.getElementById('member-type');
+          const identifierEl=document.getElementById('member-identifier-last4');
+          const secondPanel=document.getElementById('second-factor-panel');
+          const turnstileWrap=document.getElementById('turnstile-wrap');
           const msg=document.getElementById('verification-message');
 
-          if(!email || !email.includes('@') || !/^[0-9]{3}$/.test(last3)){
-            msg.textContent='請輸入登記時填寫的 Email 與手機末三碼';
-            msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
-            return;
-          }
-
-          const currentTurnstileToken=turnstileToken ||
-            (window.turnstile && typeof window.turnstile.getResponse==='function' ? window.turnstile.getResponse() : '');
-          if(!currentTurnstileToken){
-            msg.textContent='請先完成機器人驗證';
-            msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
-            return;
-          }
+          const email=String(emailEl?.value||'').trim().toLowerCase();
+          const last3=String(last3El?.value||'').replace(/\D/g,'');
 
           try{
-            verifyBtn.disabled=true; verifyBtn.textContent='驗證中...';
-            const response=await fetch('https://wsvsdwuksuzcjisnpyin.supabase.co/functions/v1/applicant-login-v2',{
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({email,phoneLast3:last3,turnstileToken:currentTurnstileToken})
-            });
-            const result=await response.json().catch(()=>({ok:false}));
-            turnstileToken='';
-            if(window.turnstile) window.turnstile.reset();
+            verifyBtn.disabled=true;
+            verifyBtn.textContent='驗證中...';
 
-            if(!response.ok || result.ok!==true || !result.session_token){
-              msg.textContent=result.code==='temporarily_blocked'
-                ? '驗證錯誤次數過多，請稍後再試。'
-                : 'Email 或手機末三碼不符登記資料。';
-              msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
-              return;
+            let response;
+            let result;
+
+            if(pendingSecondFactorChallenge){
+              const memberType=String(typeEl?.value||'');
+              const identifierLast4=String(identifierEl?.value||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+
+              if(!memberType || !/^[0-9A-Z]{4}$/.test(identifierLast4)){
+                msg.textContent='請選擇會員類別並輸入會員識別資料末四碼';
+                msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
+                return;
+              }
+
+              response=await fetch('https://wsvsdwuksuzcjisnpyin.supabase.co/functions/v1/applicant-login-v2',{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({
+                  mode:'second_factor',
+                  challengeToken:pendingSecondFactorChallenge,
+                  memberType,
+                  identifierLast4
+                })
+              });
+              result=await response.json().catch(()=>({ok:false}));
+
+              if(!response.ok || result.ok!==true || !result.session_token){
+                msg.textContent=result.code==='challenge_locked'
+                  ? '第二層驗證錯誤次數過多，請重新開始驗證。'
+                  : result.code==='invalid_or_expired_challenge'
+                  ? '驗證已逾時，請重新輸入 Email 與手機末三碼。'
+                  : '會員類別或識別資料末四碼不符。';
+                msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
+
+                if(result.code==='challenge_locked'||result.code==='invalid_or_expired_challenge'){
+                  pendingSecondFactorChallenge='';
+                  if(secondPanel) secondPanel.style.display='none';
+                  if(turnstileWrap) turnstileWrap.style.display='block';
+                  if(typeEl) typeEl.value='';
+                  if(identifierEl) identifierEl.value='';
+                }
+                return;
+              }
+            } else {
+              if(!email || !email.includes('@') || !/^[0-9]{3}$/.test(last3)){
+                msg.textContent='請輸入登記時填寫的 Email 與手機末三碼';
+                msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
+                return;
+              }
+
+              const currentTurnstileToken=turnstileToken ||
+                (window.turnstile && typeof window.turnstile.getResponse==='function' ? window.turnstile.getResponse() : '');
+              if(!currentTurnstileToken){
+                msg.textContent='請先完成機器人驗證';
+                msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
+                return;
+              }
+
+              response=await fetch('https://wsvsdwuksuzcjisnpyin.supabase.co/functions/v1/applicant-login-v2',{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({email,phoneLast3:last3,turnstileToken:currentTurnstileToken})
+              });
+              result=await response.json().catch(()=>({ok:false}));
+              turnstileToken='';
+              if(window.turnstile) window.turnstile.reset();
+
+              if(result.code==='second_factor_required' && result.challenge_token){
+                pendingSecondFactorChallenge=result.challenge_token;
+                if(secondPanel) secondPanel.style.display='block';
+                if(turnstileWrap) turnstileWrap.style.display='none';
+                msg.textContent='此聯絡方式對應多個會員身分，請再確認會員類別與識別資料末四碼。';
+                msg.style.backgroundColor='#EFF6FF'; msg.style.color='#1E40AF'; msg.style.display='block';
+                verifyBtn.textContent='完成第二層驗證';
+                return;
+              }
+
+              if(!response.ok || result.ok!==true || !result.session_token){
+                msg.textContent=result.code==='temporarily_blocked'
+                  ? '驗證錯誤次數過多，請稍後再試。'
+                  : 'Email 或手機末三碼不符登記資料。';
+                msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
+                return;
+              }
             }
 
             sessionStorage.setItem('court_applicant_session_v2',result.session_token);
+            pendingSecondFactorChallenge='';
+            if(secondPanel) secondPanel.style.display='none';
+            if(turnstileWrap) turnstileWrap.style.display='block';
+
             currentSelection.email=email;
             currentSelection.phone_last3=last3;
             currentSelection.location=config.location_1;
@@ -4136,12 +4218,15 @@
             updateSummary(); renderRecords(); renderLotteryResults();
             setFlowStep(2);
             switchMemberTab('records');
+
+            if(msg) msg.style.display='none';
           }catch(error){
             console.error('Applicant login failed',error);
             msg.textContent='驗證服務暫時無法使用，請稍後再試。';
             msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
           }finally{
-            verifyBtn.disabled=false; verifyBtn.textContent='驗證身分並進入';
+            verifyBtn.disabled=false;
+            verifyBtn.textContent=pendingSecondFactorChallenge?'完成第二層驗證':'驗證登記資料並進入';
           }
         });
       }
@@ -4178,6 +4263,15 @@
           if (fontMenuTrigger) fontMenuTrigger.setAttribute('aria-expanded', 'false');
           if (emailEl) emailEl.value = '';
           if (phoneLast3El) phoneLast3El.value = '';
+          const secondPanel=document.getElementById('second-factor-panel');
+          const typeEl=document.getElementById('member-type');
+          const identifierEl=document.getElementById('member-identifier-last4');
+          const turnstileWrap=document.getElementById('turnstile-wrap');
+          pendingSecondFactorChallenge='';
+          if(secondPanel) secondPanel.style.display='none';
+          if(typeEl) typeEl.value='';
+          if(identifierEl) identifierEl.value='';
+          if(turnstileWrap) turnstileWrap.style.display='block';
           const sessionToken=sessionStorage.getItem('court_applicant_session_v2')||'';
           if(sessionToken){
             const client=window.__venueLotterySupabaseClient;
