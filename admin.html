@@ -7,6 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="/admin-session-policy.js"></script>
   <style>
     :root{
       --blue:#007AB0;--blue2:#005A8C;--green:#40AF36;--orange:#FF9800;--red:#dc2626;
@@ -5141,6 +5142,110 @@ const authMigrationClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   }
 });
 const importDb = authMigrationClient;
+
+/* 管理員 Session 風險控管：每頁籤 20 分鐘閒置退出、最長 8 小時、每 5 分鐘重驗權限。 */
+const ADMIN_SESSION_LAST_KEY='court-admin-last-activity-v1';
+const ADMIN_SESSION_START_KEY='court-admin-started-at-v1';
+const ADMIN_SESSION_POLICY=window.CourtAdminSessionPolicy;
+let adminIdleTimer=null;
+let adminCheckingSession=null;
+let adminLastVerifiedAt=0;
+let adminSigningOut=false;
+let adminSessionListenersBound=false;
+function adminStoredTimestamp(key){
+  try{return ADMIN_SESSION_POLICY.validTimestamp(sessionStorage.getItem(key));}catch(_){return 0;}
+}
+function adminSaveTimestamp(key,value){
+  try{sessionStorage.setItem(key,String(value));}catch(_){}
+}
+function clearAdminSessionMarkers(){
+  try{sessionStorage.removeItem(ADMIN_SESSION_LAST_KEY);sessionStorage.removeItem(ADMIN_SESSION_START_KEY);
+      sessionStorage.removeItem('venue_admin_session');}catch(_){}
+}
+function markAdminActivity(){
+  if(!courtAuthLoginActive||adminSigningOut) return;
+  const now=Date.now();
+  const last=adminStoredTimestamp(ADMIN_SESSION_LAST_KEY);
+  // Only users' real interaction renews activity; background refresh never renews it.
+  if(!last || now-last>=10000) adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now);
+}
+function adminSessionHasExpired(now=Date.now()){
+  return ADMIN_SESSION_POLICY.expired(adminStoredTimestamp(ADMIN_SESSION_LAST_KEY),now)
+    || ADMIN_SESSION_POLICY.mustReauthenticate(adminStoredTimestamp(ADMIN_SESSION_START_KEY),now);
+}
+async function endAdminSession(reason='signed-out',notify=false){
+  if(adminSigningOut)return;
+  adminSigningOut=true;
+  courtAuthLoginActive=false;
+  currentAdmin=null;
+  clearAdminSessionMarkers();
+  if(adminIdleTimer){clearInterval(adminIdleTimer);adminIdleTimer=null;}
+  // Hide sensitive records synchronously before making any async network requests.
+  allRecords=[];allLogs=[];
+  secureIdentityBySubmission.clear();secureEmailBySubmission.clear();
+  revealedSensitiveKeys.clear();secureIdentityAuthenticated=false;
+  const app=document.getElementById('app');
+  if(app)app.classList.add('hidden');
+  try{await authMigrationClient.auth.signOut({scope:'local'});}catch(e){console.warn('Session 登出未完成',e);}
+  if(notify)alert(reason==='idle'?'管理員閒置超過 20 分鐘，已自動登出。':'管理員登入期限已到或權限已變更，請重新登入。');
+  location.replace('/admin.html');
+}
+async function validateAdminSession(force=false){
+  if(!courtAuthLoginActive||adminSigningOut)return false;
+  if(adminSessionHasExpired()){
+    await endAdminSession('idle',true);
+    return false;
+  }
+  const now=Date.now();
+  if(!force&&!ADMIN_SESSION_POLICY.needsVerification(adminLastVerifiedAt,now))return true;
+  if(adminCheckingSession)return adminCheckingSession;
+  adminCheckingSession=(async()=>{
+    try{
+      const {data:{user},error:authError}=await authMigrationClient.auth.getUser();
+      if(authError||!user)throw new Error('管理員 Session 無效');
+      const {data:identity,error:roleError}=await authMigrationClient.rpc('get_court_admin_identity_v1');
+      if(roleError||!identity||String(identity.id)!==String(currentAdmin?.id)
+         ||identity.role!==currentAdmin?.role)throw new Error('管理員權限已變更');
+      adminLastVerifiedAt=Date.now();
+      return true;
+    }catch(e){
+      console.warn('管理員重新驗證未通過',e);
+      await endAdminSession('authorization',true);
+      return false;
+    }finally{adminCheckingSession=null;}
+  })();
+  return adminCheckingSession;
+}
+async function checkAdminIdleSession(){
+  if(!courtAuthLoginActive||adminSigningOut)return;
+  if(adminSessionHasExpired()){await endAdminSession('idle',true);return;}
+  if(!document.hidden)await validateAdminSession();
+}
+function beginAdminSession(restored=false){
+  if(!ADMIN_SESSION_POLICY)throw new Error('Session 驗證元件未載入');
+  const now=Date.now();
+  if(!restored){
+    adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now);
+    adminSaveTimestamp(ADMIN_SESSION_START_KEY,now);
+  }else{
+    // Existing sessions from an older release must authenticate again rather than bypass the timer.
+    if(adminSessionHasExpired(now))return false;
+  }
+  adminLastVerifiedAt=now;
+  if(!adminSessionListenersBound){
+    adminSessionListenersBound=true;
+    ['pointerdown','keydown','touchstart'].forEach(type=>
+      document.addEventListener(type,markAdminActivity,{passive:true}));
+    document.addEventListener('visibilitychange',()=>{
+      if(!document.hidden)void checkAdminIdleSession();
+    });
+    window.addEventListener('focus',()=>{void checkAdminIdleSession();});
+  }
+  if(adminIdleTimer)clearInterval(adminIdleTimer);
+  adminIdleTimer=setInterval(()=>{void checkAdminIdleSession();},30000);
+  return true;
+}
+
 let courtAuthLoginActive=false;
 let legacyLoginMode=false;
 function reviewDbClient(){return courtAuthLoginActive?authMigrationClient:importDb;}
@@ -5230,6 +5335,7 @@ async function loginWithCourtAuth(){
   courtAuthLoginActive=true;
   currentAdmin=data;
   sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
+  if(!beginAdminSession(false)){await endAdminSession('authorization',true);return;}
   await enterApp();
 }
 async function deleteCourtRecords(ids){
@@ -5826,10 +5932,11 @@ async function enterApp(){
   document.getElementById('topRole').textContent=roleName(currentAdmin.role);
   document.getElementById('userAvatar').textContent=(currentAdmin.display_name||currentAdmin.username||'A').slice(0,1).toUpperCase();
   if(currentAdmin.role!=='super_admin') document.getElementById('accountsNav').style.display='none';
-  await loadAllData();
+  if((await loadAllData())===false)return;
+  if(!courtAuthLoginActive||adminSigningOut)return;
   renderPage('dashboard');
 }
-function logout(){ authMigrationClient.auth.signOut().catch(()=>{});importDb.auth.signOut().catch(()=>{});sessionStorage.removeItem('venue_admin_session');location.reload(); }
+function logout(){void endAdminSession('manual',false);}
 
 async function loadAllData(){
   let recordsPromise;
@@ -10193,8 +10300,8 @@ document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage
 (async function init(){
   const url=new URL(location.href);
   if(url.searchParams.get('reset')==='1'){
-    sessionStorage.removeItem('venue_admin_session');
-    await authMigrationClient.auth.signOut().catch(()=>{});
+    clearAdminSessionMarkers();
+    await authMigrationClient.auth.signOut({scope:'local'}).catch(()=>{});
   }
 
   try{
@@ -10204,6 +10311,10 @@ document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage
       if(!error&&data){
         courtAuthLoginActive=true;
         currentAdmin=data;
+        if(!beginAdminSession(true)){
+          await endAdminSession('idle',true);
+          return;
+        }
         sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
         await enterApp();
         return;
@@ -10214,7 +10325,7 @@ document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage
     console.warn('Supabase Auth session restore failed',e);
   }
 
-  sessionStorage.removeItem('venue_admin_session');
+  clearAdminSessionMarkers();
   setAdminLoginMode('auth');
   await checkBootstrap();
 })();
