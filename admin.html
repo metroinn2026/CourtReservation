@@ -4694,8 +4694,18 @@ async function enterApp(){
 function logout(){ authMigrationClient.auth.signOut().catch(()=>{});importDb.auth.signOut().catch(()=>{});sessionStorage.removeItem('venue_admin_session');location.reload(); }
 
 async function loadAllData(){
+  let recordsPromise;
+  try{
+    const secureClient=reviewDbClient();
+    const {data:{user}}=await secureClient.auth.getUser();
+    recordsPromise=user
+      ? secureClient.rpc('court_admin_records_v1')
+      : Promise.resolve({data:[],error:new Error('Supabase 管理員授權尚未完成')});
+  }catch(e){
+    recordsPromise=Promise.resolve({data:[],error:e});
+  }
   const [recordsRes, capRes, settingsRes] = await Promise.all([
-    (courtAuthLoginActive ? authMigrationClient.rpc('court_admin_records_v1') : db.from(RECORD_TABLE).select('*').order('registered_at',{ascending:false})),
+    recordsPromise,
     db.from(CAPACITY_TABLE).select('*'),
     db.from(SETTINGS_TABLE).select('*')
   ]);
