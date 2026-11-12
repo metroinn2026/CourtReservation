@@ -124,6 +124,12 @@ begin
     and pg_get_functiondef(p.oid) like '%cannot disable last active super admin%'
     and pg_get_functiondef(p.oid) like '%admin_operation_logs%'
   ) then raise exception 'Account toggle audit or last-super-admin check missing';end if;
+  select count(*) into n from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
+  where ns.nspname='public' and p.proname in (
+    'court_admin_create_auth_account_v2','court_admin_link_existing_auth_v2',
+    'court_admin_delete_account_service_v2','court_admin_mark_temp_password_v2'
+  ) and pg_get_functiondef(p.oid) like '%pg_advisory_xact_lock(150710,1)%';
+  if n<>4 then raise exception 'Service account actions not serialized (%/4)',n;end if;
 end $account_checks$;
 
 select 'CourtReservation read-only security checks passed' as result;
