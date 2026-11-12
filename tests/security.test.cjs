@@ -35,6 +35,56 @@ test('future timestamps and missing timestamps fail closed',()=>{
   assert.equal(policy.expired(now+1000,now),true);
   assert.equal(policy.mustReauthenticate(null,now),true);
 });
+test('bulk capacity toggles never trigger immediate database writes',()=>{
+  const start=admin.indexOf('function setAllCapacityClosed(closed){');
+  const end=admin.indexOf('async function saveAllCapacity()',start);
+  assert.ok(start>=0&&end>start);
+  const src=admin.slice(start,end);
+  let writes=0;
+  let changed=0;
+  let wasDisabled=false;
+  const cell={
+    dataset:{},classList:{toggle:()=>{}},
+    querySelector:selector=>selector==='.cap-input'?input:null
+  };
+  const input={value:'1',disabled:false};
+  const checkbox={
+    checked:false,
+    closest:()=>cell,
+    dispatchEvent:()=>{changed++;writes++;},
+  };
+  const sandbox={
+    showModal:(_title,_message,callback)=>callback(),
+    document:{querySelectorAll:()=>[checkbox]},
+    markCapacityCellDraft:target=>{target.dataset.capacityDraft='true';},
+    alert:()=>{}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(src,sandbox);
+  sandbox.setAllCapacityClosed(true);
+  assert.equal(checkbox.checked,true);
+  assert.equal(input.disabled,true);
+  assert.equal(cell.dataset.capacityDraft,'true');
+  assert.equal(writes,0);
+  assert.equal(changed,0);
+  sandbox.setAllCapacityClosed(false);
+  assert.equal(checkbox.checked,false);
+  assert.equal(input.disabled,false);
+  assert.equal(writes,0);
+});
+test('capacity editing enforces 1-100 integer range before batch save',()=>{
+  const start=admin.indexOf('async function saveAllCapacity(){');
+  const end=admin.indexOf('async function updateRecordLotteryStatus(',start);
+  assert.ok(start>=0&&end>start);
+  const save=admin.slice(start,end);
+  assert.match(save,/Number\.isInteger\(winnerCount\)/);
+  assert.match(save,/winnerCount<1\|\|winnerCount>100/);
+  assert.match(save,/winner_count: winnerCount/);
+  assert.doesNotMatch(save,/winner_count: Math\.max\(/);
+  const uniform=admin.slice(admin.indexOf('function fillDefaultCapacity(){'),admin.indexOf('function setAllCapacityClosed(',admin.indexOf('function fillDefaultCapacity(){')));
+  assert.match(uniform,/Number\.isInteger\(raw\)/);
+  assert.match(uniform,/raw<1\|\|raw>100/);
+});
 test('capacity grid places weekdays across and time slots down without changing data keys',()=>{
   const start=admin.indexOf('function renderBulkCapacityTable(){');
   const end=admin.indexOf('function fillDefaultCapacity(',start);
