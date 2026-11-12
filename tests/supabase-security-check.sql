@@ -81,4 +81,49 @@ begin
   end if;
 end $sessions$;
 
+-- Multi-user authorization regression (read-only).
+do $account_checks$
+declare n integer;
+begin
+  if not exists (
+    select 1 from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
+    where ns.nspname='public' and p.proname='court_active_import_admin_v1'
+      and not has_function_privilege('anon',p.oid,'EXECUTE')
+      and has_function_privilege('authenticated',p.oid,'EXECUTE')
+      and pg_get_functiondef(p.oid) like '%court_admin_session_active_v1%'
+      and pg_get_functiondef(p.oid) like '%a.is_active=true%'
+  ) then raise exception 'Active import admin guard missing';end if;
+  select count(*) into n from pg_policies
+  where schemaname='public' and tablename in (
+    'lottery_form_import_batches','lottery_form_submissions','lottery_import_anomalies',
+    'lottery_import_audit','lottery_import_admins'
+  ) and qual like '%court_active_import_admin_v1%';
+  if n<>5 then raise exception 'Importer read policies incomplete (%/5)',n;end if;
+  select count(*) into n from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
+  where ns.nspname='public' and p.proname in (
+    'admin_get_member_identifiers','correct_google_form_duplicates_v1',
+    'import_google_form_batch','import_google_form_batch_v2','import_google_form_batch_v3',
+    'list_anomaly_reviews_v44','list_registration_qualifications_v52',
+    'replace_google_form_source_v50','resolve_google_form_anomaly',
+    'restore_missing_lottery_records','save_anomaly_review_v44',
+    'save_registration_qualification_v52'
+  )
+    and pg_get_functiondef(p.oid) like '%court_active_import_admin_v1()%'
+    and not has_function_privilege('anon',p.oid,'EXECUTE');
+  if n<>12 then raise exception 'Importer RPC authorization incomplete (%/12)',n;end if;
+  select count(*) into n from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
+  where ns.nspname='public' and p.proname in (
+    'court_admin_toggle_account_v1','court_admin_set_account_role_v1','court_admin_delete_account_v1'
+  )
+    and pg_get_functiondef(p.oid) like '%pg_advisory_xact_lock(150710,1)%'
+    and not has_function_privilege('anon',p.oid,'EXECUTE');
+  if n<>3 then raise exception 'Administrative state changes are not serialized (%/3)',n;end if;
+  if not exists(
+    select 1 from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
+    where ns.nspname='public' and p.proname='court_admin_toggle_account_v1'
+    and pg_get_functiondef(p.oid) like '%cannot disable last active super admin%'
+    and pg_get_functiondef(p.oid) like '%admin_operation_logs%'
+  ) then raise exception 'Account toggle audit or last-super-admin check missing';end if;
+end $account_checks$;
+
 select 'CourtReservation read-only security checks passed' as result;
