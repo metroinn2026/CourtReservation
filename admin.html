@@ -4635,9 +4635,17 @@ function randomSalt(){ return crypto.getRandomValues(new Uint8Array(16)).reduce(
 async function makeHash(password, salt){ return sha256(`${salt}:${password}`); }
 
 async function loadAdmins(){
-  const {data,error}=courtAuthLoginActive ? await authMigrationClient.rpc('court_admin_list_accounts_v1') : await db.from(ADMIN_TABLE).select('*').order('created_at',{ascending:true});
-  if(error){ showMsg('loginMsg','讀取管理帳號失敗。請確認 admin_users 資料表已建立。','error'); console.error(error); return null; }
-  return data||[];
+  if(currentAdmin?.role==='super_admin'){
+    const accountClient=await accountManagementClient();
+    if(accountClient){
+      const {data,error}=await accountClient.rpc('court_admin_list_accounts_v1');
+      if(error){console.error(error);return null;}
+      return data||[];
+    }
+  }
+  const {data,error}=await db.rpc('admin_users_exist');
+  if(error){console.error(error);return null;}
+  return data ? [{id:'__exists__',username:'',display_name:'',role:'staff',is_active:true}] : [];
 }
 async function checkBootstrap(){
   sessionStorage.removeItem('venue_admin_session_bad');
@@ -4652,21 +4660,22 @@ async function checkBootstrap(){
   }
 }
 async function createAdminAccount({username, display_name, password, role='staff'}){
+  const accountClient=await accountManagementClient();
+  if(!accountClient) throw new Error('請先完成 Supabase 管理員授權');
   const salt=randomSalt();
   const password_hash=await makeHash(password,salt);
-  const payload={username, display_name, role, salt, password_hash, is_active:true, created_at:new Date().toISOString(), updated_at:new Date().toISOString()};
-  const {error}=await db.from(ADMIN_TABLE).insert([payload]);
+  const {error}=await accountClient.rpc('court_admin_create_legacy_account_v1',{
+    p_username:username,p_display_name:display_name,p_role:role,p_salt:salt,p_password_hash:password_hash
+  });
   if(error) throw error;
 }
 async function login(){
   const username=document.getElementById('loginUsername').value.trim();
   const password=document.getElementById('loginPassword').value;
   if(!username||!password){ showMsg('loginMsg','請輸入帳號與密碼'); return; }
-  const {data,error}=await db.from(ADMIN_TABLE).select('*').eq('username',username).maybeSingle();
+  const {data,error}=await db.rpc('admin_login',{p_username:username,p_password:password});
+  document.getElementById('loginPassword').value='';
   if(error||!data){ showMsg('loginMsg','帳號或密碼錯誤'); return; }
-  if(!data.is_active){ showMsg('loginMsg','此帳號已停用'); return; }
-  const hash=await makeHash(password,data.salt);
-  if(hash!==data.password_hash){ showMsg('loginMsg','帳號或密碼錯誤'); return; }
   currentAdmin={id:data.id,username:data.username,display_name:data.display_name,role:data.role};
   sessionStorage.setItem('venue_admin_session', JSON.stringify(currentAdmin));
   await enterApp();
@@ -4700,9 +4709,14 @@ async function loadAllData(){
   await loadSensitiveIdentifiers();
   await loadQualificationReviews();
 
-  const logsRes = await db.from(LOG_TABLE).select('*').order('created_at',{ascending:false}).limit(200);
+  let logsRes={data:[],error:null};
+  const reviewClient=reviewDbClient();
+  try{
+    const {data:{user}}=await reviewClient.auth.getUser();
+    if(user) logsRes=await reviewClient.rpc('court_admin_list_logs_v1',{p_limit:200});
+  }catch(e){logsRes={data:[],error:e};}
   allLogs = logsRes.error ? [] : (logsRes.data || []);
-  if(logsRes.error) console.warn('操作紀錄讀取失敗，請確認 admin_operation_logs 資料表是否已建立。', logsRes.error);
+  if(logsRes.error) console.warn('操作紀錄讀取失敗，需先完成 Supabase 管理員授權。', logsRes.error);
 
   capacitySettings={};
   closedSlotSettings={};
@@ -6576,8 +6590,11 @@ async function writeOperationLog(action, detail={}, recordIds=[]){
       record_ids: Array.isArray(recordIds) ? recordIds.map(String) : [],
       created_at: new Date().toISOString()
     };
-    const {error}=courtAuthLoginActive ? await authMigrationClient.rpc('court_admin_write_log_v1',{p_action:action,p_detail:detail,p_record_ids:payload.record_ids}) : await db.from(LOG_TABLE).insert([payload]);
-    if(error) console.warn('操作紀錄寫入失敗，請確認 admin_operation_logs 資料表與 RLS policy。', error);
+    const client=reviewDbClient();
+    const {data:{user}}=await client.auth.getUser();
+    if(!user){console.warn('操作紀錄略過：尚未完成 Supabase 管理員授權');return;}
+    const {error}=await client.rpc('court_admin_write_log_v1',{p_action:action,p_detail:detail,p_record_ids:payload.record_ids});
+    if(error) console.warn('操作紀錄寫入失敗。', error);
   }catch(e){
     console.warn('操作紀錄寫入失敗', e);
   }
@@ -8522,13 +8539,10 @@ function renderAccountsPage(){
     </div>
   `;
 
-  if(courtAuthLoginActive){
-    document.getElementById('addAccountBtn').disabled=true;
-    document.getElementById('addAccountBtn').title='新帳號須先建立 Supabase Auth 身分與管理員對應';
-    document.querySelector('.accounts-create-panel .accounts-inline-note').textContent='新版登入已改用 Supabase Auth；新增帳號須先核准 Auth 帳號並建立權限對應，目前暫停舊式新增及密碼重設。';
-  }
+  document.querySelector('.accounts-create-panel .accounts-inline-note').textContent='建立或修改後台帳號需先完成 Supabase 管理員授權；一般登入帳號本身不具直接資料庫寫入權限。';
   document.getElementById('addAccountBtn').onclick=async()=>{
-    if(courtAuthLoginActive){alert('請先完成 Supabase Auth 帳號建立與核准對應');return;}
+    const accountClient=await accountManagementClient();
+    if(!accountClient){alert('請先完成 Supabase 管理員授權');return;}
     const username=document.getElementById('newUser').value.trim();
     const display_name=document.getElementById('newName').value.trim();
     const password=document.getElementById('newPass').value;
@@ -8677,8 +8691,8 @@ async function loadAccountList(){
   });
 
   document.querySelectorAll('[data-reset]').forEach(btn=>{
-    btn.disabled=courtAuthLoginActive;
-    btn.title=courtAuthLoginActive?'請透過 Supabase Auth 重設密碼':'';
+    btn.disabled=false;
+    btn.title='需完成 Supabase 管理員授權後才能重設';
     btn.onclick=()=>resetPassword(btn.dataset.reset);
   });
 
@@ -8707,11 +8721,13 @@ async function loadAccountList(){
   });
 }
 function resetPassword(id){
-  if(courtAuthLoginActive){alert('新版帳號請使用 Supabase Auth 密碼重設方式');return;}
   showModal('重設密碼','請輸入新密碼：',async(input)=>{
     if(!input){alert('請輸入密碼');return;}
+    const accountClient=await accountManagementClient();
+    if(!accountClient){alert('請先完成 Supabase 管理員授權');return;}
     const salt=randomSalt(); const password_hash=await makeHash(input,salt);
-    await db.from(ADMIN_TABLE).update({salt,password_hash,updated_at:new Date().toISOString()}).eq('id',id);
+    const {error}=await accountClient.rpc('court_admin_reset_legacy_password_v1',{p_id:id,p_salt:salt,p_password_hash:password_hash});
+    if(error){alert('密碼更新失敗：'+error.message);return;}
     alert('密碼已更新');
   }, true);
 }
