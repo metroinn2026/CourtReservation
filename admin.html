@@ -5164,18 +5164,18 @@ function clearAdminSessionMarkers(){
       sessionStorage.removeItem('venue_admin_session');}catch(_){}
 }
 function markAdminActivity(event){
-  if(!courtAuthLoginActive||adminSigningOut) return;
-  const now=Date.now();
-  // Check expiry BEFORE recording this click; otherwise the first click after idle could
-  // resurrect an expired session and trigger an unauthorized action.
-  if(adminSessionHasExpired(now)){
+  if(!courtAuthLoginActive && !adminSigningOut)return;
+  // Blocking only pointerdown is insufficient: a subsequent click or submit can still fire.
+  if(adminSigningOut || adminSessionHasExpired(Date.now())){
     if(event?.cancelable)event.preventDefault();
     event?.stopImmediatePropagation?.();
-    void endAdminSession('idle',true);
+    if(!adminSigningOut)void endAdminSession('idle',true);
     return;
   }
+  const now=Date.now();
   const last=adminStoredTimestamp(ADMIN_SESSION_LAST_KEY);
-  if(now-last>=10000) adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now);
+  // Only real interaction renews activity; focus and periodic checks do not.
+  if(now-last>=10000)adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now);
 }
 function adminSessionHasExpired(now=Date.now()){
   return ADMIN_SESSION_POLICY.expired(adminStoredTimestamp(ADMIN_SESSION_LAST_KEY),now)
@@ -5244,7 +5244,7 @@ function beginAdminSession(restored=false){
   adminLastVerifiedAt=now;
   if(!adminSessionListenersBound){
     adminSessionListenersBound=true;
-    ['pointerdown','keydown','touchstart'].forEach(type=>
+    ['pointerdown','click','submit','keydown','touchstart'].forEach(type=>
       document.addEventListener(type,markAdminActivity,{capture:true,passive:false}));
     document.addEventListener('visibilitychange',()=>{
       if(!document.hidden)void checkAdminIdleSession();
