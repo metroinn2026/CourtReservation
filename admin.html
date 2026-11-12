@@ -4155,6 +4155,82 @@ body .ux-review-edit{align-items:end}
     .records-filter-actions{justify-content:flex-start!important;flex-wrap:wrap!important;}
   }
 </style>
+
+<style id="records-filter-ux-v14">
+  .records-filter-stack{
+    display:flex!important;
+    flex-direction:column!important;
+    gap:10px!important;
+    width:100%!important;
+  }
+  .records-filter-row{
+    display:grid!important;
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+    gap:12px!important;
+    width:100%!important;
+  }
+  .records-filter-row > *{
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+    box-sizing:border-box!important;
+    height:42px!important;
+  }
+  .records-clear-filter-btn{
+    background:#fff!important;
+    color:#475569!important;
+    border:1px solid #cfd9e4!important;
+    font-weight:700!important;
+  }
+  .records-clear-filter-btn:hover{
+    background:#f8fafc!important;
+    border-color:#94a3b8!important;
+  }
+  .records-export-row{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:16px!important;
+    margin-top:14px!important;
+    padding-top:12px!important;
+    border-top:1px solid #e2e8f0!important;
+  }
+  .records-export-label{
+    font-size:12px!important;
+    font-weight:800!important;
+    color:#64748b!important;
+    white-space:nowrap!important;
+  }
+  .records-filter-actions{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-end!important;
+    gap:10px!important;
+    margin:0!important;
+  }
+  .records-filter-actions .btn{
+    min-width:140px!important;
+  }
+
+  @media(max-width:1100px){
+    .records-filter-row{
+      grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    }
+  }
+  @media(max-width:700px){
+    .records-filter-row{
+      grid-template-columns:1fr!important;
+    }
+    .records-export-row{
+      align-items:flex-start!important;
+      flex-direction:column!important;
+    }
+    .records-filter-actions{
+      justify-content:flex-start!important;
+      flex-wrap:wrap!important;
+    }
+  }
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5588,24 +5664,31 @@ function renderRecordsPage(){
 
       <div class="records-fixed-filter">
         <div class="records-fixed-filter-title"><strong>1｜查詢登記資料</strong><span>調整條件後自動顯示結果</span></div>
-        <div class="toolbar records-shared-toolbar">
-          <input id="searchQ" placeholder="搜尋姓名／聯絡手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
-          <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
-          <select id="filterVenue" title="篩選運動場地"><option value="">全部場地類別</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
-          <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
-          <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
-          <select id="filterTime" title="未選球類：每小時；羽球/桌球：每1小時；籃球：每2小時">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
-          <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray records-filter-tool-btn">清除篩選條件</button>
-          <select id="filterAnomaly" title="篩選正常或指定異常狀態">
-            <option value="" ${recordState.anomaly===''?'selected':''}>全部異常狀態</option>
-            <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
-            ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','截止後登記'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
-          </select>
+        <div class="records-filter-stack">
+          <div class="records-filter-row records-filter-row-primary">
+            <input id="searchQ" placeholder="搜尋姓名／聯絡手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
+            <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
+            <select id="filterVenue" title="篩選運動場地"><option value="">全部場地類別</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
+            <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
+          </div>
+          <div class="records-filter-row records-filter-row-secondary">
+            <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
+            <select id="filterTime" title="未選球類：每小時；羽球/桌球：每1小時；籃球：每2小時">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
+            <select id="filterAnomaly" title="篩選正常或指定異常狀態">
+              <option value="" ${recordState.anomaly===''?'selected':''}>全部異常狀態</option>
+              <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
+              ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','截止後登記'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
+            </select>
+            <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray records-clear-filter-btn">清除篩選</button>
+          </div>
         </div>
-        <div class="records-filter-actions">
-          <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
-          <button id="exportBtn" class="btn btn-gray">匯出目前名單</button>
-          <button id="exportQualifiedBtn" class="btn btn-gray" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
+        <div class="records-export-row">
+          <span class="records-export-label">名單輸出</span>
+          <div class="records-filter-actions">
+            <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
+            <button id="exportBtn" class="btn btn-gray">匯出目前名單</button>
+            <button id="exportQualifiedBtn" class="btn btn-gray" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
+          </div>
         </div>
       </div>
 
