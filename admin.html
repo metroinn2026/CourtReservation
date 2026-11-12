@@ -4231,6 +4231,226 @@ body .ux-review-edit{align-items:end}
     }
   }
 </style>
+
+<style id="records-clean-ui-v15">
+  .records-main-panel-compact{
+    background:#fff!important;
+    border:1px solid #dde6f0!important;
+    border-radius:14px!important;
+    padding:0!important;
+    overflow:visible!important;
+  }
+  .records-compact-head{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:16px!important;
+    padding:14px 18px 10px!important;
+    border-bottom:1px solid #eef2f6!important;
+  }
+  .records-compact-head h3{
+    margin:0 0 4px!important;
+    font-size:18px!important;
+  }
+  .records-summary-line{
+    display:flex!important;
+    gap:10px!important;
+    color:#64748b!important;
+    font-size:12px!important;
+  }
+  .records-summary-line span+span:before{
+    content:"·";
+    margin-right:10px;
+    color:#cbd5e1;
+  }
+  .records-summary-alert{color:#b45309!important;}
+  .records-utility-actions{
+    display:flex!important;
+    align-items:center!important;
+    gap:6px!important;
+  }
+  .btn-compact{
+    min-height:34px!important;
+    height:34px!important;
+    padding:5px 10px!important;
+    font-size:12.5px!important;
+    border-radius:8px!important;
+    min-width:0!important;
+  }
+  .records-authorization-compact{
+    position:relative!important;
+    width:auto!important;
+  }
+  .records-authorization-compact summary{list-style:none!important;padding:5px 10px!important;}
+  .records-authorization-compact summary::-webkit-details-marker{display:none!important;}
+  .records-auth-popover{
+    position:absolute!important;
+    z-index:20!important;
+    top:40px!important;
+    right:0!important;
+    width:360px!important;
+    padding:12px!important;
+    background:#fff!important;
+    border:1px solid #dbe4ee!important;
+    border-radius:10px!important;
+    box-shadow:0 12px 30px rgba(15,23,42,.12)!important;
+    display:grid!important;
+    grid-template-columns:1fr 1fr!important;
+    gap:8px!important;
+  }
+  .records-auth-popover label{font-size:12px!important;font-weight:700!important;}
+  .records-auth-popover input{width:100%!important;margin-top:4px!important;height:34px!important;}
+  .records-auth-actions{display:flex!important;gap:6px!important;align-items:center!important;}
+  .records-auth-popover #identityAuthState{grid-column:1 / -1!important;color:#64748b!important;font-size:11.5px!important;}
+
+  .records-compact-filterbar{
+    display:grid!important;
+    grid-template-columns:minmax(220px,1.5fr) repeat(6,minmax(90px,.8fr)) auto!important;
+    gap:8px!important;
+    align-items:center!important;
+    padding:10px 18px!important;
+    border-bottom:1px solid #eef2f6!important;
+  }
+  .records-compact-filterbar input,
+  .records-compact-filterbar select{
+    width:100%!important;
+    min-width:0!important;
+    height:36px!important;
+    padding:5px 28px 5px 9px!important;
+    font-size:12.5px!important;
+    border-radius:8px!important;
+  }
+  .records-search{padding-right:10px!important;}
+  .records-clear-link{
+    border:0!important;
+    background:transparent!important;
+    color:#64748b!important;
+    font-size:12.5px!important;
+    font-weight:700!important;
+    cursor:pointer!important;
+    padding:6px 4px!important;
+    white-space:nowrap!important;
+  }
+  .records-clear-link:hover{color:#1d4ed8!important;}
+
+  .records-content-nav{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:12px!important;
+    padding:0 18px!important;
+    border-bottom:1px solid #eef2f6!important;
+  }
+  .records-content-nav .records-function-tabs{
+    margin:0!important;
+    padding:0!important;
+  }
+  .records-function-tab{
+    padding:11px 8px 9px!important;
+    min-width:0!important;
+    font-size:13px!important;
+  }
+  .records-export-menu{position:relative!important;}
+  .records-export-menu summary{list-style:none!important;}
+  .records-export-menu summary::-webkit-details-marker{display:none!important;}
+  .records-export-popover{
+    position:absolute!important;
+    z-index:20!important;
+    right:0!important;
+    top:40px!important;
+    min-width:210px!important;
+    padding:6px!important;
+    background:#fff!important;
+    border:1px solid #dbe4ee!important;
+    border-radius:9px!important;
+    box-shadow:0 10px 24px rgba(15,23,42,.12)!important;
+  }
+  .records-menu-item{
+    display:block!important;
+    width:100%!important;
+    border:0!important;
+    background:#fff!important;
+    text-align:left!important;
+    padding:9px 10px!important;
+    border-radius:6px!important;
+    font-size:12.5px!important;
+    cursor:pointer!important;
+    color:#334155!important;
+  }
+  .records-menu-item:hover{background:#f1f5f9!important;}
+
+  #recordsWorkspace{
+    border:0!important;
+    box-shadow:none!important;
+    border-radius:0!important;
+    padding:0 0 10px!important;
+    background:#fff!important;
+  }
+  .records-inline-scope,
+  .records-section-caption,
+  .records-workspace-head{
+    display:none!important;
+  }
+  .records-table-meta-controls{
+    margin:0!important;
+    padding:9px 18px!important;
+    min-height:44px!important;
+    border-bottom:1px solid #eef2f6!important;
+  }
+  .records-meta-left{gap:10px!important;}
+  .records-inline-control{
+    font-size:12px!important;
+    font-weight:600!important;
+    gap:5px!important;
+  }
+  .records-inline-control select{
+    height:32px!important;
+    min-width:76px!important;
+    padding:4px 24px 4px 7px!important;
+    font-size:12px!important;
+    border-radius:7px!important;
+  }
+  #recordsLotteryStatusFilter{min-width:92px!important;}
+  #recordsPerPage{min-width:68px!important;}
+
+  .records-list-actionbar-active{
+    margin:0!important;
+    padding:7px 18px!important;
+    border:0!important;
+    border-bottom:1px solid #eef2f6!important;
+    border-radius:0!important;
+    background:#f8fafc!important;
+  }
+  .records-list-action-left{
+    gap:6px!important;
+  }
+  #listBatchStatus{
+    height:34px!important;
+    width:120px!important;
+    min-width:120px!important;
+    border-radius:8px!important;
+  }
+  #recordsWorkspace > #recordsTable .records-table-wrap{
+    margin:0!important;
+    border-radius:0!important;
+    border-left:0!important;
+    border-right:0!important;
+  }
+  #recordsWorkspace > #recordsTable .pager{
+    margin:8px 18px 0!important;
+  }
+
+  @media(max-width:1300px){
+    .records-compact-filterbar{
+      grid-template-columns:minmax(220px,1.4fr) repeat(3,minmax(110px,1fr))!important;
+    }
+  }
+  @media(max-width:900px){
+    .records-compact-head{align-items:flex-start!important;flex-direction:column!important;}
+    .records-compact-filterbar{grid-template-columns:repeat(2,minmax(130px,1fr))!important;}
+    .records-content-nav{align-items:flex-start!important;flex-direction:column!important;padding-bottom:8px!important;}
+  }
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5642,61 +5862,67 @@ function renderRecordsPage(){
   const locations=getAdminLocations();
   if(!recordState.location) recordState.location=DEFAULT_LOCATION;
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
-  const times=getRuleTimeSlots(recordState.venue);
+  const s=stats();
 
-  document.getElementById('content').innerHTML=`${renderCards(stats())}
-    <div class="panel records-main-panel">
-      <div class="records-redesign-header"><h3>登記資料管理</h3><span>先查詢、再勾選，需要時進行批次處理</span></div>
-      <div class="records-quick-actions">
-        <strong>常用作業</strong>
-        <button id="openFormImportModal" type="button" class="btn btn-primary" disabled aria-disabled="true" title="請先完成資料庫授權">匯入 Google 表單</button>
-        <button id="openFormAnomaliesModal" type="button" class="btn btn-gray" disabled aria-disabled="true" title="請先完成資料庫授權">資格審查</button>
-        <details class="records-authorization-details"><summary>資料庫授權及證號查閱設定</summary>
-          <div class="small records-authorization-content">
-        🔐 會館會員證號預設遮蔽；授權後可點選眼睛圖示，Go會員不蒐集身分證字號。<br>
-        <label>資料庫授權帳號 <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="管理員 Email" style="max-width:200px" /></label>
-        <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" style="max-width:160px" /></label>
-        <button id="identityAuthBtn" type="button" class="btn btn-gray">授權</button><button id="identityRevokeBtn" type="button" class="btn btn-gray">解除授權</button>
-        <span id="identityAuthState">${secureIdentityAuthenticated?'已通過授權':'未授權時不顯示完整證號'}</span>
+  document.getElementById('content').innerHTML=`
+    <div class="panel records-main-panel records-main-panel-compact">
+      <div class="records-compact-head">
+        <div>
+          <h3>登記資料</h3>
+          <div class="records-summary-line">
+            <span>${s.total||allRecords.length} 筆登記</span>
+            <span>${s.people||0} 人</span>
+            <span>${s.hours||0} 小時</span>
+            ${s.anomaly? `<span class="records-summary-alert">${s.anomaly} 筆待確認</span>` : ''}
+          </div>
+        </div>
+        <div class="records-utility-actions">
+          <button id="openFormImportModal" type="button" class="btn btn-gray btn-compact" disabled aria-disabled="true" title="請先完成資料庫授權">匯入表單</button>
+          <button id="openFormAnomaliesModal" type="button" class="btn btn-gray btn-compact" disabled aria-disabled="true" title="請先完成資料庫授權">資格審查</button>
+          <details class="records-authorization-details records-authorization-compact">
+            <summary class="btn btn-gray btn-compact">資料權限</summary>
+            <div class="small records-authorization-content records-auth-popover">
+              <label>管理員 Email <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="管理員 Email" /></label>
+              <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" /></label>
+              <div class="records-auth-actions">
+                <button id="identityAuthBtn" type="button" class="btn btn-primary btn-compact">授權</button>
+                <button id="identityRevokeBtn" type="button" class="btn btn-gray btn-compact">解除</button>
+              </div>
+              <span id="identityAuthState">${secureIdentityAuthenticated?'已通過授權':'未授權時不顯示完整證號'}</span>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <div class="records-compact-filterbar">
+        <input id="searchQ" class="records-search" placeholder="搜尋姓名／手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
+        <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
+        <select id="filterVenue" title="篩選運動場地"><option value="">全部場地</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
+        <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
+        <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
+        <select id="filterTime" title="篩選時段">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
+        <select id="filterAnomaly" title="篩選異常狀態">
+          <option value="" ${recordState.anomaly===''?'selected':''}>全部狀態</option>
+          <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
+          ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','截止後登記'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
+        </select>
+        <button id="clearRecordFiltersBtn" type="button" class="records-clear-link">清除</button>
+        <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
+      </div>
+
+      <div class="records-content-nav">
+        <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
+          <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
+          <button class="records-function-tab ${recordsActionTab==='review'?'active':''}" data-action-tab="review">異常清單</button>
+          <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
+        </div>
+        <details class="records-export-menu">
+          <summary class="btn btn-gray btn-compact">匯出 ▾</summary>
+          <div class="records-export-popover">
+            <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
+            <button id="exportQualifiedBtn" class="records-menu-item" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
           </div>
         </details>
-      </div>
-
-      <div class="records-fixed-filter">
-        <div class="records-fixed-filter-title"><strong>1｜查詢登記資料</strong><span>調整條件後自動顯示結果</span></div>
-        <div class="records-filter-stack">
-          <div class="records-filter-row records-filter-row-primary">
-            <input id="searchQ" placeholder="搜尋姓名／聯絡手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
-            <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
-            <select id="filterVenue" title="篩選運動場地"><option value="">全部場地類別</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
-            <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
-          </div>
-          <div class="records-filter-row records-filter-row-secondary">
-            <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
-            <select id="filterTime" title="未選球類：每小時；羽球/桌球：每1小時；籃球：每2小時">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
-            <select id="filterAnomaly" title="篩選正常或指定異常狀態">
-              <option value="" ${recordState.anomaly===''?'selected':''}>全部異常狀態</option>
-              <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
-              ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','截止後登記'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
-            </select>
-            <button id="clearRecordFiltersBtn" type="button" class="btn btn-gray records-clear-filter-btn">清除篩選</button>
-          </div>
-        </div>
-        <div class="records-export-row">
-          <span class="records-export-label">名單輸出</span>
-          <div class="records-filter-actions">
-            <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
-            <button id="exportBtn" class="btn btn-gray">匯出目前名單</button>
-            <button id="exportQualifiedBtn" class="btn btn-gray" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="records-section-caption"><strong>2｜查看與管理資料</strong><span>先篩選清單，勾選後再批次修改</span></div>
-      <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
-        <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
-        <button class="records-function-tab ${recordsActionTab==='review'?'active':''}" data-action-tab="review">異常清單</button>
-        <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
       </div>
 
       <div id="recordsWorkspace"></div>
@@ -5742,6 +5968,7 @@ function renderRecordsPage(){
     selectedRecordIds.clear();
     renderPage('records');
   };
+
   const recordVenueSelect=document.getElementById('filterVenue');
   if(recordVenueSelect){
     recordVenueSelect.onchange=()=>{
@@ -5749,7 +5976,10 @@ function renderRecordsPage(){
       const currentTime=timeSelect?.value || '';
       refreshRuleTimeSelect('filterTime',recordVenueSelect.value,currentTime);
       const usageSelect=document.getElementById('filterUsage');
-      if(usageSelect){const prior=usageSelect.value;usageSelect.innerHTML=renderCourtUsageOptions(recordVenueSelect.value,availableCourtUsages(recordVenueSelect.value).includes(prior)?prior:'');}
+      if(usageSelect){
+        const prior=usageSelect.value;
+        usageSelect.innerHTML=renderCourtUsageOptions(recordVenueSelect.value,availableCourtUsages(recordVenueSelect.value).includes(prior)?prior:'');
+      }
     };
   }
   document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
@@ -5769,9 +5999,6 @@ function renderRecordsPage(){
       renderRecordsWorkspace();
     };
   });
-
-  const anomalySummaryCard=document.getElementById('recordAnomalySummaryCard');
-  if(anomalySummaryCard) anomalySummaryCard.onclick=goToAnomalyCenter;
 
   renderRecordsWorkspace();
 }
@@ -6152,10 +6379,10 @@ function renderRecordsTable(){
   const allPageSelected=pageIds.length>0 && pageIds.every(id=>selectedRecordIds.has(id));
   let html=`<div class="records-table-meta records-table-meta-controls">
     <div class="records-meta-left">
-      <span>共 ${filtered.length} 筆，顯示第 ${filtered.length?start+1:0}-${Math.min(start+recordState.perPage,filtered.length)} 筆</span>
-      <label class="records-inline-control">抽籤狀態
+      <span>${filtered.length} 筆</span>
+      <label class="records-inline-control">狀態
         <select id="recordsLotteryStatusFilter" title="選擇後立即篩選">
-          <option value="">全部狀態</option>
+          <option value="">全部</option>
           <option value="__not_drawn__">未抽籤</option>
           <option value="中籤">中籤</option>
           <option value="__backup__">備取</option>
@@ -6163,36 +6390,34 @@ function renderRecordsTable(){
           <option value="放棄">放棄</option>
         </select>
       </label>
-      <label class="records-inline-control">每頁顯示
+      <label class="records-inline-control">每頁
         <select id="recordsPerPage" title="選擇清單每頁顯示筆數">
-          <option value="20">20筆</option>
-          <option value="50">50筆</option>
-          <option value="100">100筆</option>
-          <option value="200">200筆</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
           <option value="999999">全部</option>
         </select>
       </label>
     </div>
-    <span>已勾選 <strong>${selectedRecordIds.size}</strong> 筆｜已修改 <strong>${pendingRecordStatusChanges.size}</strong> 筆</span>
+    ${selectedRecordIds.size||pendingRecordStatusChanges.size ? `<span>已選 <strong>${selectedRecordIds.size}</strong>｜待儲存 <strong>${pendingRecordStatusChanges.size}</strong></span>` : ''}
   </div>
-  <div class="records-list-actionbar">
+  ${selectedRecordIds.size||pendingRecordStatusChanges.size ? `<div class="records-list-actionbar records-list-actionbar-active">
     <div class="records-list-action-left">
       <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
-        <option value="__none__">批次變更狀態</option>
+        <option value="__none__">變更狀態</option>
         <option value="中籤">中籤</option>
-        <option value="__rank__">備取（輸入順位…）</option>
+        <option value="__rank__">備取</option>
         <option value="放棄">放棄</option>
         <option value="未中籤">未中籤</option>
         <option value="__clear__">未抽籤</option>
       </select>
-      <button id="applySelectedStatusBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將上方選取的狀態套用至勾選資料，需再儲存才會更新">套用至勾選</button>
-      <button id="markSelectedNotWonBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'} title="將勾選資料批次暫存為未中籤；請再按儲存狀態變更">將勾選設為未中籤</button>
-      <button id="deleteSelectedFromListBtn" class="btn btn-gray" ${selectedRecordIds.size?'':'disabled'}>刪除勾選資料</button>
+      <button id="applySelectedStatusBtn" class="btn btn-gray btn-compact" ${selectedRecordIds.size?'':'disabled'}>套用</button>
+      <button id="markSelectedNotWonBtn" class="btn btn-gray btn-compact" ${selectedRecordIds.size?'':'disabled'}>設為未中籤</button>
+      <button id="deleteSelectedFromListBtn" class="btn btn-gray btn-compact" ${selectedRecordIds.size?'':'disabled'}>刪除</button>
+      <button id="savePendingRecordStatusBtn" class="btn btn-primary btn-compact" ${pendingRecordStatusChanges.size?'':'disabled'}>儲存${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}</button>
     </div>
-    <button id="savePendingRecordStatusBtn" class="btn btn-primary" ${pendingRecordStatusChanges.size?'':'disabled'}>
-      儲存狀態變更${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}
-    </button>
-  </div>
+  </div>` : ''}
   <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:106px;">資格狀態</th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:110px;">${sortHeader('會員身分','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
@@ -6230,10 +6455,8 @@ function renderRecordsTable(){
   if(applySelectedStatusBtn) applySelectedStatusBtn.onclick=stageSelectedRecordStatus;
   const markSelectedNotWonBtn=document.getElementById('markSelectedNotWonBtn');
   if(markSelectedNotWonBtn) markSelectedNotWonBtn.onclick=stageSelectedNotWon;
-
   const deleteSelectedFromListBtn=document.getElementById('deleteSelectedFromListBtn');
   if(deleteSelectedFromListBtn) deleteSelectedFromListBtn.onclick=batchDeleteSelectedRecords;
-
   const saveStatusBtn=document.getElementById('savePendingRecordStatusBtn');
   if(saveStatusBtn) saveStatusBtn.onclick=savePendingRecordStatusChanges;
 
