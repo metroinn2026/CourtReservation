@@ -60,6 +60,12 @@ test('first click after idle does not extend an expired admin session',()=>{
   assert.ok(handler.indexOf('adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now)')>handler.indexOf('adminSessionHasExpired(now)'));
   assert.match(admin,/addEventListener\(type,markAdminActivity,\{capture:true,passive:false\}\)/);
 });
+test('admin sessions terminate on Supabase logout and across same-origin tabs',()=>{
+  assert.match(admin,/event==='SIGNED_OUT' && courtAuthLoginActive && !adminSigningOut/);
+  assert.match(admin,/addEventListener\('storage',event=>/);
+  assert.match(admin,/event\.key===ADMIN_SESSION_LOGOUT_EVENT/);
+  assert.match(admin,/localStorage\.setItem\(ADMIN_SESSION_LOGOUT_EVENT,String\(Date\.now\(\)\)\)/);
+});
 test('admin logout clears local identity and masks sensitive UI',()=>{
   assert.match(admin,/clearAdminSessionMarkers\(\)/);
   assert.match(admin,/secureIdentityBySubmission\.clear\(\)/);
