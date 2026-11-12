@@ -4549,6 +4549,113 @@ body .ux-review-edit{align-items:end}
     text-decoration:underline!important;
   }
 </style>
+<style id="admin-compact-system-v17">
+  /* 共用：標題與白卡 */
+  #content > .section-title-outside,
+  #content .section-title-manual{
+    margin:0 0 10px 8px!important;
+    font-size:18px!important;
+    font-weight:900!important;
+    line-height:1.25!important;
+    color:#10233f!important;
+  }
+  .compact-page-card,
+  .accounts-page-panel,
+  .capacity-toolbar,
+  .registration-settings-fold,
+  .dashboard-tasks-panel,
+  .anomaly-center-clean{
+    border:1px solid #dfe7f0!important;
+    border-radius:18px!important;
+    box-shadow:none!important;
+    background:#fff!important;
+  }
+  .compact-page-card{padding:18px!important;}
+
+  /* 按鈕：次要功能收斂，主要功能才用藍底 */
+  #content .btn{min-height:36px;border-radius:9px;}
+  #content .btn.btn-gray{background:#fff;border-color:#cfd9e4;}
+  #content .btn.btn-gray:hover{background:#f8fafc;}
+
+  /* 作業總覽 */
+  .workflow-status-strip{min-height:auto!important;padding:10px 14px!important;border-radius:12px!important;}
+  .workflow-status-strip .small{font-size:12px!important;}
+  .dashboard-status-cards{gap:10px!important;margin:12px 0 16px!important;}
+  .dashboard-status-card{min-height:88px!important;padding:13px 15px!important;border-radius:14px!important;}
+  .dashboard-card-num{font-size:26px!important;margin-top:4px!important;}
+  .dashboard-tasks-panel{padding:16px!important;}
+  .pending-stage-info-row .small{display:none!important;}
+  .anomaly-info-row .small{font-size:12px!important;}
+  .anomaly-flat-row{padding:9px 0!important;}
+
+  /* 名額設定 */
+  .capacity-main-panel{background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;}
+  .registration-settings-fold{margin-bottom:16px!important;overflow:hidden!important;}
+  .registration-settings-summary{padding:14px 16px!important;}
+  .registration-summary-limits{font-size:12px!important;color:#64748b!important;}
+  .compact-registration-settings{padding:0 16px 16px!important;}
+  .capacity-toolbar{padding:14px 16px!important;margin:0 0 12px!important;}
+  .capacity-open-note{
+    margin:0 0 8px!important;padding:0 4px!important;background:transparent!important;border:0!important;
+    color:#64748b!important;font-size:12px!important;
+  }
+  #bulkCapTable{background:#fff!important;border:1px solid #dfe7f0!important;border-radius:18px!important;padding:14px!important;}
+  .capacity-compact-summary{display:flex!important;align-items:center!important;gap:10px!important;flex-wrap:wrap!important;margin:0 0 10px!important;color:#64748b!important;font-size:12px!important;}
+  .capacity-compact-summary span+span:before{content:"·";margin-right:10px;color:#cbd5e1;}
+  .capacity-summary-alert{color:#b45309!important;}
+
+  /* 抽籤作業：保留流程，只降低控制密度 */
+  .lottery-main-panel{background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;}
+  .lottery-main-panel > h3{margin:0 0 10px 8px!important;}
+  .lottery-context,
+  #dayCheckTable > .panel,
+  .lottery-advanced{background:#fff!important;border:1px solid #dfe7f0!important;border-radius:18px!important;box-shadow:none!important;}
+  .lottery-context{padding:16px!important;}
+  .lottery-filter-actions{gap:8px!important;}
+  .lottery-filter-actions .btn{min-height:36px!important;padding:6px 11px!important;font-size:12.5px!important;}
+  .lottery-advanced{margin-top:16px!important;padding:12px 16px!important;}
+  .lottery-advanced > summary{font-weight:800!important;color:#475569!important;}
+  .lottery-advanced > .small,.lottery-advanced .alert{font-size:12px!important;}
+  #dayCheckTable > .panel{padding:16px!important;}
+  .stage-list-filters{gap:8px!important;margin-bottom:10px!important;}
+
+  /* 文字設定 */
+  .settings-compact-card .admin-tabs{margin-bottom:14px!important;}
+  .settings-compact-card .settings-editor{border-radius:10px!important;}
+  .settings-token-help{margin:0 0 10px!important;color:#64748b!important;font-size:12px!important;}
+  .settings-token-help summary{cursor:pointer!important;font-weight:700!important;width:max-content!important;}
+  .settings-token-help div{margin-top:6px!important;padding:8px 10px!important;background:#f8fafc!important;border-radius:8px!important;}
+  .settings-save-actions{margin-top:12px!important;}
+
+  /* 操作紀錄 */
+  .logs-compact-card{padding:0!important;overflow:hidden!important;}
+  .logs-compact-card .table-wrap{margin:0!important;border:0!important;border-radius:0!important;}
+
+  /* 帳號權限 */
+  .accounts-create-panel{padding:16px!important;}
+  .accounts-create-grid{gap:10px!important;}
+  .accounts-inline-note{margin-top:8px!important;font-size:12px!important;color:#64748b!important;}
+  .accounts-create-actions{margin-top:10px!important;}
+  .accounts-list-panel{padding:0!important;overflow:hidden!important;}
+  .accounts-table-wrap{border:0!important;border-radius:0!important;}
+
+  /* 異常清單：名稱一致，不再額外強調資格審查 */
+  .ux-review-help{font-size:12px!important;color:#64748b!important;margin:0 0 10px!important;}
+  .ux-review-field label[for^="qstate-"]{font-size:0!important;}
+  .ux-review-field label[for^="qstate-"]::after{content:"處理結果";font-size:12px;}
+  .ux-review-case{padding:12px!important;}
+  .ux-review-reasons{margin-bottom:8px!important;}
+
+  /* 表格頁共用 */
+  #content .table-wrap{box-shadow:none!important;}
+  #content table th{font-size:12px!important;}
+  #content table td{font-size:12.5px!important;}
+
+  @media(max-width:900px){
+    .dashboard-status-cards{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+    .capacity-toolbar{padding:12px!important;}
+  }
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
