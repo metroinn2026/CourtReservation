@@ -2320,8 +2320,21 @@
       return renderRegistrationState();
     }
 
+    // 資料庫及使用者提供的文字不可直接當作 HTML 執行。
+    function frontEscapeHtml(value){
+      return String(value == null ? '' : value)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;');
+    }
+    function frontTextWithBreaks(value){
+      return frontEscapeHtml(value).replace(/\r?\n/g,'<br>');
+    }
+
     function renderSystemTextSettings() {
-      const formattedRules = String(systemSettings.rules_content || '請詳閱登記辦法。').replace(/\n/g, '<br>');
+      const formattedRules = frontTextWithBreaks(systemSettings.rules_content || '請詳閱登記辦法。');
 
       const rulesBody = document.getElementById('rules-body');
       if (rulesBody) {
@@ -2335,7 +2348,7 @@
 
       const noticeBox = document.getElementById('register-notice-box');
       if (noticeBox && systemSettings.register_notice) {
-        noticeBox.innerHTML = String(systemSettings.register_notice).replace(/\n/g, '<br>');
+        noticeBox.innerHTML = frontTextWithBreaks(systemSettings.register_notice);
         noticeBox.style.display = 'block';
       }
       renderRegistrationState();
@@ -2498,7 +2511,7 @@
     function renderLocationButtons() {
       const container = document.getElementById('location-buttons');
       const locations = [config.location_1].filter(l => l && l !== '地點名稱');
-      container.innerHTML = locations.map(loc => `<button class="button-option" data-value="${loc}">${loc}</button>`).join('');
+      container.innerHTML = locations.map(loc => `<button class="button-option" data-value="${frontEscapeHtml(loc)}">${frontEscapeHtml(loc)}</button>`).join('');
       container.querySelectorAll('.button-option').forEach(btn => {
         btn.addEventListener('click', () => {
           container.querySelectorAll('.button-option').forEach(b => b.classList.remove('selected'));
@@ -3011,10 +3024,10 @@
       }
 
       const statusClass = getLotteryStatusClass(status, record);
-      const resultText = status || '尚未抽籤';
+      const resultText = frontEscapeHtml(status || '尚未抽籤');
       let note = '';
       if (status === '中籤') note = '🎉 恭喜中籤！請留意後續繳費或辦理通知。';
-      else if (status.startsWith('候補')) note = `⏳ 目前為${status}，若有名額釋出將依序通知。`;
+      else if (status.startsWith('候補')) note = `⏳ 目前為${frontEscapeHtml(status)}，若有名額釋出將依序通知。`;
       else if (status === '未中籤') note = '本次未中籤，感謝您的登記。';
       else note = '目前尚未抽籤，請留意後續公告。';
 
@@ -3080,7 +3093,7 @@
 
       let html = `<div style="margin-bottom: 16px; padding: 12px; background: #e5f2f7; border-radius: 6px; font-weight: 700; color: var(--primary-blue);">
         總共登記 ${userRecords.length} 筆 • 登記總時數：${totalHours} 小時
-        <div style="font-size:12px;margin-top:6px;color:#475569;">抽籤狀態：${resultSummary}</div>
+        <div style="font-size:12px;margin-top:6px;color:#475569;">抽籤狀態：${frontEscapeHtml(resultSummary)}</div>
       </div>`;
       
       html += Object.entries(groupedBySerial).map(([serialNum, records]) => {
@@ -3153,12 +3166,12 @@
         return `
         <div style="background: #f3f4f6; padding: 14px; border-radius: 6px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="flex: 1; font-size: 14px; color: #333;">
-            <div style="margin-bottom: 8px;"><strong>地點:</strong> ${records[0].location_name}</div>
-            <div style="margin-bottom: 8px;"><strong>類型:</strong> ${records[0].venue_type} <span class="lottery-status-badge ${getLotteryStatusClass(records[0].lottery_status, records[0])}">${getLotteryStatusText(records[0])}</span></div>
-            <div style="margin-bottom: 10px;"><strong>登記時段:</strong> ${displayTimeText}</div>${getLotteryResultNote(records[0])}
+            <div style="margin-bottom: 8px;"><strong>地點:</strong> ${frontEscapeHtml(records[0].location_name)}</div>
+            <div style="margin-bottom: 8px;"><strong>類型:</strong> ${frontEscapeHtml(records[0].venue_type)} <span class="lottery-status-badge ${getLotteryStatusClass(records[0].lottery_status, records[0])}">${frontEscapeHtml(getLotteryStatusText(records[0]))}</span></div>
+            <div style="margin-bottom: 10px;"><strong>登記時段:</strong> ${frontEscapeHtml(displayTimeText)}</div>${getLotteryResultNote(records[0])}
             <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid #d1d5db;">
               <div style="color: var(--primary-green); font-weight: 700; font-size: 13px;">
-                #${serialNum}
+                #${frontEscapeHtml(serialNum)}
               </div>
               <div style="color: #999; font-size: 12px;">
                 ${timeStr}
@@ -3166,7 +3179,7 @@
             </div>
           </div>
           ${records[0].delete_allowed ? `
-            <button data-serial="${serialNum}" class="delete-btn" style="background: none; border: none; cursor: pointer; padding: 4px; color: #7f1d1d; flex-shrink: 0; margin-left: 12px;" title="刪除">
+            <button data-serial="${frontEscapeHtml(serialNum)}" class="delete-btn" style="background: none; border: none; cursor: pointer; padding: 4px; color: #7f1d1d; flex-shrink: 0; margin-left: 12px;" title="刪除">
               <span data-lucide="trash-2" aria-hidden="true"></span>
             </button>
           ` : `
@@ -3418,9 +3431,9 @@
             <tbody>
               ${rows.map((row, idx) => `
                 <tr style="background:${idx % 2 ? '#fff' : '#fafafa'};">
-                  <td style="padding:8px; border-bottom:1px solid #f1f5f9; font-weight:600; color:var(--primary-blue);">${row.venue}</td>
-                  <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${row.day}</td>
-                  <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${row.timeSlot}</td>
+                  <td style="padding:8px; border-bottom:1px solid #f1f5f9; font-weight:600; color:var(--primary-blue);">${frontEscapeHtml(row.venue)}</td>
+                  <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${frontEscapeHtml(row.day)}</td>
+                  <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${frontEscapeHtml(row.timeSlot)}</td>
                   <td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:center;">${row.registered}人</td>
                   <td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:center; color:#FF9800; font-weight:700;">${row.winnerCount}名</td>
                 </tr>
@@ -3711,8 +3724,8 @@
                   ${idx + 1}
                 </div>
                 <div style="flex: 1; min-width: 0;">
-                  <div style="font-weight: 700; color: #333; font-size: 14px; margin-bottom: 2px;">${w.name} <span style="color: #999; font-weight: 500; font-size: 12px;">${w.phone}</span></div>
-                  <div style="font-size: 12px; color: #666;">📅 ${w.day_of_week} • ⏰ ${w.time_slot} • ${w.venue_type}</div>
+                  <div style="font-weight: 700; color: #333; font-size: 14px; margin-bottom: 2px;">${frontEscapeHtml(w.name)} <span style="color: #999; font-weight: 500; font-size: 12px;">${frontEscapeHtml(w.phone)}</span></div>
+                  <div style="font-size: 12px; color: #666;">📅 ${frontEscapeHtml(w.day_of_week)} • ⏰ ${frontEscapeHtml(w.time_slot)} • ${frontEscapeHtml(w.venue_type)}</div>
                 </div>
               </div>
             `;
@@ -3985,10 +3998,10 @@
             <div class="result-item">
               <div class="result-item-top">
                 <div>
-                  <div class="result-item-title">${record.venue_type || '場次'}｜${record.day_of_week || ''} ${record.time_slot || ''}</div>
-                  <div class="result-item-meta">${record.location_name || config.location_1 || ''}｜序號 ${record.serial_number || '-'}</div>
+                  <div class="result-item-title">${frontEscapeHtml(record.venue_type || '場次')}｜${frontEscapeHtml(record.day_of_week || '')} ${frontEscapeHtml(record.time_slot || '')}</div>
+                  <div class="result-item-meta">${frontEscapeHtml(record.location_name || config.location_1 || '')}｜序號 ${frontEscapeHtml(record.serial_number || '-')}</div>
                 </div>
-                <span class="lottery-status-badge ${statusClass}">${statusText}</span>
+                <span class="lottery-status-badge ${statusClass}">${frontEscapeHtml(statusText)}</span>
               </div>
               ${getLotteryResultNote(record)}
             </div>
