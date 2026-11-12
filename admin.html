@@ -7396,8 +7396,12 @@ function renderCapacityPage(){
 
   document.querySelectorAll('.cap-tab').forEach(btn=>{
     btn.onclick=()=>{
-      window.currentCapacityVenue=btn.dataset.venue;
-      renderCapacityPage();
+      const nextVenue=btn.dataset.venue;
+      if(nextVenue===window.currentCapacityVenue)return;
+      confirmDiscardCapacityDraft(()=>{
+        window.currentCapacityVenue=nextVenue;
+        renderCapacityPage();
+      });
     };
   });
 
@@ -7439,8 +7443,15 @@ function renderCapacityPage(){
 
   const capLoc=document.getElementById('capacityLocation');
   if(capLoc) capLoc.onchange=()=>{
-    window.currentCapacityLocation=capLoc.value || DEFAULT_LOCATION;
-    renderCapacityPage();
+    const oldLocation=window.currentCapacityLocation || DEFAULT_LOCATION;
+    const nextLocation=capLoc.value || DEFAULT_LOCATION;
+    if(nextLocation===oldLocation)return;
+    // Revert the visible selector until the draft decision is confirmed.
+    capLoc.value=oldLocation;
+    confirmDiscardCapacityDraft(()=>{
+      window.currentCapacityLocation=nextLocation;
+      renderCapacityPage();
+    });
   };
 
   document.getElementById('fillDefaultCapBtn').onclick=()=>fillDefaultCapacity();
@@ -7628,6 +7639,16 @@ function renderBulkCapacityTable(){
       }
     };
   });
+}
+
+function confirmDiscardCapacityDraft(onConfirm){
+  if(!document.querySelector('#bulkCapTable .capacity-cell[data-capacity-draft="true"]')){
+    onConfirm();
+    return;
+  }
+  showModal('尚有未儲存的名額設定',
+    '切換球類或場地將放棄目前尚未儲存的修改，確定要繼續嗎？',
+    onConfirm);
 }
 
 function markCapacityCellDraft(cell){
