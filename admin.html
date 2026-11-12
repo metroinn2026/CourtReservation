@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>北投會館運動場域智慧租借管理系統｜管理後台</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
@@ -5275,7 +5275,14 @@ const venueOrder = ['羽球','籃球','B1桌球','B2桌球'];
 const days = ['周一','周二','周三','周四','周五','周六','周日'];
 const capacityMap = {'羽球':3,'籃球':1,'B1桌球':3,'B2桌球':3};
 
-function showMsg(el, text, type='error'){ document.getElementById(el).innerHTML = `<div class="msg ${type}">${text}</div>`; }
+function showMsg(el, text, type='error'){
+  const target=document.getElementById(el);
+  if(!target)return;
+  const msg=document.createElement('div');
+  msg.className='msg '+(['error','info','ok','warn'].includes(type)?type:'error');
+  msg.textContent=String(text??'');
+  target.replaceChildren(msg);
+}
 function roleName(role){ return role === 'super_admin' ? '超級管理員' : '一般管理員'; }
 function normalizePhone(v){ return String(v||'').replace(/\D/g,'').replace(/^886/,'0'); }
 function recordLocation(r){ return String(r?.location_name||'').trim() || DEFAULT_LOCATION; }
