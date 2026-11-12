@@ -69,51 +69,58 @@
 
       if (!window.dataSdk) {
         let handlerRef = null;
-
         const SUPABASE_URL = 'https://wsvsdwuksuzcjisnpyin.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
-        const SUPABASE_TABLE = 'lottery_records';
 
         function getSupabaseClient() {
-          if (!window.supabase) {
-            console.error('Supabase library not loaded');
-            alert('雲端資料庫元件載入失敗，請重新整理頁面。');
-            return null;
-          }
+          if (!window.supabase) return null;
           if (!window.__venueLotterySupabaseClient) {
-            // 前台維持匿名資料連線，不沿用後台 Google 表單匯入的 Auth session。
-            window.__venueLotterySupabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+            window.__venueLotterySupabaseClient = window.supabase.createClient(
+              SUPABASE_URL, SUPABASE_KEY,
+              {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}}
+            );
           }
           return window.__venueLotterySupabaseClient;
         }
 
-        function normalizeRecords(records) {
-          return (records || []).map((record) => ({
-            ...record,
-            __backendId: record.id
-          }));
+        function getApplicantSessionToken(){
+          try { return sessionStorage.getItem('court_applicant_session_v2') || ''; }
+          catch(e){ return ''; }
+        }
+
+        window.slotCountMap = window.slotCountMap || {};
+
+        async function refreshSlotCounts(){
+          const client=getSupabaseClient();
+          if(!client) return;
+          const {data,error}=await client.rpc('court_public_slot_counts_v1');
+          if(error){ console.warn('讀取場次登記數失敗',error); return; }
+          const map={};
+          (data||[]).forEach(row=>{
+            const start=String(row.time_slot||'').match(/\d{2}:\d{2}/)?.[0]||'';
+            map[`${row.venue_type}|${row.day_of_week}|${start}`]=Number(row.registration_count||0);
+          });
+          window.slotCountMap=map;
         }
 
         async function fetchRecords() {
-          const client = getSupabaseClient();
-          if (!client) return { isOk: false, records: [] };
-
-          const { data, error } = await client
-            .from(SUPABASE_TABLE)
-            .select('*')
-            .order('registered_at', { ascending: false });
-
-          if (error) {
-            console.error('讀取 Supabase 失敗', error);
-            return { isOk: false, records: [] };
+          const client=getSupabaseClient();
+          const token=getApplicantSessionToken();
+          if(!client || !token) return {isOk:true,records:[]};
+          const {data,error}=await client.rpc('court_applicant_records_by_session_v2',{p_session_token:token});
+          if(error){
+            console.warn('讀取個人登記失敗',error);
+            if(String(error.message||'').includes('invalid or expired session')){
+              try{sessionStorage.removeItem('court_applicant_session_v2');}catch(e){}
+            }
+            return {isOk:false,records:[]};
           }
-
-          return { isOk: true, records: normalizeRecords(data) };
+          return {isOk:true,records:(data||[]).map(r=>({...r,__backendId:r.id}))};
         }
 
         async function refreshRecords() {
-          const result = await fetchRecords();
-          if (result.isOk && handlerRef && typeof handlerRef.onDataChanged === 'function') {
+          const result=await fetchRecords();
+          if(result.isOk && handlerRef && typeof handlerRef.onDataChanged==='function'){
             handlerRef.onDataChanged(result.records);
           }
           return result;
@@ -121,130 +128,34 @@
 
         window.dataSdk = {
           refresh: refreshRecords,
-          async init(handler) {
-            handlerRef = handler;
-            const result = await refreshRecords();
-
-            const client = getSupabaseClient();
-            if (client && !window.__venueLotteryRealtimeChannel) {
-              window.__venueLotteryRealtimeChannel = client
-                .channel('lottery_records_changes')
-                .on('postgres_changes', {
-                  event: '*',
-                  schema: 'public',
-                  table: SUPABASE_TABLE
-                }, () => {
-                  refreshRecords();
-                })
-                .subscribe();
-            }
-
-            return { isOk: result.isOk };
+          async init(handler){
+            handlerRef=handler;
+            await refreshSlotCounts();
+            return refreshRecords();
           },
-
-          async create(record) {
-            const client = getSupabaseClient();
-            if (!client) return { isOk: false };
-
-            const cleanRecord = {
-              name: record.name,
-              phone: record.phone,
-              id_last4: record.id_last4,
-              id_last4: record.id_last4 || '',
-              location_name: record.location_name,
-              venue_type: record.venue_type,
-              day_of_week: record.day_of_week,
-              time_slot: record.time_slot,
-              serial_number: record.serial_number,
-              registered_at: record.registered_at || new Date().toISOString()
-            };
-
-            const { data, error } = await client
-              .from(SUPABASE_TABLE)
-              .insert([cleanRecord])
-              .select('*')
-              .single();
-
-            if (error) {
-              console.error('寫入 Supabase 失敗', error);
-              alert('登記失敗，請稍後再試。');
-              return { isOk: false };
-            }
-
-            await refreshRecords();
-            return { isOk: true, value: { ...data, __backendId: data.id } };
+          async create(){
+            alert('目前登記已截止；如後續重新開放登記，將使用新版安全登記流程。');
+            return {isOk:false};
           },
-
-          async delete(record) {
-            const client = getSupabaseClient();
-            if (!client) return { isOk: false };
-
-            const recordId = record.id || record.__backendId;
-            if (!recordId) {
-              console.error('刪除失敗：找不到資料 id', record);
-              alert('刪除失敗：找不到資料編號。');
-              return { isOk: false };
+          async delete(record){
+            const client=getSupabaseClient();
+            const token=getApplicantSessionToken();
+            const recordId=record?.id||record?.__backendId;
+            if(!client||!token||!recordId) return {isOk:false};
+            const {data,error}=await client.rpc('court_applicant_delete_by_session_v2',{
+              p_session_token:token,p_record_id:recordId
+            });
+            if(error||data!==true){
+              alert('無法刪除此筆資料；可能已抽籤、已公布，或登入已逾時。');
+              return {isOk:false};
             }
-
-            const { error } = await client
-              .from(SUPABASE_TABLE)
-              .delete()
-              .eq('id', recordId);
-
-            if (error) {
-              console.error('刪除 Supabase 資料失敗', error);
-              alert('刪除失敗，請稍後再試。');
-              return { isOk: false };
-            }
-
+            await refreshSlotCounts();
             await refreshRecords();
-            return { isOk: true };
-          },
-
-          async replaceAll(records) {
-            const client = getSupabaseClient();
-            if (!client) return { isOk: false };
-
-            const { error: deleteError } = await client
-              .from(SUPABASE_TABLE)
-              .delete()
-              .neq('id', '00000000-0000-0000-0000-000000000000');
-
-            if (deleteError) {
-              console.error('清空 Supabase 資料失敗', deleteError);
-              return { isOk: false };
-            }
-
-            const cleanRecords = Array.isArray(records)
-              ? records.map((record) => ({
-                  name: record.name,
-                  phone: record.phone,
-                  id_last4: record.id_last4,
-                  id_last4: record.id_last4 || '',
-                  location_name: record.location_name,
-                  venue_type: record.venue_type,
-                  day_of_week: record.day_of_week,
-                  time_slot: record.time_slot,
-                  serial_number: record.serial_number,
-                  registered_at: record.registered_at || new Date().toISOString()
-                }))
-              : [];
-
-            if (cleanRecords.length > 0) {
-              const { error: insertError } = await client
-                .from(SUPABASE_TABLE)
-                .insert(cleanRecords);
-
-              if (insertError) {
-                console.error('批次寫入 Supabase 失敗', insertError);
-                return { isOk: false };
-              }
-            }
-
-            await refreshRecords();
-            return { isOk: true };
+            return {isOk:true};
           }
         };
+
+        window.refreshPublicSlotCounts=refreshSlotCounts;
       }
 
       if (!window.capacitySdk) {
@@ -387,8 +298,7 @@
             if (!client) return {};
 
             const { data, error } = await client
-              .from(SETTINGS_TABLE)
-              .select('*');
+              .rpc('court_public_system_settings_v1');
 
             if (error) {
               console.warn('讀取文字設定失敗', error);
@@ -2129,13 +2039,10 @@
       <div id="register-notice-box" style="display:none;background:#fff7ed;border-left:4px solid #FF9800;padding:12px;border-radius:8px;margin-bottom:16px;font-size:13px;line-height:1.7;color:#9a3412;"></div>
        <div id="verify-form">
        <div class="form-group">
-        <label for="member-name">姓名 *</label> <input type="text" id="member-name" placeholder="請輸入姓名">
+        <label for="member-email">Email *</label> <input type="email" id="member-email" autocomplete="email" placeholder="請輸入登記時填寫的 Email">
        </div>
        <div class="form-group">
-        <label for="member-phone">手機號碼 *</label> <input type="tel" id="member-phone" placeholder="09xx-xxx-xxx">
-       </div>
-       <div class="form-group">
-        <label for="member-id-last4">身分證後4碼 *</label> <input type="text" id="member-id-last4" maxlength="4" inputmode="numeric" placeholder="請輸入身分證後4碼">
+        <label for="member-phone-last3">手機末三碼 *</label> <input type="text" id="member-phone-last3" maxlength="3" inputmode="numeric" autocomplete="off" placeholder="例如 369">
        </div>
        <div class="turnstile-wrap">
         <div class="cf-turnstile"
@@ -2145,14 +2052,14 @@
              data-error-callback="onTurnstileError"
              data-theme="light"></div>
        </div>
-       <button class="btn btn-primary" id="verify-btn">驗證身分並進入</button>
+       <button class="btn btn-primary" id="verify-btn">驗證登記資料並進入</button>
        <div id="verification-message"></div>
       </div>
       <div class="member-display" id="member-display">
        <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">
-          已完成身分驗證
+          已完成登記資料驗證
          </div>
          <div style="font-size: 16px; font-weight: 700; color: var(--primary-blue);"><span id="display-name">-</span> • <span id="display-phone">-</span>
          </div>
@@ -2280,14 +2187,15 @@
     let systemSettings = {
       rules_content: '請於登記期間內完成資料填寫，抽籤結果將依公告時間公布。',
       register_notice: '請詳閱登記辦法後再進行登記。',
+      registration_enabled: 'false',
       registration_start: '',
       registration_end: '',
       registration_limit_rules: ''
     };
     let currentSelection = {
       name: '',
-      phone: '',
-      id_last4: '',
+      email: '',
+      phone_last3: '',
       location: '',
       venue: '',
       day: '',
@@ -2365,6 +2273,8 @@
       return d.toLocaleString('zh-TW',{hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
     }
     function getRegistrationState(now=new Date()){
+      if(String(systemSettings.registration_enabled||'true')==='false')
+        return {key:'closed',label:'未開放登記',note:'目前未開放登記，僅提供查詢。'};
       const start=parseRegistrationDate(systemSettings.registration_start);
       const end=parseRegistrationDate(systemSettings.registration_end);
       if(!start&&!end) return {key:'open',label:'登記中',note:'目前開放登記。'};
@@ -2486,9 +2396,8 @@
       return String(value || '').replace(/\D/g, '').replace(/^886/, '0');
     }
 
-    function samePersonRecord(record) {
-      return normalizePhone(record.phone) === normalizePhone(currentSelection.phone) &&
-             String(record.id_last4 || '') === String(currentSelection.id_last4 || '');
+    function samePersonRecord() {
+      return true;
     }
 
     const REGISTRATION_VENUES=['羽球','籃球','B1桌球','B2桌球'];
@@ -2523,7 +2432,7 @@
       return String(record.location_name||'北投會館')===String(current);
     }
     function getPersonRegistrationRecords(){
-      return allRecords.filter(r=>samePersonRecord(r)&&sameRegistrationLocation(r));
+      return (allRecords||[]).filter(r=>sameRegistrationLocation(r));
     }
     function checkRegistrationLimitForVenue(venue,pendingUnits=1){
       const rules=getRegistrationLimitRules();
@@ -2706,11 +2615,7 @@
     }
 
     function countRegistrationsForSlot(venue, day, startTime) {
-      return allRecords.filter(r =>
-        r.venue_type === venue &&
-        r.day_of_week === day &&
-        r.time_slot.includes(startTime)
-      ).length;
+      return Number((window.slotCountMap||{})[`${venue}|${day}|${startTime}`]||0);
     }
 
     function formatTimeSlotDisplay(startTime, venue='') {
@@ -2766,8 +2671,6 @@
         
         // 桌球不限制重複登記；羽球／籃球才檢查同運動、同星期、同時段
         const userHasTimeSlotRegistration = isTableTennis ? false : allRecords.some(r =>
-          normalizePhoneNumber(r.phone) === currentSelection.phone &&
-          (r.id_last4 || '') === currentSelection.id_last4 &&
           r.venue_type === currentSelection.venue &&
           r.day_of_week === currentSelection.day &&
           r.time_slot.includes(time)
@@ -3022,9 +2925,9 @@
 
     function updateSummary() {
       document.getElementById('summary-name').textContent = currentSelection.name || '-';
-      document.getElementById('summary-phone').textContent = currentSelection.phone || '-';
+      document.getElementById('summary-phone').textContent = currentSelection.email || '-';
       const summaryIdLast4 = document.getElementById('summary-id-last4');
-      if (summaryIdLast4) summaryIdLast4.textContent = currentSelection.id_last4 || '-';
+      if (summaryIdLast4) summaryIdLast4.textContent = currentSelection.phone_last3 ? '手機末三碼 '+currentSelection.phone_last3 : '-';
       document.getElementById('summary-location').textContent = currentSelection.location || '-';
       document.getElementById('summary-venue').textContent = currentSelection.venue || '-';
       document.getElementById('summary-day').textContent = currentSelection.day || '-';
@@ -3101,8 +3004,7 @@
       const container = document.getElementById('records-list');
       if (!container) return;
       
-      const currentUserKey = `${currentSelection.phone}|${currentSelection.id_last4}`;
-      const userRecords = allRecords.filter(r => `${normalizePhoneNumber(r.phone)}|${r.id_last4 || ''}` === currentUserKey);
+      const userRecords = Array.isArray(allRecords) ? allRecords : [];
       
       if (userRecords.length === 0) {
         container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">目前查無登記紀錄，請接續選擇場地與時段進行登記。</div>';
@@ -4028,9 +3930,7 @@
     }
 
     function getCurrentUserRecords() {
-      if (!currentSelection.phone || !currentSelection.id_last4) return [];
-      const currentUserKey = `${normalizePhoneNumber(currentSelection.phone)}|${currentSelection.id_last4}`;
-      return allRecords.filter(r => `${normalizePhoneNumber(r.phone)}|${r.id_last4 || ''}` === currentUserKey);
+      return Array.isArray(allRecords) ? allRecords : [];
     }
 
     function renderLotteryResults() {
@@ -4149,192 +4049,91 @@
       if (verifyBtn) {
         verifyBtn.addEventListener('click', async function(e) {
           e.preventDefault();
-          const nameEl = document.getElementById('member-name');
-          const phoneEl = document.getElementById('member-phone');
-          const idLast4El = document.getElementById('member-id-last4');
-          const name = nameEl.value.trim();
-          const phone = normalizePhoneNumber(phoneEl.value);
-          const idLast4 = idLast4El ? idLast4El.value.trim() : '';
-          const msg = document.getElementById('verification-message');
+          const emailEl=document.getElementById('member-email');
+          const last3El=document.getElementById('member-phone-last3');
+          const email=String(emailEl?.value||'').trim().toLowerCase();
+          const last3=String(last3El?.value||'').replace(/\D/g,'');
+          const msg=document.getElementById('verification-message');
 
-          if (!name || !phone || !idLast4) {
-            msg.textContent = '請填寫姓名、手機號碼和身分證後4碼';
-            msg.style.backgroundColor = '#FEE2E2';
-            msg.style.color = '#7F1D1D';
-            msg.style.display = 'block';
+          if(!email || !email.includes('@') || !/^[0-9]{3}$/.test(last3)){
+            msg.textContent='請輸入登記時填寫的 Email 與手機末三碼';
+            msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
             return;
           }
 
-          if (!/^09\d{8}$/.test(phone)) {
-            msg.textContent = '請輸入正確的手機號碼格式，例如 0912345678';
-            msg.style.backgroundColor = '#FEE2E2';
-            msg.style.color = '#7F1D1D';
-            msg.style.display = 'block';
+          const currentTurnstileToken=turnstileToken ||
+            (window.turnstile && typeof window.turnstile.getResponse==='function' ? window.turnstile.getResponse() : '');
+          if(!currentTurnstileToken){
+            msg.textContent='請先完成機器人驗證';
+            msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
             return;
           }
 
-          if (!/^\d{4}$/.test(idLast4)) {
-            msg.textContent = '請輸入正確的身分證後4碼';
-            msg.style.backgroundColor = '#FEE2E2';
-            msg.style.color = '#7F1D1D';
-            msg.style.display = 'block';
-            return;
-          }
-
-          const currentTurnstileToken =
-            turnstileToken ||
-            (window.turnstile && typeof window.turnstile.getResponse === 'function'
-              ? window.turnstile.getResponse()
-              : '');
-
-          if (!currentTurnstileToken) {
-            msg.textContent = '請先完成機器人驗證';
-            msg.style.backgroundColor = '#FEE2E2';
-            msg.style.color = '#7F1D1D';
-            msg.style.display = 'block';
-            return;
-          }
-
-          try {
-            verifyBtn.disabled = true;
-            verifyBtn.textContent = '驗證中...';
-
-            const turnstileResponse = await fetch('https://wsvsdwuksuzcjisnpyin.supabase.co/functions/v1/verify-turnstile', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ token: currentTurnstileToken })
+          try{
+            verifyBtn.disabled=true; verifyBtn.textContent='驗證中...';
+            const response=await fetch('https://wsvsdwuksuzcjisnpyin.supabase.co/functions/v1/applicant-login-v2',{
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({email,phoneLast3:last3,turnstileToken:currentTurnstileToken})
             });
+            const result=await response.json().catch(()=>({ok:false}));
+            turnstileToken='';
+            if(window.turnstile) window.turnstile.reset();
 
-            const turnstileResult = await turnstileResponse.json().catch(() => ({ success: false }));
-
-            if (!turnstileResponse.ok || !turnstileResult.success) {
-              const errorCodes = Array.isArray(turnstileResult.errorCodes)
-                ? turnstileResult.errorCodes
-                : [];
-
-              let detail = '';
-              if (errorCodes.length) {
-                detail = `（${errorCodes.join(', ')}）`;
-              } else if (turnstileResult.message) {
-                detail = `（${turnstileResult.message}）`;
-              }
-
-              msg.textContent = `機器人驗證未通過${detail}`;
-              msg.style.backgroundColor = '#FEE2E2';
-              msg.style.color = '#7F1D1D';
-              msg.style.display = 'block';
-
-              console.warn('Turnstile verify failed:', turnstileResult);
-
-              turnstileToken = '';
-              if (window.turnstile) window.turnstile.reset();
-              if (msg && typeof msg.scrollIntoView === 'function') {
-                msg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-              }
+            if(!response.ok || result.ok!==true || !result.session_token){
+              msg.textContent=result.code==='temporarily_blocked'
+                ? '驗證錯誤次數過多，請稍後再試。'
+                : 'Email 或手機末三碼不符登記資料。';
+              msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
               return;
             }
-          } catch (error) {
-            console.error('Turnstile verification failed', error);
-            msg.textContent = '機器人驗證服務暫時無法使用，請稍後再試（network-error）';
-            msg.style.backgroundColor = '#FEE2E2';
-            msg.style.color = '#7F1D1D';
-            msg.style.display = 'block';
-            turnstileToken = '';
-            if (window.turnstile) window.turnstile.reset();
-            return;
-          } finally {
-            verifyBtn.disabled = false;
-            verifyBtn.textContent = '驗證身分並進入';
+
+            sessionStorage.setItem('court_applicant_session_v2',result.session_token);
+            currentSelection.email=email;
+            currentSelection.phone_last3=last3;
+            currentSelection.location=config.location_1;
+            currentSelection.venue=''; currentSelection.day=''; currentSelection.time='';
+
+            await window.dataSdk.refresh();
+            await window.refreshPublicSlotCounts?.();
+            currentSelection.name=allRecords?.[0]?.name || '申請人';
+
+            const verifyForm=document.getElementById('verify-form');
+            const memberDisplay=document.getElementById('member-display');
+            if(verifyForm) verifyForm.style.display='none';
+            if(memberDisplay) memberDisplay.style.display='block';
+
+            const displayName=document.getElementById('display-name');
+            const displayPhone=document.getElementById('display-phone');
+            if(displayName) displayName.textContent=currentSelection.name;
+            if(displayPhone) displayPhone.textContent=`${result.email_masked||email}｜手機末三碼 ${last3}`;
+
+            const verificationSection=document.getElementById('verification-section');
+            if(verificationSection) verificationSection.classList.add('verified');
+            const headerMemberName=document.getElementById('header-member-name');
+            const headerMemberPhone=document.getElementById('header-member-phone');
+            if(headerMemberName) headerMemberName.textContent=currentSelection.name;
+            if(headerMemberPhone) headerMemberPhone.textContent=`${result.email_masked||email}｜末三碼 ${last3}`;
+            const headerMemberRow=document.getElementById('header-member-row');
+            if(headerMemberRow) headerMemberRow.style.display='flex';
+
+            const memberTabsWrap=document.getElementById('member-tabs-wrap');
+            if(memberTabsWrap) memberTabsWrap.style.display='block';
+
+            renderLocationButtons(); renderVenueButtons(); renderDateButtons(); renderTimeButtons();
+            const locationBtn=document.querySelector('#location-buttons .button-option');
+            if(locationBtn) locationBtn.click();
+            enableVenueButtons(); disableDateButtons(); disableTimeButtons();
+            updateSummary(); renderRecords(); renderLotteryResults();
+            setFlowStep(2);
+            switchMemberTab('records');
+          }catch(error){
+            console.error('Applicant login failed',error);
+            msg.textContent='驗證服務暫時無法使用，請稍後再試。';
+            msg.style.backgroundColor='#FEE2E2'; msg.style.color='#7F1D1D'; msg.style.display='block';
+          }finally{
+            verifyBtn.disabled=false; verifyBtn.textContent='驗證身分並進入';
           }
-
-          currentSelection.name = name;
-          currentSelection.phone = phone;
-          currentSelection.id_last4 = idLast4;
-
-          const verifyForm = document.getElementById('verify-form');
-          const memberDisplay = document.getElementById('member-display');
-          const locationSection = document.getElementById('location-section');
-          const venueSection = document.getElementById('venue-section');
-          const dateSection = document.getElementById('date-section');
-          const timeSection = document.getElementById('time-section');
-          const summarySection = document.getElementById('summary-section');
-          const recordsSection = document.getElementById('records-section');
-
-          if (verifyForm) verifyForm.style.display = 'none';
-          if (memberDisplay) memberDisplay.style.display = 'block';
-          
-          const displayName = document.getElementById('display-name');
-          const displayPhone = document.getElementById('display-phone');
-          if (displayName) displayName.textContent = name;
-          if (phoneEl) phoneEl.value = phone;
-          if (displayPhone) displayPhone.textContent = `${phone}｜後4碼 ${idLast4}`;
-
-          const verificationSection = document.getElementById('verification-section');
-          if (verificationSection) verificationSection.classList.add('verified');
-
-          const headerMemberMini = document.getElementById('header-member-mini');
-          const headerMemberName = document.getElementById('header-member-name');
-          const headerMemberPhone = document.getElementById('header-member-phone');
-          if (headerMemberName) headerMemberName.textContent = name;
-          if (headerMemberPhone) headerMemberPhone.textContent = `${phone}｜末4碼 ${idLast4}`;
-          const headerMemberRow = document.getElementById('header-member-row');
-          if (headerMemberRow) headerMemberRow.style.display = 'flex';
-
-          // 顯示登入後功能導覽，預設進入「場次登記」
-          const memberTabsWrap = document.getElementById('member-tabs-wrap');
-          if (memberTabsWrap) memberTabsWrap.style.display = 'block';
-
-          if (locationSection) locationSection.style.display = 'block';
-          if (venueSection) venueSection.style.display = 'block';
-          if (dateSection) dateSection.style.display = 'block';
-          if (timeSection) timeSection.style.display = 'block';
-          if (summarySection) summarySection.style.display = 'block';
-
-          const registerTabPanel = document.getElementById('register-tab-panel');
-          const recordsTabPanel = document.getElementById('records-tab-panel');
-          const resultsTabPanel = document.getElementById('results-tab-panel');
-
-          const rulesTabPanel = document.getElementById('rules-tab-panel');
-
-          if (registerTabPanel) registerTabPanel.style.display = 'none';
-          if (recordsTabPanel) recordsTabPanel.style.display = 'none';
-          if (resultsTabPanel) resultsTabPanel.style.display = 'none';
-          if (rulesTabPanel) rulesTabPanel.style.display = 'none';
-
-          document.querySelectorAll('.member-folder-tab').forEach(btn=>btn.classList.remove('active'));
-          setFlowStep(2);
-          
-
-          // Auto-select 北投會館
-          currentSelection.location = config.location_1;
-          currentSelection.venue = '';
-          currentSelection.day = '';
-          currentSelection.time = '';
-          
-          // Render ALL buttons including location
-          renderLocationButtons();
-          renderVenueButtons();
-          renderDateButtons();
-          renderTimeButtons();
-          
-          // Auto-click location button to select it
-          const locationBtn = document.querySelector('#location-buttons .button-option');
-          if (locationBtn) {
-            locationBtn.click();
-          }
-          
-          // Enable venue buttons since location is already selected
-          enableVenueButtons();
-          
-          // Disable date, time initially
-          disableDateButtons();
-          disableTimeButtons();
-          
-          updateSummary();
-          renderRecords();
-          switchMemberTab('register');
         });
       }
 
@@ -4353,9 +4152,8 @@
           const timeSection = document.getElementById('time-section');
           const summarySection = document.getElementById('summary-section');
           const recordsSection = document.getElementById('records-section');
-          const nameEl = document.getElementById('member-name');
-          const phoneEl = document.getElementById('member-phone');
-          const idLast4El = document.getElementById('member-id-last4');
+          const emailEl = document.getElementById('member-email');
+          const phoneLast3El = document.getElementById('member-phone-last3');
           const verificationMessage = document.getElementById('verification-message');
 
           if (verifyForm) verifyForm.style.display = 'block';
@@ -4369,9 +4167,14 @@
           const fontMenuTrigger = document.getElementById('font-menu-trigger');
           if (fontMenuPopover) fontMenuPopover.style.display = 'none';
           if (fontMenuTrigger) fontMenuTrigger.setAttribute('aria-expanded', 'false');
-          if (nameEl) nameEl.value = '';
-          if (phoneEl) phoneEl.value = '';
-          if (idLast4El) idLast4El.value = '';
+          if (emailEl) emailEl.value = '';
+          if (phoneLast3El) phoneLast3El.value = '';
+          const sessionToken=sessionStorage.getItem('court_applicant_session_v2')||'';
+          if(sessionToken){
+            const client=window.__venueLotterySupabaseClient;
+            if(client) client.rpc('court_applicant_logout_v2',{p_session_token:sessionToken}).catch(()=>{});
+          }
+          sessionStorage.removeItem('court_applicant_session_v2');
           turnstileToken = '';
           if (window.turnstile) window.turnstile.reset();
           if (verificationMessage) verificationMessage.style.display = 'none';
@@ -4397,7 +4200,7 @@
           document.querySelectorAll('.member-folder-tab').forEach(btn=>btn.classList.remove('active'));
           setFlowStep(1);
 
-          currentSelection = { name: '', phone: '', id_last4: '', location: '', venue: '', day: '', time: '' };
+          currentSelection = { name: '', email: '', phone_last3: '', location: '', venue: '', day: '', time: '' };
           const recordsList = document.getElementById('records-list');
           if (recordsList) recordsList.innerHTML = '';
           disableVenueButtons();
