@@ -3964,6 +3964,17 @@ body .ux-review-edit{align-items:end}
 #savePendingRecordStatusBtn{margin-left:auto;display:block}
 @media(max-width:1100px){.records-fixed-filter .records-shared-toolbar{grid-template-columns:repeat(3,minmax(130px,1fr))!important}}
 @media(max-width:650px){.records-fixed-filter .records-shared-toolbar{grid-template-columns:repeat(2,minmax(130px,1fr))!important}.records-redesign-header,.records-fixed-filter-title,.records-section-caption{display:block}.records-quick-actions{padding:13px}}
+
+.btn-danger-outline{
+  background:#fff!important;
+  color:#b91c1c!important;
+  border:1px solid #fecaca!important;
+}
+.btn-danger-outline:hover{
+  background:#fff1f2!important;
+  color:#991b1b!important;
+  border-color:#fca5a5!important;
+}
 </style>
 </head>
 <body>
@@ -8536,6 +8547,7 @@ async function loadAccountList(){
         <button class="btn ${a.is_active?'btn-primary':'btn-gray'}" data-toggle="${a.id}" data-active="${a.is_active}">
           ${a.is_active?'停用':'啟用'}
         </button>
+        ${!a.is_active && String(a.id)!==String(currentAdmin?.id||'') ? '<button class="btn btn-danger-outline" data-delete-admin="'+a.id+'" data-delete-name="'+escapeHtml(a.display_name||a.username)+'" data-delete-username="'+escapeHtml(a.username)+'">刪除</button>' : ''}
       </td>
     </tr>
   `).join('') : '<tr><td colspan="5" class="accounts-loading">目前尚無管理員帳號</td></tr>';
@@ -8558,6 +8570,29 @@ async function loadAccountList(){
     btn.disabled=courtAuthLoginActive;
     btn.title=courtAuthLoginActive?'請透過 Supabase Auth 重設密碼':'';
     btn.onclick=()=>resetPassword(btn.dataset.reset);
+  });
+
+  document.querySelectorAll('[data-delete-admin]').forEach(btn=>btn.onclick=async()=>{
+    if(!courtAuthLoginActive){
+      alert('刪除管理員帳號僅開放新版 Supabase Auth 後台使用。');
+      return;
+    }
+    const name=btn.dataset.deleteName||btn.dataset.deleteUsername||'此帳號';
+    const username=btn.dataset.deleteUsername||'';
+    const body='確定要永久刪除「'+escapeHtml(name)+'」'+(username?'（'+escapeHtml(username)+'）':'')+'嗎？<br><br>此操作不可復原；既有操作紀錄會保留。';
+    const okConfirm=await confirmModal('確認刪除管理員帳號',body);
+    if(!okConfirm)return;
+    const {data,error}=await authMigrationClient.rpc('court_admin_delete_account_v1',{p_id:btn.dataset.deleteAdmin});
+    if(error){
+      const msg=String(error.message||'');
+      if(msg.includes('disable account before deletion')) alert('請先停用此帳號，再執行刪除。');
+      else if(msg.includes('cannot delete current account')) alert('不能刪除目前登入中的帳號。');
+      else if(msg.includes('cannot delete last active super admin')) alert('不能刪除最後一個啟用中的超級管理員。');
+      else alert('刪除帳號失敗：'+msg);
+      return;
+    }
+    alert('已刪除管理員帳號「'+name+'」。');
+    await loadAccountList();
   });
 }
 function resetPassword(id){
