@@ -5162,12 +5162,19 @@ function clearAdminSessionMarkers(){
   try{sessionStorage.removeItem(ADMIN_SESSION_LAST_KEY);sessionStorage.removeItem(ADMIN_SESSION_START_KEY);
       sessionStorage.removeItem('venue_admin_session');}catch(_){}
 }
-function markAdminActivity(){
+function markAdminActivity(event){
   if(!courtAuthLoginActive||adminSigningOut) return;
   const now=Date.now();
+  // Check expiry BEFORE recording this click; otherwise the first click after idle could
+  // resurrect an expired session and trigger an unauthorized action.
+  if(adminSessionHasExpired(now)){
+    if(event?.cancelable)event.preventDefault();
+    event?.stopImmediatePropagation?.();
+    void endAdminSession('idle',true);
+    return;
+  }
   const last=adminStoredTimestamp(ADMIN_SESSION_LAST_KEY);
-  // Only users' real interaction renews activity; background refresh never renews it.
-  if(!last || now-last>=10000) adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now);
+  if(now-last>=10000) adminSaveTimestamp(ADMIN_SESSION_LAST_KEY,now);
 }
 function adminSessionHasExpired(now=Date.now()){
   return ADMIN_SESSION_POLICY.expired(adminStoredTimestamp(ADMIN_SESSION_LAST_KEY),now)
@@ -5235,7 +5242,7 @@ function beginAdminSession(restored=false){
   if(!adminSessionListenersBound){
     adminSessionListenersBound=true;
     ['pointerdown','keydown','touchstart'].forEach(type=>
-      document.addEventListener(type,markAdminActivity,{passive:true}));
+      document.addEventListener(type,markAdminActivity,{capture:true,passive:false}));
     document.addEventListener('visibilitychange',()=>{
       if(!document.hidden)void checkAdminIdleSession();
     });
