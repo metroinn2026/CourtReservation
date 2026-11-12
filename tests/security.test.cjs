@@ -35,6 +35,24 @@ test('future timestamps and missing timestamps fail closed',()=>{
   assert.equal(policy.expired(now+1000,now),true);
   assert.equal(policy.mustReauthenticate(null,now),true);
 });
+test('capacity grid places weekdays across and time slots down without changing data keys',()=>{
+  const start=admin.indexOf('function renderBulkCapacityTable(){');
+  const end=admin.indexOf('function fillDefaultCapacity(',start);
+  assert.ok(start>=0&&end>start);
+  const fn=admin.slice(start,end);
+  assert.match(fn,/class="capacity-transposed-table"/);
+  assert.match(fn,/<th scope="col" style="width:122px;">時間<\/th>/);
+  assert.match(fn,/\$\{days\.map\(day=>`<th scope="col"/);
+  assert.match(fn,/\$\{times\.map\(st=>\{/);
+  assert.match(fn,/<th scope="row" class="capacity-time-heading"/);
+  assert.match(fn,/\$\{days\.map\(day=>\{/);
+  for(const key of ['data-venue','data-day','data-start','data-slot']){
+    assert.ok(fn.includes(key+'="'),key);
+  }
+  assert.match(fn,/settingKey\(venue,day,slot\)/);
+  assert.match(fn,/countSlot\(venue,day,st,location\)/);
+  assert.match(fn,/document\.querySelectorAll\('\.cap-closed-input'\)/);
+});
 test('admin uses tab-scoped storage and no service role keys',()=>{
   assert.match(admin,/storage:window\.sessionStorage/);
   assert.doesNotMatch(admin,/sb_secret_|SUPABASE_SERVICE_ROLE_KEY/);
