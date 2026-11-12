@@ -141,6 +141,54 @@ test('admin sessions terminate on Supabase logout and across same-origin tabs',(
   assert.match(admin,/event\.key===ADMIN_SESSION_LOGOUT_EVENT/);
   assert.match(admin,/localStorage\.setItem\(ADMIN_SESSION_LOGOUT_EVENT,String\(Date\.now\(\)\)\)/);
 });
+test('admin logout revokes remote session before clearing Auth storage',async()=>{
+  const start=admin.indexOf('async function endAdminSession(');
+  const end=admin.indexOf('async function validateAdminSession(',start);
+  assert.ok(start>=0&&end>start);
+  const calls=[];
+  const sandbox={
+    adminSigningOut:false,courtAuthLoginActive:true,currentAdmin:{id:'mock'},
+    adminSessionEpoch:1,adminIdleTimer:null,allRecords:[{id:1}],allLogs:[1],
+    secureIdentityBySubmission:new Map(),secureEmailBySubmission:new Map(),
+    revealedSensitiveKeys:new Set(),secureIdentityAuthenticated:true,
+    ADMIN_SESSION_LOGOUT_EVENT:'logout',Date:{now:()=>1700000000000},
+    localStorage:{setItem:()=>calls.push('broadcast')},
+    clearInterval:()=>{},setTimeout,clearTimeout,
+    clearAdminSessionMarkers:()=>calls.push('clear-token'),
+    document:{getElementById:()=>({classList:{add:()=>calls.push('hide')}})},
+    authMigrationClient:{auth:{signOut:async()=>{calls.push('remote-revoke')}}},
+    console:{warn:()=>{}},alert:()=>{},location:{replace:()=>calls.push('redirect')}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  await sandbox.endAdminSession('manual',false);
+  assert.ok(calls.indexOf('remote-revoke')>=0);
+  assert.ok(calls.indexOf('remote-revoke')<calls.indexOf('clear-token'));
+  assert.ok(calls.indexOf('hide')<calls.indexOf('remote-revoke'));
+  assert.equal(sandbox.courtAuthLoginActive,false);
+});
+test('failed remote signout still clears local Auth and redirects',async()=>{
+  const start=admin.indexOf('async function endAdminSession(');
+  const end=admin.indexOf('async function validateAdminSession(',start);
+  const calls=[];
+  const sandbox={
+    adminSigningOut:false,courtAuthLoginActive:true,currentAdmin:{id:'mock'},
+    adminSessionEpoch:1,adminIdleTimer:null,allRecords:[],allLogs:[],
+    secureIdentityBySubmission:new Map(),secureEmailBySubmission:new Map(),
+    revealedSensitiveKeys:new Set(),secureIdentityAuthenticated:false,
+    ADMIN_SESSION_LOGOUT_EVENT:'logout',Date:{now:()=>1700000000000},
+    localStorage:{setItem:()=>{}},clearInterval:()=>{},
+    setTimeout,clearTimeout,clearAdminSessionMarkers:()=>calls.push('clear-token'),
+    document:{getElementById:()=>({classList:{add:()=>{}}})},
+    authMigrationClient:{auth:{signOut:async()=>{throw Error('offline')}}},
+    console:{warn:()=>{}},alert:()=>{},location:{replace:()=>calls.push('redirect')}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(admin.slice(start,end),sandbox);
+  await sandbox.endAdminSession('manual',false);
+  assert.ok(calls.includes('clear-token'));
+  assert.ok(calls.includes('redirect'));
+});
 test('local admin Auth storage is cleared even if network logout fails',()=>{
   const start=admin.indexOf('function clearAdminSessionMarkers(){');
   const end=admin.indexOf('function markAdminActivity(',start);
