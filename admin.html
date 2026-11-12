@@ -5161,8 +5161,14 @@ function adminSaveTimestamp(key,value){
   try{sessionStorage.setItem(key,String(value));}catch(_){}
 }
 function clearAdminSessionMarkers(){
-  try{sessionStorage.removeItem(ADMIN_SESSION_LAST_KEY);sessionStorage.removeItem(ADMIN_SESSION_START_KEY);
-      sessionStorage.removeItem('venue_admin_session');}catch(_){}
+  try{
+    sessionStorage.removeItem(ADMIN_SESSION_LAST_KEY);
+    sessionStorage.removeItem(ADMIN_SESSION_START_KEY);
+    sessionStorage.removeItem('venue_admin_session');
+    // This is this app's configured Supabase Auth storage key, not a shared browser session.
+    // Clear it immediately, even when remote signOut cannot reach the network.
+    sessionStorage.removeItem('court-admin-auth');
+  }catch(_){}
 }
 function markAdminActivity(event){
   if(!courtAuthLoginActive && !adminSigningOut)return;
