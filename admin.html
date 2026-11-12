@@ -8577,6 +8577,7 @@ async function loadAccountList(){
         </span>
       </td>
       <td class="accounts-action-cell">
+        <button class="btn btn-gray" data-edit-profile="${a.id}" data-edit-name="${escapeHtml(a.display_name)}" data-edit-username="${escapeHtml(a.username)}">編輯資料</button>
         <button class="btn btn-gray" data-reset="${a.id}">改密碼</button>
         <button class="btn ${a.is_active?'btn-primary':'btn-gray'}" data-toggle="${a.id}" data-active="${a.is_active}">
           ${a.is_active?'停用':'啟用'}
@@ -8585,6 +8586,44 @@ async function loadAccountList(){
       </td>
     </tr>
   `).join('') : '<tr><td colspan="5" class="accounts-loading">目前尚無管理員帳號</td></tr>';
+
+  document.querySelectorAll('[data-edit-profile]').forEach(btn=>btn.onclick=async()=>{
+    const accountClient=await accountManagementClient();
+    if(!accountClient){
+      alert('請先完成 Supabase 資料庫授權，且須使用目前登入帳號所對應的超級管理員身分。');
+      return;
+    }
+    const currentName=btn.dataset.editName||'';
+    const username=btn.dataset.editUsername||'';
+    const nextName=prompt('修改顯示名稱\n\n帳號：'+username+'\n\n請輸入新的顯示名稱：',currentName);
+    if(nextName===null)return;
+    const clean=String(nextName).trim();
+    if(!clean){alert('顯示名稱不可空白。');return;}
+    if(clean.length>50){alert('顯示名稱最多 50 個字。');return;}
+    if(clean===currentName)return;
+
+    const {data,error}=await accountClient.rpc('court_admin_update_account_profile_v1',{
+      p_id:btn.dataset.editProfile,
+      p_display_name:clean
+    });
+    if(error){
+      const msg=String(error.message||'');
+      if(msg.includes('invalid display name')) alert('顯示名稱格式不正確。');
+      else alert('修改基本資料失敗：'+msg);
+      return;
+    }
+
+    if(String(btn.dataset.editProfile)===String(currentAdmin?.id||'')){
+      currentAdmin.display_name=clean;
+      sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
+      document.getElementById('topUser').textContent=clean;
+      document.getElementById('sideUser').textContent=clean+'｜'+roleName(currentAdmin.role);
+      document.getElementById('userAvatar').textContent=(clean||currentAdmin.username||'A').slice(0,1).toUpperCase();
+    }
+
+    alert('顯示名稱已更新。');
+    await loadAccountList();
+  });
 
   document.querySelectorAll('.account-role-select').forEach(sel=>sel.onchange=async()=>{
     const accountClient=await accountManagementClient();
