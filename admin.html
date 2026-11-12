@@ -5194,7 +5194,8 @@ async function endAdminSession(reason='signed-out',notify=false){
   adminSessionEpoch++;
   courtAuthLoginActive=false;
   currentAdmin=null;
-  clearAdminSessionMarkers();
+  // Preserve the Auth token briefly for Supabase to revoke the remote session.
+  // UI actions and in-flight responses are blocked synchronously from this point.
   // Notify other admin tabs; only a timestamp is shared, never tokens or identity.
   try{localStorage.setItem(ADMIN_SESSION_LOGOUT_EVENT,String(Date.now()));}catch(_){}
   if(adminIdleTimer){clearInterval(adminIdleTimer);adminIdleTimer=null;}
@@ -5204,7 +5205,21 @@ async function endAdminSession(reason='signed-out',notify=false){
   revealedSensitiveKeys.clear();secureIdentityAuthenticated=false;
   const app=document.getElementById('app');
   if(app)app.classList.add('hidden');
-  try{await authMigrationClient.auth.signOut({scope:'local'});}catch(e){console.warn('Session 登出未完成',e);}
+  let revokeTimeout=null;
+  try{
+    // Offline networks must not trap administrators on a page with cached credentials.
+    await Promise.race([
+      authMigrationClient.auth.signOut({scope:'local'}),
+      new Promise((_,reject)=>{
+        revokeTimeout=setTimeout(()=>reject(new Error('Supabase 登出逾時')),5000);
+      })
+    ]);
+  }catch(e){
+    console.warn('遠端 Session 撤銷未確認，已清除本機憑證',e);
+  }finally{
+    if(revokeTimeout!==null)clearTimeout(revokeTimeout);
+    clearAdminSessionMarkers();
+  }
   if(notify)alert(reason==='idle'?'管理員閒置超過 20 分鐘，已自動登出。':'管理員登入期限已到或權限已變更，請重新登入。');
   location.replace('/admin.html');
 }
@@ -10335,8 +10350,9 @@ document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage
 (async function init(){
   const url=new URL(location.href);
   if(url.searchParams.get('reset')==='1'){
-    clearAdminSessionMarkers();
-    await authMigrationClient.auth.signOut({scope:'local'}).catch(()=>{});
+    try{await authMigrationClient.auth.signOut({scope:'local'});}
+    catch(e){console.warn('重設 Session 時遠端登出未確認',e);}
+    finally{clearAdminSessionMarkers();}
   }
 
   try{
