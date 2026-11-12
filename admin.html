@@ -4007,7 +4007,7 @@ body .ux-review-edit{align-items:end}
     <div class="login-wrap">
       <div class="login-card">
         <h2>後台登入</h2>
-        <p>請輸入管理者帳號與密碼。若系統尚無帳號，會自動顯示建立第一位超級管理員。</p>
+        <p>請使用已核准的 Supabase Auth 管理員帳號登入。登入後即可依角色權限存取後台資料。</p>
         <div id="bootstrapBox" class="hidden">
           <div class="msg info">目前尚未建立後台帳號，請先建立第一位超級管理員。</div>
           <div class="small" style="margin:10px 0">請先以已授權的 Supabase Auth 帳號驗證身分；此帳號需先加入匯入管理員名單。</div>
@@ -4020,9 +4020,10 @@ body .ux-review-edit{align-items:end}
           <hr style="border:none;border-top:1px solid var(--border);margin:22px 0;">
         </div>
         <div id="loginBox">
-          <div class="field"><label>帳號</label><input id="loginUsername" autocomplete="username" placeholder="請輸入帳號"></div>
+          <div class="field"><label id="loginUserLabel">Supabase Auth Email</label><input id="loginUsername" type="email" autocomplete="username" placeholder="請輸入 Supabase Auth Email"></div>
           <div class="field"><label>密碼</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="請輸入密碼"></div>
           <button id="loginBtn" class="btn btn-primary" style="width:100%;">登入後台</button>
+          <button id="legacyLoginToggle" type="button" class="btn btn-gray" style="width:100%;margin-top:10px;">尚未移轉帳號：使用舊版帳號驗證</button>
         </div>
         <div id="authMigrationTestBox" style="display:none;margin-top:20px;border-top:1px solid #dce4ed;padding-top:18px">
   <strong>Supabase Auth 登入驗證（測試入口）</strong>
@@ -4076,9 +4077,18 @@ const SUPABASE_KEY = 'sb_publishable_bH4MK0hvMqMSel3agqVwcw_aFsF3nIl';
 // 後台資料查詢維持 anon 連線，避免表單匯入登入將主連線切成 authenticated，
 // 導致只允許 anon 的既有讀取政策回傳空清單。匯入授權使用獨立 Supabase client。
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
-const importDb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storageKey:'court-reservation-form-import-auth',persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}});
-const authMigrationClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{storageKey:'court-admin-auth-migration-test',persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}});
+const authMigrationClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth:{
+    storageKey:'court-admin-auth',
+    storage:window.sessionStorage,
+    persistSession:true,
+    autoRefreshToken:true,
+    detectSessionInUrl:false
+  }
+});
+const importDb = authMigrationClient;
 let courtAuthLoginActive=false;
+let legacyLoginMode=false;
 function reviewDbClient(){return courtAuthLoginActive?authMigrationClient:importDb;}
 async function accountManagementClient(){
   if(courtAuthLoginActive) return authMigrationClient;
@@ -4110,11 +4120,16 @@ async function loginWithCourtAuth(){
   if(!email||!password){showMsg('loginMsg','請輸入 Supabase Auth 電子郵件與密碼');return;}
   const {error}=await authMigrationClient.auth.signInWithPassword({email,password});
   document.getElementById('loginPassword').value='';
-  if(error){showMsg('loginMsg','登入失敗，請確認帳號與密碼');return;}
+  if(error){showMsg('loginMsg','登入失敗，請確認 Email 與密碼');return;}
   const {data,error:roleError}=await authMigrationClient.rpc('get_court_admin_identity_v1');
-  if(roleError||!data){await authMigrationClient.auth.signOut();showMsg('loginMsg','未核准此帳號的後台管理權限');return;}
+  if(roleError||!data){
+    await authMigrationClient.auth.signOut();
+    showMsg('loginMsg','此 Supabase Auth 帳號尚未核准後台管理權限');
+    return;
+  }
   courtAuthLoginActive=true;
   currentAdmin=data;
+  sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
   await enterApp();
 }
 async function deleteCourtRecords(ids){
@@ -4676,9 +4691,20 @@ async function login(){
   const {data,error}=await db.rpc('admin_login',{p_username:username,p_password:password});
   document.getElementById('loginPassword').value='';
   if(error||!data){ showMsg('loginMsg','帳號或密碼錯誤'); return; }
-  currentAdmin={id:data.id,username:data.username,display_name:data.display_name,role:data.role};
-  sessionStorage.setItem('venue_admin_session', JSON.stringify(currentAdmin));
-  await enterApp();
+
+  const {data:{user}}=await authMigrationClient.auth.getUser();
+  if(user){
+    const {data:identity,error:identityError}=await authMigrationClient.rpc('get_court_admin_identity_v1');
+    if(!identityError&&identity&&String(identity.id)===String(data.id)){
+      courtAuthLoginActive=true;
+      currentAdmin=identity;
+      sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
+      await enterApp();
+      return;
+    }
+  }
+
+  showMsg('loginMsg','舊版帳密驗證成功，但此安全後台需要 Supabase Auth 授權。請改用已核准的 Supabase Auth Email 登入。','info');
 }
 async function enterApp(){
   document.getElementById('loginPage').classList.add('hidden');
@@ -4712,7 +4738,12 @@ async function loadAllData(){
 
   if(recordsRes.error){
     console.error(recordsRes.error);
-    alert('讀取登記資料失敗，請確認 lottery_records 欄位與權限。');
+    alert('管理員安全授權已失效或尚未完成，請重新使用 Supabase Auth 登入後台。');
+    await authMigrationClient.auth.signOut().catch(()=>{});
+    sessionStorage.removeItem('venue_admin_session');
+    courtAuthLoginActive=false;
+    location.reload();
+    return false;
   }
 
   allRecords=(recordsRes.data||[]).map(r=>({...r,__backendId:r.id}));
@@ -8782,7 +8813,28 @@ function showModal(title,body,onOk,withInput=false,onCancel=null){
   document.getElementById('mOk').onclick=async()=>{ const input=withInput?document.getElementById('modalInput').value:undefined; await onOk(input); el.remove(); };
 }
 
-document.getElementById('loginBtn').onclick=login;
+function setAdminLoginMode(mode='auth'){
+  legacyLoginMode=mode==='legacy';
+  const user=document.getElementById('loginUsername');
+  const label=document.getElementById('loginUserLabel');
+  const btn=document.getElementById('loginBtn');
+  const toggle=document.getElementById('legacyLoginToggle');
+  if(legacyLoginMode){
+    if(label)label.textContent='舊版管理員帳號';
+    if(user){user.type='text';user.placeholder='請輸入舊版管理員帳號';user.value='';}
+    if(btn){btn.textContent='驗證舊版帳號';btn.onclick=login;}
+    if(toggle)toggle.textContent='返回 Supabase Auth 登入';
+  }else{
+    if(label)label.textContent='Supabase Auth Email';
+    if(user){user.type='email';user.placeholder='請輸入 Supabase Auth Email';user.value='';}
+    if(btn){btn.textContent='登入後台';btn.onclick=loginWithCourtAuth;}
+    if(toggle)toggle.textContent='尚未移轉帳號：使用舊版帳號驗證';
+  }
+  document.getElementById('loginPassword').value='';
+  const msg=document.getElementById('loginMsg');if(msg)msg.innerHTML='';
+}
+document.getElementById('loginBtn').onclick=loginWithCourtAuth;
+document.getElementById('legacyLoginToggle').onclick=()=>setAdminLoginMode(legacyLoginMode?'auth':'legacy');
 document.getElementById('createFirstAdminBtn').onclick=async()=>{
   const username=document.getElementById('firstUsername').value.trim(), display_name=document.getElementById('firstDisplayName').value.trim(), password=document.getElementById('firstPassword').value;
   const authEmail=document.getElementById('bootstrapAuthEmail').value.trim(), authPassword=document.getElementById('bootstrapAuthPassword').value;
@@ -9175,25 +9227,38 @@ async function testSupabaseAdminAuthMigration(){
   finally{document.getElementById('authTestPassword').value='';await authMigrationClient.auth.signOut().catch(()=>{});btn.disabled=false;}
 }
 (async function init(){
-  const url = new URL(location.href);
+  const url=new URL(location.href);
   const testBox=document.getElementById('authMigrationTestBox');
+
   if(url.searchParams.get('auth-test')==='1'&&testBox){
     testBox.style.display='block';
     document.getElementById('authTestBtn').onclick=testSupabaseAdminAuthMigration;
   }
-  if(url.searchParams.get('auth-login')==='1'){
-    const loginBox=document.getElementById('loginBox');
-    document.getElementById('bootstrapBox').classList.add('hidden');
-    loginBox.classList.remove('hidden');
-    document.getElementById('loginUsername').placeholder='Supabase Auth 電子郵件';
-    document.getElementById('loginBtn').textContent='使用 Supabase Auth 登入後台（測試）';
-    document.getElementById('loginBtn').onclick=loginWithCourtAuth;
+
+  if(url.searchParams.get('reset')==='1'){
     sessionStorage.removeItem('venue_admin_session');
-    return;
+    await authMigrationClient.auth.signOut().catch(()=>{});
   }
-  if(url.searchParams.get('reset')==='1') sessionStorage.removeItem('venue_admin_session');
-  const saved=sessionStorage.getItem('venue_admin_session');
-  if(saved){ try{ currentAdmin=JSON.parse(saved); await enterApp(); return; }catch(e){ sessionStorage.removeItem('venue_admin_session'); } }
+
+  try{
+    const {data:{user}}=await authMigrationClient.auth.getUser();
+    if(user){
+      const {data,error}=await authMigrationClient.rpc('get_court_admin_identity_v1');
+      if(!error&&data){
+        courtAuthLoginActive=true;
+        currentAdmin=data;
+        sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
+        await enterApp();
+        return;
+      }
+      await authMigrationClient.auth.signOut().catch(()=>{});
+    }
+  }catch(e){
+    console.warn('Supabase Auth session restore failed',e);
+  }
+
+  sessionStorage.removeItem('venue_admin_session');
+  setAdminLoginMode('auth');
   await checkBootstrap();
 })();
 </script>
