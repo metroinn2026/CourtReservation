@@ -4011,7 +4011,7 @@ body .ux-review-edit{align-items:end}
         <div id="bootstrapBox" class="hidden">
           <div class="msg info">目前尚未建立後台帳號，請先建立第一位超級管理員。</div>
           <div class="small" style="margin:10px 0">請先以已授權的 Supabase Auth 帳號驗證身分；此帳號需先加入匯入管理員名單。</div>
-          <div class="field"><label>Supabase Auth Email</label><input id="bootstrapAuthEmail" type="email" autocomplete="username"></div>
+          <div class="field"><label>管理員 Email</label><input id="bootstrapAuthEmail" type="email" autocomplete="username"></div>
           <div class="field"><label>Supabase Auth 密碼</label><input id="bootstrapAuthPassword" type="password" autocomplete="current-password"></div>
           <div class="field"><label>管理員帳號</label><input id="firstUsername" placeholder="例如 admin"></div>
           <div class="field"><label>顯示名稱</label><input id="firstDisplayName" placeholder="例如 Christina"></div>
@@ -4020,7 +4020,7 @@ body .ux-review-edit{align-items:end}
           <hr style="border:none;border-top:1px solid var(--border);margin:22px 0;">
         </div>
         <div id="loginBox">
-          <div class="field"><label id="loginUserLabel">Supabase Auth Email</label><input id="loginUsername" type="email" autocomplete="username" placeholder="請輸入 Supabase Auth Email"></div>
+          <div class="field"><label id="loginUserLabel">管理員 Email</label><input id="loginUsername" type="email" autocomplete="username" placeholder="請輸入 管理員 Email"></div>
           <div class="field"><label>密碼</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="請輸入密碼"></div>
           <button id="loginBtn" class="btn btn-primary" style="width:100%;">登入後台</button>
           <button id="legacyLoginToggle" type="button" class="btn btn-gray" style="width:100%;margin-top:10px;">尚未移轉帳號：使用舊版帳號驗證</button>
@@ -4117,7 +4117,7 @@ async function loadCourtAdminEmails(){
 async function loginWithCourtAuth(){
   const email=document.getElementById('loginUsername').value.trim();
   const password=document.getElementById('loginPassword').value;
-  if(!email||!password){showMsg('loginMsg','請輸入 Supabase Auth 電子郵件與密碼');return;}
+  if(!email||!password){showMsg('loginMsg','請輸入 管理員 Email 與密碼');return;}
   const {error}=await authMigrationClient.auth.signInWithPassword({email,password});
   document.getElementById('loginPassword').value='';
   if(error){showMsg('loginMsg','登入失敗，請確認 Email 與密碼');return;}
@@ -4674,7 +4674,27 @@ async function checkBootstrap(){
     document.getElementById('loginBox').classList.remove('hidden');
   }
 }
-async function createAdminAccount({username, display_name, password, role='staff'}){
+async function callAdminAccountManager(payload){
+  const {data:{session}}=await authMigrationClient.auth.getSession();
+  const token=session?.access_token||'';
+  if(!token) throw new Error('管理員登入已失效，請重新登入');
+  const response=await fetch(SUPABASE_URL+'/functions/v1/court-admin-account-manager',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SUPABASE_KEY},
+    body:JSON.stringify(payload)
+  });
+  const result=await response.json().catch(()=>({ok:false,code:'invalid_response'}));
+  if(!response.ok||result.ok!==true){
+    const err=new Error(result.message||result.code||'操作失敗');
+    err.code=result.code||'request_failed';
+    throw err;
+  }
+  return result;
+}
+
+async function createAdminAccount({email,display_name,password,role='staff'}){
+  return callAdminAccountManager({action:'create',email,displayName:display_name,password,role});
+}){
   const accountClient=await accountManagementClient();
   if(!accountClient) throw new Error('請先完成 Supabase 管理員授權');
   const salt=randomSalt();
@@ -4704,9 +4724,39 @@ async function login(){
     }
   }
 
-  showMsg('loginMsg','舊版帳密驗證成功，但此安全後台需要 Supabase Auth 授權。請改用已核准的 Supabase Auth Email 登入。','info');
+  showMsg('loginMsg','舊版帳密驗證成功，但此安全後台需要 Supabase Auth 授權。請改用已核准的 管理員 Email 登入。','info');
+}
+async function requireFirstPasswordChange(){
+  if(!currentAdmin?.must_change_password) return true;
+  while(true){
+    const first=prompt('此帳號目前使用初始密碼，首次登入必須先設定新的密碼。\n\n請輸入至少 10 碼的新密碼：');
+    if(first===null){
+      await authMigrationClient.auth.signOut().catch(()=>{});
+      sessionStorage.removeItem('venue_admin_session');
+      location.reload();
+      return false;
+    }
+    if(String(first).length<10){alert('新密碼至少需要 10 碼。');continue;}
+    const second=prompt('請再次輸入新密碼：');
+    if(second===null) continue;
+    if(first!==second){alert('兩次輸入的密碼不一致。');continue;}
+    const {error:updateError}=await authMigrationClient.auth.updateUser({password:first});
+    if(updateError){alert('密碼更新失敗：'+updateError.message);continue;}
+    const {error}=await authMigrationClient.rpc('court_admin_complete_first_password_change_v1');
+    if(error){
+      alert('密碼已更新，但帳號狀態更新失敗，請重新登入。');
+      await authMigrationClient.auth.signOut().catch(()=>{});
+      location.reload();
+      return false;
+    }
+    currentAdmin={...currentAdmin,must_change_password:false};
+    sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
+    alert('密碼已更新，現在可以使用後台。');
+    return true;
+  }
 }
 async function enterApp(){
+  if(!(await requireFirstPasswordChange())) return;
   document.getElementById('loginPage').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('topUser').textContent=currentAdmin.display_name||currentAdmin.username;
@@ -5332,7 +5382,7 @@ function renderRecordsPage(){
         <details class="records-authorization-details"><summary>資料庫授權及證號查閱設定</summary>
           <div class="small records-authorization-content">
         🔐 會館會員證號預設遮蔽；授權後可點選眼睛圖示，Go會員不蒐集身分證字號。<br>
-        <label>資料庫授權帳號 <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="Supabase Auth Email" style="max-width:200px" /></label>
+        <label>資料庫授權帳號 <input id="identityAuthEmail" type="email" autocomplete="username" placeholder="管理員 Email" style="max-width:200px" /></label>
         <label>密碼 <input id="identityAuthPassword" type="password" autocomplete="current-password" placeholder="密碼" style="max-width:160px" /></label>
         <button id="identityAuthBtn" type="button" class="btn btn-gray">授權</button><button id="identityRevokeBtn" type="button" class="btn btn-gray">解除授權</button>
         <span id="identityAuthState">${secureIdentityAuthenticated?'已通過授權':'未授權時不顯示完整證號'}</span>
@@ -8534,16 +8584,16 @@ function renderAccountsPage(){
     <div class="panel accounts-page-panel accounts-section accounts-create-panel">
       <div class="accounts-create-grid">
         <div class="field">
-          <label>帳號</label>
-          <input id="newUser" placeholder="例如 staff01">
+          <label>管理員 Email</label>
+          <input id="newEmail" type="email" autocomplete="off" placeholder="例如 staff@example.com">
         </div>
         <div class="field">
           <label>顯示名稱</label>
           <input id="newName" placeholder="例如 王小明">
         </div>
         <div class="field">
-          <label>密碼</label>
-          <input id="newPass" type="password" placeholder="請輸入登入密碼">
+          <label>初始密碼</label>
+          <input id="newPass" type="password" autocomplete="new-password" placeholder="至少 10 碼">
         </div>
         <div class="field">
           <label>角色</label>
@@ -8566,7 +8616,7 @@ function renderAccountsPage(){
           <thead>
             <tr>
               <th>顯示名稱</th>
-              <th>帳號</th>
+              <th>管理員 Email</th>
               <th>角色</th>
               <th>狀態</th>
               <th class="accounts-action-head">操作</th>
@@ -8580,26 +8630,28 @@ function renderAccountsPage(){
     </div>
   `;
 
-  document.querySelector('.accounts-create-panel .accounts-inline-note').textContent='建立或修改後台帳號需先完成 Supabase 管理員授權；一般登入帳號本身不具直接資料庫寫入權限。';
+  document.querySelector('.accounts-create-panel .accounts-inline-note').textContent='建立後會自動產生安全登入身分；新帳號首次登入必須變更初始密碼。此帳號僅能登入本管理系統，不會取得 Supabase Dashboard 權限。';
   document.getElementById('addAccountBtn').onclick=async()=>{
     const accountClient=await accountManagementClient();
     if(!accountClient){alert('請先完成 Supabase 管理員授權');return;}
-    const username=document.getElementById('newUser').value.trim();
+    const email=document.getElementById('newEmail').value.trim().toLowerCase();
     const display_name=document.getElementById('newName').value.trim();
     const password=document.getElementById('newPass').value;
     const role=document.getElementById('newRole').value;
 
-    if(!username||!display_name||!password){
-      alert('請填完整');
+    if(!email||!email.includes('@')||!display_name||!password){
+      alert('請填寫完整的 Email、顯示名稱及初始密碼');
       return;
     }
+    if(password.length<10){alert('初始密碼至少需要 10 碼');return;}
 
     try{
-      await createAdminAccount({username,display_name,password,role});
-      alert('帳號已建立');
+      await createAdminAccount({email,display_name,password,role});
+      alert('帳號已建立。請將管理員 Email 與初始密碼提供給使用者；首次登入會強制變更密碼。');
       renderAccountsPage();
     }catch(e){
-      alert('建立失敗，可能帳號重複');
+      const msg=String(e.message||'');
+      alert('建立失敗：'+(msg.includes('already')?'Email 可能已存在':msg));
       console.error(e);
     }
   };
@@ -8619,7 +8671,7 @@ async function loadAccountList(){
   list.innerHTML=admins.length ? admins.map(a=>`
     <tr>
       <td><strong>${escapeHtml(a.display_name)}</strong></td>
-      <td>${escapeHtml(a.username)}</td>
+      <td>${a.auth_email ? `<div>${escapeHtml(a.auth_email)}</div><div class="small">系統代號：${escapeHtml(a.username)}</div>` : `<div class="small" style="color:#b45309;">尚未移轉登入</div><div class="small">舊帳號：${escapeHtml(a.username)}</div>`}${a.must_change_password?`<div class="small" style="color:#b45309;margin-top:3px;">首次登入須改密碼</div>`:''}</td>
       <td>
         <select class="account-role-select" data-role-admin="${a.id}" data-current-role="${a.role}" ${String(a.id)===String(currentAdmin?.id||'')?'disabled title="不能修改自己目前登入中的權限"':''}>
           <option value="super_admin" ${a.role==='super_admin'?'selected':''}>超級管理員</option>
@@ -8632,8 +8684,9 @@ async function loadAccountList(){
         </span>
       </td>
       <td class="accounts-action-cell">
+        ${!a.auth_linked ? `<button class="btn btn-gray" data-link-auth="${a.id}" data-link-name="${escapeHtml(a.display_name)}">建立登入</button>` : ''}
         <button class="btn btn-gray" data-edit-profile="${a.id}" data-edit-name="${escapeHtml(a.display_name)}" data-edit-username="${escapeHtml(a.username)}">編輯資料</button>
-        <button class="btn btn-gray" data-reset="${a.id}">改密碼</button>
+        <button class="btn btn-gray" data-reset="${a.id}" data-auth-linked="${a.auth_linked}" ${!a.auth_linked?'disabled title="請先建立安全登入"':''}>改密碼</button>
         <button class="btn ${a.is_active?'btn-primary':'btn-gray'}" data-toggle="${a.id}" data-active="${a.is_active}">
           ${a.is_active?'停用':'啟用'}
         </button>
@@ -8642,6 +8695,20 @@ async function loadAccountList(){
     </tr>
   `).join('') : '<tr><td colspan="5" class="accounts-loading">目前尚無管理員帳號</td></tr>';
 
+  document.querySelectorAll('[data-link-auth]').forEach(btn=>btn.onclick=async()=>{
+    const email=prompt('為「'+(btn.dataset.linkName||'此帳號')+'」設定管理員 Email：');
+    if(email===null)return;
+    const cleanEmail=String(email).trim().toLowerCase();
+    if(!cleanEmail||!cleanEmail.includes('@')){alert('請輸入有效的 Email');return;}
+    const password=prompt('請設定至少 10 碼的初始密碼：');
+    if(password===null)return;
+    if(String(password).length<10){alert('初始密碼至少需要 10 碼');return;}
+    try{
+      await callAdminAccountManager({action:'link_legacy',targetAdminId:btn.dataset.linkAuth,email:cleanEmail,password});
+      alert('登入身分已建立。該使用者首次登入時會被要求變更密碼。');
+      await loadAccountList();
+    }catch(e){alert('建立登入失敗：'+(e.message||'未知錯誤'));}
+  });
   document.querySelectorAll('[data-edit-profile]').forEach(btn=>btn.onclick=async()=>{
     const accountClient=await accountManagementClient();
     if(!accountClient){
@@ -8762,14 +8829,21 @@ async function loadAccountList(){
   });
 }
 function resetPassword(id){
-  showModal('重設密碼','請輸入新密碼：',async(input)=>{
+  if(String(id)===String(currentAdmin?.id||'')){
+    alert('目前登入帳號如需修改密碼，請登出後使用重設密碼流程，或於首次登入提示中修改。');
+    return;
+  }
+  showModal('重設初始密碼','請輸入至少 10 碼的新初始密碼：',async(input)=>{
     if(!input){alert('請輸入密碼');return;}
-    const accountClient=await accountManagementClient();
-    if(!accountClient){alert('請先完成 Supabase 管理員授權');return;}
-    const salt=randomSalt(); const password_hash=await makeHash(input,salt);
-    const {error}=await accountClient.rpc('court_admin_reset_legacy_password_v1',{p_id:id,p_salt:salt,p_password_hash:password_hash});
-    if(error){alert('密碼更新失敗：'+error.message);return;}
-    alert('密碼已更新');
+    if(String(input).length<10){alert('密碼至少需要 10 碼');return;}
+    try{
+      await callAdminAccountManager({action:'reset_password',targetAdminId:id,password:input});
+      alert('初始密碼已重設；該帳號下次登入時必須重新設定自己的密碼。');
+      await loadAccountList();
+    }catch(e){
+      if(e.code==='target_not_found') alert('此帳號尚未建立安全登入身分，請先按「建立登入」。');
+      else alert('密碼更新失敗：'+(e.message||'未知錯誤'));
+    }
   }, true);
 }
 
@@ -8825,8 +8899,8 @@ function setAdminLoginMode(mode='auth'){
     if(btn){btn.textContent='驗證舊版帳號';btn.onclick=login;}
     if(toggle)toggle.textContent='返回 Supabase Auth 登入';
   }else{
-    if(label)label.textContent='Supabase Auth Email';
-    if(user){user.type='email';user.placeholder='請輸入 Supabase Auth Email';user.value='';}
+    if(label)label.textContent='管理員 Email';
+    if(user){user.type='email';user.placeholder='請輸入 管理員 Email';user.value='';}
     if(btn){btn.textContent='登入後台';btn.onclick=loginWithCourtAuth;}
     if(toggle)toggle.textContent='尚未移轉帳號：使用舊版帳號驗證';
   }
@@ -9215,7 +9289,7 @@ async function testSupabaseAdminAuthMigration(){
   const email=document.getElementById('authTestEmail')?.value.trim();
   const password=document.getElementById('authTestPassword')?.value;
   const output=document.getElementById('authTestResult');
-  if(!email||!password){output.textContent='請輸入測試用 Supabase Auth 電子郵件與密碼';return;}
+  if(!email||!password){output.textContent='請輸入測試用 管理員 Email 與密碼';return;}
   const btn=document.getElementById('authTestBtn');btn.disabled=true;
   try{
     const {error}=await authMigrationClient.auth.signInWithPassword({email,password});
