@@ -5863,6 +5863,7 @@ function renderRecordsPage(){
   if(!recordState.location) recordState.location=DEFAULT_LOCATION;
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const s=stats();
+  const anomalyCount=buildDataAnomalies().length;
 
   document.getElementById('content').innerHTML=`
     <div class="panel records-main-panel records-main-panel-compact">
@@ -5873,7 +5874,7 @@ function renderRecordsPage(){
             <span>${s.total||allRecords.length} 筆登記</span>
             <span>${s.people||0} 人</span>
             <span>${s.hours||0} 小時</span>
-            ${s.anomaly? `<span class="records-summary-alert">${s.anomaly} 筆待確認</span>` : ''}
+            ${anomalyCount? `<span class="records-summary-alert">${anomalyCount} 筆待確認</span>` : ''}
           </div>
         </div>
         <div class="records-utility-actions">
