@@ -5210,7 +5210,7 @@ function renderAnomalyCenter(issues){
       <div class="panel anomaly-center-clean flat-section" id="anomalyCenter">
         <div class="anomaly-center-head"><h3>異常檢核中心</h3></div>
         <div class="anomaly-info-row">
-          <div class="small">這裡是登記清單的即時檢核提示；審查進度請至「登記資料 → 待確認資料」處理。已審查資料不需重新匯入。</div>
+          <div class="small">需要確認的資料請至「登記資料 → 異常清單」處理。</div>
           <div class="anomaly-total-line">0 項待確認</div>
         </div>
         <div class="flat-empty">目前未發現需人工確認的資料異常。</div>
@@ -5708,23 +5708,19 @@ function renderDashboard(){
       <button type="button" class="stat dashboard-status-card" id="dashPendingLottery">
         <div class="dashboard-card-label">待抽籤場次</div>
         <div class="dashboard-card-num">${pendingLotteryStages.length}</div>
-        <div class="dashboard-card-note">尚有資料未完成抽籤結果</div>
-      </button>
+        </button>
       <button type="button" class="stat dashboard-status-card" id="dashPendingPublish">
         <div class="dashboard-card-label">待公告場次</div>
         <div class="dashboard-card-num">${pendingPublishStages.length}</div>
-        <div class="dashboard-card-note">抽籤結果已完成、尚未公告</div>
-      </button>
+        </button>
       <div class="stat dashboard-status-card static">
         <div class="dashboard-card-label">已公告場次</div>
         <div class="dashboard-card-num">${publishedStages.length}</div>
-        <div class="dashboard-card-note">目前已完成結果公告</div>
-      </div>
+        </div>
       <button type="button" class="stat dashboard-status-card anomaly" id="dashAnomalyCard">
         <div class="dashboard-card-label">系統檢核提示</div>
         <div class="dashboard-card-num">${anomalyIssues.length}</div>
-        <div class="dashboard-card-note">原始檢核提示（非未審數量）</div>
-      </button>
+        </button>
     </div>
 
     ${renderAnomalyCenter(anomalyIssues)}
@@ -5982,7 +5978,6 @@ function renderRecordsPage(){
         </div>
         <div class="records-utility-actions">
           <button id="openFormImportModal" type="button" class="btn btn-gray btn-compact" disabled aria-disabled="true" title="請先完成資料庫授權">匯入表單</button>
-          <button id="openFormAnomaliesModal" type="button" class="btn btn-gray btn-compact" disabled aria-disabled="true" title="請先完成資料庫授權">資格審查</button>
           <details class="records-authorization-details records-authorization-compact">
             <summary class="btn btn-gray btn-compact">資料權限</summary>
             <div class="small records-authorization-content records-auth-popover">
@@ -6047,7 +6042,6 @@ function renderRecordsPage(){
   document.getElementById('identityAuthBtn').onclick=connectSensitiveRecordAccess;
   document.getElementById('identityRevokeBtn').onclick=()=>revokeSensitiveAuthorization();
   document.getElementById('openFormImportModal').onclick=()=>openCourtImportModal('import');
-  document.getElementById('openFormAnomaliesModal').onclick=()=>openCourtImportModal('anomaly');
   document.getElementById('closeCourtImportModal').onclick=closeCourtImportModal;
   document.getElementById('courtImportModal').addEventListener('click',e=>{if(e.target.id==='courtImportModal')closeCourtImportModal();});
 
@@ -6750,7 +6744,7 @@ function renderCapacityPage(){
         </div>
       </div>
 
-      <div class="capacity-open-note">勾選「不開放」會立即儲存並同步至前台；前台將顯示「不開放登記」且禁止選取。未勾選的場次名額須至少為 1。</div>
+      <div class="capacity-open-note">「不開放」會立即同步前台。</div>
       <div id="bulkCapTable"></div>
     </div>
   `;
@@ -6835,11 +6829,11 @@ function renderBulkCapacityTable(){
   });
 
   let html=`
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
-      <div class="stat" style="padding:14px;"><div class="label">目前場地</div><div class="num" style="font-size:22px;">${escapeHtml(locationLabel(location))}</div></div>
-      <div class="stat" style="padding:14px;"><div class="label">目前類型</div><div class="num" style="font-size:22px;">${venue}</div></div>
-      <div class="stat" style="padding:14px;"><div class="label">開放場次</div><div class="num" style="font-size:22px;color:var(--green);">${openCount}/${totalSettings}</div></div>
-      <div class="stat" style="padding:14px;"><div class="label">不開放場次</div><div class="num" style="font-size:22px;color:#b91c1c;">${closedCount}</div></div>
+    <div class="capacity-compact-summary">
+      <span><strong>${escapeHtml(locationLabel(location))}</strong></span>
+      <span>${escapeHtml(venue)}</span>
+      <span>開放 ${openCount}/${totalSettings}</span>
+      ${closedCount ? `<span class="capacity-summary-alert">不開放 ${closedCount}</span>` : ""}
     </div>
     <div class="capacity-scroll-top" aria-label="名額設定水平捲動">
       <div class="capacity-scroll-top-inner"></div>
