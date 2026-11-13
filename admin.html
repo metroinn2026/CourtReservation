@@ -5315,8 +5315,17 @@ body .ux-review-edit{align-items:end}
 #recordsTable .records-review-combined [data-limit-record]{margin-top:0;border-radius:999px;padding:3px 8px;background:#eaf1f8;color:#315776;white-space:nowrap}
 #recordsTable .records-review-combined [data-limit-record]:hover{background:#dceafb}
 </style>
-<style>
-#bulkCapTable .court-capacity-record-count{font:inherit;margin-top:4px;padding:2px 4px;color:var(--blue);background:none;border:0;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+<style id="capacity-table-compact">
+#bulkCapTable .capacity-transposed-table tbody .capacity-cell,
+#bulkCapTable .capacity-transposed-table tbody .capacity-time-heading{padding-block:6px!important}
+#bulkCapTable .capacity-time-heading{vertical-align:middle}
+#bulkCapTable .capacity-cell .cap-input{height:2.3em!important;min-height:0!important;padding:0 5px!important}
+#bulkCapTable .capacity-cell .capacity-closed-toggle{margin:3px 0 0;line-height:1.25;min-height:18px}
+#bulkCapTable .capacity-closed-toggle .cap-closed-input{height:14px!important;padding:0!important;flex:none}
+#bulkCapTable .court-capacity-record-count{font:inherit;line-height:1.25;margin-top:2px;padding:1px 4px;color:var(--blue);background:none;border:0;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+#bulkCapTable .court-capacity-record-empty{margin-top:2px;color:#64748b;line-height:1.25}
+#bulkCapTable .capacity-save-status{min-height:0;line-height:1.25}
+#bulkCapTable .capacity-save-status:empty{margin:0}
 </style>
 </head>
 <body>
@@ -8283,7 +8292,7 @@ function renderBulkCapacityTable(){
                            aria-label="${escapeHtml(day)} ${escapeHtml(slot)}名額"
                            value="${val > 0 ? val : 1}"
                            ${isClosed?'disabled':''}
-                           style="width:64px;text-align:center;border:1px solid #d1d5db;border-radius:8px;padding:7px;">
+                           style="width:64px;text-align:center;">
                     <label class="capacity-closed-toggle">
                       <input class="cap-closed-input"
                              type="checkbox"
@@ -8294,7 +8303,7 @@ function renderBulkCapacityTable(){
                              ${isClosed?'checked':''}>
                       <span>不開放</span>
                     </label>
-                    ${registered?`<button type="button" class="court-capacity-record-count" data-capacity-slot-records aria-label="${escapeHtml(day)} ${escapeHtml(slot)}，查看 ${registered} 筆登記">已報 ${registered} 筆</button>`:'<div class="small" style="margin-top:4px;color:#64748b;">已報 0 筆</div>'}
+                    ${registered?`<button type="button" class="court-capacity-record-count" data-capacity-slot-records aria-label="${escapeHtml(day)} ${escapeHtml(slot)}，查看 ${registered} 筆登記">已報 ${registered} 筆</button>`:'<div class="small court-capacity-record-empty">已報 0 筆</div>'}
                     <div class="capacity-save-status" aria-live="polite"></div>
                   </td>`;
               }).join('')}
