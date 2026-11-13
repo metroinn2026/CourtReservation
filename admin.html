@@ -10273,14 +10273,22 @@ async function parseGoogleFormWorkbook(file){
  if(!type)throw new Error('未辨識到 v31 三張表單欄位；請使用原始 Google 表單回覆 Excel。');
  const mandatory=['時間戳記','申請人姓名','申請會員身分（請擇一）'];
  const missing=mandatory.filter(h=>!headers.includes(h));if(missing.length)throw new Error('缺少必要欄位：'+missing.join('、'));
- const submissions=[],records=[],anomalies=[],seen=new Set();
+ const submissions=[],records=[],anomalies=[],seen=new Set(),rejectedRows=[];
+ // 不寫入格式不符的會員識別；保留 Excel 列號供承辦人回頭修正。
+ const normalizeIdentifier=v=>String(v||'').normalize('NFKC').replace(/[\s\u3000\-－]/g,'').toUpperCase();
  function flag(type,sub,detail='',keys=[]){anomalies.push({type,submissionKeys:[sub],recordKeys:keys,detail});}
  for(let i=0;i<rows.length;i++){
   const row=rows[i],excelRow=i+2,memberType=formField(row,'申請會員身分（請擇一）');
   const isGo=memberType==='台北捷運Go會員',isBeitou=memberType==='北投會館會員';
   const name=formField(row,'申請人姓名');
   const email=formField(row,'電子郵件地址')||formField(row,'電子郵件');
-  const identifier=(isGo?formFieldAny(row,'台北捷運Go App會員綁定手機（10碼）','台北捷運Go會員綁定手機（10碼）'):formField(row,'北投會館會員身分證字號（10碼）')).replace(/\s/g,'').toUpperCase();
+  const identifier=normalizeIdentifier(isGo?formFieldAny(row,'台北捷運Go App會員綁定手機（10碼）','台北捷運Go會員綁定手機（10碼）'):formField(row,'北投會館會員身分證字號（10碼）'));
+  const validMemberType=isGo||isBeitou;
+  const validIdentifier=(isGo&&/^09\d{8}$/.test(identifier))||(isBeitou&&/^[A-Z][0-9]{9}$/.test(identifier));
+  if(!validMemberType||!validIdentifier){
+    rejectedRows.push({excelRow,reason:!validMemberType?'會員類別無法辨識':isGo?'Go會員綁定手機格式錯誤':'北投會館會員身分證字號格式錯誤'});
+    continue;
+  }
   const phone=(isGo?identifier:formField(row,'聯絡手機號碼（會館會員，10碼）')).replace(/\D/g,'');
   const stamp=normalizeFormTimestamp(row['時間戳記']);
   const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`);
@@ -10346,7 +10354,7 @@ async function parseGoogleFormWorkbook(file){
  // 跨運動同一時段允許登記，不於匯入時取消資格；抽籤結果另行確認。
  const phoneGroups=new Map();submissions.forEach(x=>{if(!x.phone)return;const g=phoneGroups.get(x.phone)||[];g.push(x);phoneGroups.set(x.phone,g);});
  phoneGroups.forEach(g=>{if(new Set(g.map(x=>x.member_key_hash)).size>1)anomalies.push({type:'聯絡手機重複待審查（不得直接判無效）',submissionKeys:g.map(x=>x.submission_key),recordKeys:records.filter(r=>g.some(x=>x.submission_key===r.submission_key)).map(r=>r.record_key)});});
- return {submissions,records,anomalies,sourceType:type};
+ return {submissions,records,anomalies,rejectedRows,sourceType:type};
 }
 
 let pendingFormImport=null;
@@ -10464,11 +10472,13 @@ function renderBatchFormImportPreview(){
   const box=document.getElementById('formImportPreview');
   if(!box)return;
   if(!pendingFormImports.length){box.innerHTML='';return;}
-  const rows=pendingFormImports.map(p=>`<tr><td>${escapeHtml(p.fileName)}</td><td>${escapeHtml(p.sourceType)}</td><td>${p.submissions.length}</td><td>${p.records.length}</td><td>${p.anomalies.length}</td></tr>`).join('');
+  const rows=pendingFormImports.map(p=>`<tr><td>${escapeHtml(p.fileName)}</td><td>${escapeHtml(p.sourceType)}</td><td>${p.submissions.length}</td><td>${p.records.length}</td><td>${p.anomalies.length}</td><td>${p.rejectedRows?.length||0}</td></tr>`).join('');
+  const rejected=pendingFormImports.flatMap(p=>(p.rejectedRows||[]).map(r=>({source:p.sourceType,...r})));
+  const rejectedNotice=rejected.length?'<div class="msg error">本次有 '+rejected.length+' 列會員識別不符格式，這些列不會寫入資料庫：'+rejected.map(r=>escapeHtml(r.source+' 第'+r.excelRow+'列（'+r.reason+'）')).join('；')+'。請修正原始 Excel 後重新匯入漏掉的資料。</div>':'';
   const dupes=pendingFormImports.flatMap(p=>p.submissions.filter(x=>allRecords.some(r=>r.import_submission_key===x.submission_key)).map(x=>({source:p.sourceType,file:p.fileName,sub:x,records:p.records.filter(r=>r.submission_key===x.submission_key),existing:allRecords.find(r=>r.import_submission_key===x.submission_key)})));
   window.pendingImportDuplicates=dupes;
-  box.innerHTML=`<div class="msg info">已辨識 ${pendingFormImports.length} 份不同來源的表單，請選擇「新增」或「覆蓋」模式；各來源分開處理。</div>
-  <div class="table-wrap"><table><thead><tr><th>檔案</th><th>來源</th><th>回覆數</th><th>登記場次</th><th>異常</th></tr></thead><tbody>${rows}</tbody></table></div>
+  box.innerHTML=`<div class="msg info">已辨識 ${pendingFormImports.length} 份不同來源的表單，請選擇「新增」或「覆蓋」模式；各來源分開處理。</div>${rejectedNotice}
+  <div class="table-wrap"><table><thead><tr><th>檔案</th><th>來源</th><th>回覆數</th><th>登記場次</th><th>異常</th><th>待修正列數</th></tr></thead><tbody>${rows}</tbody></table></div>
   <fieldset style="border:1px solid #dce4ed;border-radius:12px;margin:12px 0;padding:14px">
     <legend style="font-weight:700">本次匯入方式</legend>
     <label style="display:block;margin:8px 0"><input type="radio" name="batchGoogleImportMode" value="append" checked> <strong>只新增尚未匯入的資料（建議）</strong><span class="small" style="display:block;margin-left:25px">保留舊登記、審查紀錄及抽籤結果；重複回覆不再新增。</span></label>
@@ -10489,7 +10499,9 @@ async function commitBatchGoogleFormImports(){
   const importMode=document.querySelector('input[name="batchGoogleImportMode"]:checked')?.value||'append';
   const corrections=(window.pendingImportDuplicates||[]).filter((d,i)=>document.querySelector('[data-duplicate-choice="'+i+'"]')?.value==='overwrite');
   if(importMode==='replace'&&corrections.length){alert('整批覆蓋模式不支援逐筆修正，請選擇只新增資料。');return;}
-  const msg=files.map(p=>`${p.sourceType}：${p.submissions.length} 份回覆、${p.records.length} 筆場次`).join('\n');
+  const rejectedTotal=files.reduce((n,p)=>n+(p.rejectedRows?.length||0),0);
+  const msg=files.map(p=>`${p.sourceType}：${p.submissions.length} 份有效回覆、${p.records.length} 筆場次、${p.rejectedRows?.length||0} 列待修正`).join('\n');
+  if(importMode==='replace'&&rejectedTotal){alert('這批表單含有 '+rejectedTotal+' 列會員識別錯誤。為避免覆蓋時遺失舊資料，已禁止整批覆蓋。請先修正 Excel，或改用「只新增」模式。');return;}
   if(!confirm((importMode==='replace'?'整批覆蓋將移除舊登記與抽籤結果，請先備份。':'只新增未匯入資料，保留既有登記及抽籤結果。')+'\n'+msg+'\n\n確定執行？'))return;
   const btn=document.getElementById('commitBatchFormImportBtn');
   const progress=document.getElementById('batchFormImportProgress');
@@ -10513,7 +10525,7 @@ async function commitBatchGoogleFormImports(){
       lines.push({ok:true,text:p.sourceType+(importMode==='replace'?'：成功重建 '+(data?.replaced_records??0)+' 筆':'：新增 '+(data?.inserted_records??0)+' 筆，略過重複 '+(data?.duplicate_records??0)+' 筆')});
     }catch(e){
       lines.push({ok:false,text:p.sourceType+'：失敗（'+(e.message||String(e))+'）'});
-      break;
+      // 單份失敗不應阻斷其餘來源；各來源有獨立資料庫交易。
     }
     if(progress)progress.innerHTML=lines.map(x=>'<div class="msg '+(x.ok?'info':'error')+'">'+escapeHtml(x.text)+'</div>').join('');
   }
@@ -10525,10 +10537,10 @@ async function commitBatchGoogleFormImports(){
     }catch(e){lines.push({ok:false,text:'重複資料覆蓋未完成：'+(e.message||String(e))});}
   }
   if(progress)progress.innerHTML=lines.map(x=>'<div class="msg '+(x.ok?'info':'error')+'">'+escapeHtml(x.text)+'</div>').join('')+
-    (lines.length<files.length?'<div class="msg error">後續檔案未執行；請先檢查前述失敗原因。</div>':'');
+    (files.some(p=>(p.rejectedRows||[]).length)?'<div class="msg error">會員識別不合格式的列已略過，請依預覽列號修正後使用「只新增」補匯。</div>':'');
   // Only reload after every import/correction has completed successfully.
   // A full page reload also refreshes dashboard summary cards, table counts and cached filters.
-  const complete=lines.length>=files.length && lines.every(x=>x.ok);
+  const complete=lines.length>=files.length && lines.every(x=>x.ok) && files.every(p=>!(p.rejectedRows||[]).length);
   if(complete){
     pendingFormImports=[];
     alert('匯入完成！系統將自動重新整理後台，以顯示最新登記筆數及清單。');
@@ -10536,7 +10548,7 @@ async function commitBatchGoogleFormImports(){
     return;
   }
   // Keep the outcome messages visible for partial failures; refreshing would hide them.
-  btn.textContent='匯入未全部完成，請查閱上方結果';
+  btn.textContent='匯入已處理，仍有待修正資料';
   btn.disabled=true;
   const fileInput=document.getElementById('formWorkbook');if(fileInput)fileInput.value='';
   // Require fresh preview before another destructive batch.
