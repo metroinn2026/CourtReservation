@@ -5185,6 +5185,31 @@ body .ux-review-edit{align-items:end}
 }
 </style>
 
+<style id="dashboard-pending-task-pagination-v1">
+.dashboard-tasks-panel .dashboard-task-pagination{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;flex-wrap:wrap;padding:14px 4px 2px;
+}
+.dashboard-tasks-panel .dashboard-task-pagination .records-inline-control{
+  display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
+  font-size:13px;color:#52627a;
+}
+.dashboard-tasks-panel .dashboard-task-pagination select{
+  height:34px;min-width:70px;border:1px solid #d7e1ed;
+  border-radius:8px;background:#fff;padding:0 8px;font-size:13px;
+}
+.dashboard-tasks-panel .dashboard-task-page-actions{
+  display:flex;align-items:center;gap:12px;
+}
+.dashboard-tasks-panel .dashboard-task-page-actions .btn{
+  min-height:34px;
+}
+.dashboard-tasks-panel{scroll-margin-top:85px}
+@media(max-width:720px){
+ .dashboard-tasks-panel .dashboard-task-pagination{justify-content:flex-start}
+ .dashboard-tasks-panel .dashboard-task-page-actions{width:100%;justify-content:space-between}
+}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -6532,6 +6557,7 @@ function renderPage(page){
   if(page==='accounts') renderAccountsPage();
   if(page==='form-import'){ recordsActionTab='filter'; renderPage('records'); setTimeout(()=>openCourtImportModal('import'),0); return; }
 }
+const dashboardTaskState={page:1,perPage:20};
 function renderDashboard(){
   const stageMap={};
   allRecords.forEach(r=>{
@@ -6566,20 +6592,24 @@ function renderDashboard(){
       venueSortValue(a.venue)-venueSortValue(b.venue) ||
       daySortValue(a.day)-daySortValue(b.day) ||
       timeSortValue(a.time)-timeSortValue(b.time)
-    )
-    .slice(0,12);
+    );
+  const taskTotal=taskRows.length;
+  const taskTotalPages=Math.max(1,Math.ceil(taskTotal/dashboardTaskState.perPage));
+  dashboardTaskState.page=Math.min(Math.max(1,dashboardTaskState.page),taskTotalPages);
+  const taskStart=(dashboardTaskState.page-1)*dashboardTaskState.perPage;
+  const visibleTaskRows=taskRows.slice(taskStart,taskStart+dashboardTaskState.perPage);
 
   const statusTag=(x)=>{
     if(x.state==='待抽籤') return '<span class="tag blue">待抽籤</span>';
     return '<span class="tag blue">待公告</span>';
   };
 
-  const taskHtml=taskRows.length?`
+  const taskHtml=taskTotal?`
     <div class="table-wrap dashboard-task-table-wrap">
       <table class="dashboard-task-table">
         <thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記筆數</th><th>狀態</th><th>操作</th></tr></thead>
         <tbody>
-          ${taskRows.map(x=>`<tr>
+          ${visibleTaskRows.map(x=>`<tr>
             <td>${escapeHtml(locationLabel(x.location))}</td>
             <td><strong>${escapeHtml(x.venue)}</strong></td>
             <td>${escapeHtml(x.day)}</td>
@@ -6590,6 +6620,21 @@ function renderDashboard(){
           </tr>`).join('')}
         </tbody>
       </table>
+    </div>
+    <div class="dashboard-task-pagination" aria-label="待處理場次分頁">
+      <span class="small">顯示 ${taskStart+1}–${Math.min(taskStart+dashboardTaskState.perPage,taskTotal)}／${taskTotal} 場</span>
+      <label class="records-inline-control">每頁
+        <select id="dashboardTasksPerPage" aria-label="每頁顯示場次">
+          <option value="10" ${dashboardTaskState.perPage===10?'selected':''}>10</option>
+          <option value="20" ${dashboardTaskState.perPage===20?'selected':''}>20</option>
+          <option value="50" ${dashboardTaskState.perPage===50?'selected':''}>50</option>
+        </select>
+      </label>
+      <div class="dashboard-task-page-actions">
+        <button type="button" class="btn btn-gray btn-compact" id="dashboardTasksPrev" ${dashboardTaskState.page<=1?'disabled':''}>上一頁</button>
+        <span class="small">第 ${dashboardTaskState.page}／${taskTotalPages} 頁</span>
+        <button type="button" class="btn btn-gray btn-compact" id="dashboardTasksNext" ${dashboardTaskState.page>=taskTotalPages?'disabled':''}>下一頁</button>
+      </div>
     </div>`:`<div class="msg ok">目前沒有待處理場次。</div>`;
 
   const regState=getRegistrationState();
@@ -6626,6 +6671,23 @@ function renderDashboard(){
       ${taskHtml}
     </div>
   `;
+
+  const moveDashboardTasksPage=(nextPage)=>{
+    dashboardTaskState.page=Math.min(Math.max(1,nextPage),taskTotalPages);
+    renderDashboard();
+    document.querySelector('.dashboard-tasks-panel')?.scrollIntoView({block:'start'});
+  };
+  const dashboardTasksPrev=document.getElementById('dashboardTasksPrev');
+  if(dashboardTasksPrev)dashboardTasksPrev.onclick=()=>moveDashboardTasksPage(dashboardTaskState.page-1);
+  const dashboardTasksNext=document.getElementById('dashboardTasksNext');
+  if(dashboardTasksNext)dashboardTasksNext.onclick=()=>moveDashboardTasksPage(dashboardTaskState.page+1);
+  const dashboardTasksPerPage=document.getElementById('dashboardTasksPerPage');
+  if(dashboardTasksPerPage)dashboardTasksPerPage.onchange=()=>{
+    const n=Number(dashboardTasksPerPage.value);
+    if(![10,20,50].includes(n))return;
+    dashboardTaskState.perPage=n;
+    moveDashboardTasksPage(1);
+  };
 
   const workflowBtn=document.getElementById('dashWorkflowSettings');
   if(workflowBtn) workflowBtn.onclick=()=>renderPage('capacity');
