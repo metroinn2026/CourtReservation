@@ -8857,15 +8857,16 @@ function buildReviewNoticeGroups(records){
       group.pending++;
       continue;
     }
+    const serial=compactRecordCode(record);
     const name=maskLotteryPublicName(record.name);
     const last3=getLotteryPhoneLast3(record);
-    if(!venue||!days.includes(day)||!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(time)||!usage||usage==='待確認'||!name||!last3){
+    if(!venue||!days.includes(day)||!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(time)||!usage||usage==='待確認'||!name||!last3||!/^[A-Z0-9]{6}$/.test(serial)){
       group.incomplete++;
       continue;
     }
     // 單字姓名整字遮蔽。名單只傳入公開欄位。
     const publicName=Array.from(String(record.name||'').replace(/\s/g,'')).length===1?'○':name;
-    group.rows.push([group.rows.length+1,publicName,last3,state==='qualified'?'審查合格':'審查不合格']);
+    group.rows.push([group.rows.length+1,serial,publicName,last3,state==='qualified'?'審查合格':'審查不合格']);
   }
   return [...groups.values()].sort((a,b)=>
     a.location.localeCompare(b.location,'zh-Hant')||venueSortValue(a.venue)-venueSortValue(b.venue)||
@@ -8877,9 +8878,9 @@ function reviewNoticeStageLabel(stage){
 async function createReviewNoticeWorkbook(stage){
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet([[REVIEW_NOTICE_TITLE],[reviewNoticeStageLabel(stage)],[],
-    ['項次','姓名','手機末三碼','審查結果'],...stage.rows]);
-  ws['!merges']=[XLSX.utils.decode_range('A1:D1'),XLSX.utils.decode_range('A2:D2')];
-  ws['!cols']=[{wch:10},{wch:20},{wch:17},{wch:23}];
+    ['項次','登記序號','姓名','手機末三碼','審查結果'],...stage.rows]);
+  ws['!merges']=[XLSX.utils.decode_range('A1:E1'),XLSX.utils.decode_range('A2:E2')];
+  ws['!cols']=[{wch:8},{wch:14},{wch:16},{wch:15},{wch:17}];
   ws['!rows']=[{hpt:44},{hpt:35},{hpt:8},{hpt:26},...stage.rows.map(()=>({hpt:22}))];
   XLSX.utils.book_append_sheet(wb,ws,'審查名單');
 
@@ -8896,9 +8897,9 @@ async function createReviewNoticeWorkbook(stage){
   file.file('xl/styles.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4">${fontStyles.join('')}</fonts><fills count="6">${fillStyles.join('')}</fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="8">${cellStyles.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`);
   const xml=await sheet.async('string');
-  file.file('xl/worksheets/sheet1.xml',xml.replace(/<c\b([^>]*\br="([A-D])(\d+)"[^>]*)>/g,(tag,attrs,column,rowText)=>{
+  file.file('xl/worksheets/sheet1.xml',xml.replace(/<c\b([^>]*\br="([A-E])(\d+)"[^>]*)>/g,(tag,attrs,column,rowText)=>{
     const row=Number(rowText);
-    const style=row<=2?row:row===4?3:(column==='C'?6:4)+(row%2===0?1:0);
+    const style=row<=2?row:row===4?3:(['B','D'].includes(column)?6:4)+(row%2===0?1:0);
     return `<c${attrs.replace(/\s+s="\d+"/,'')} s="${style}">`;
   }));
   return file.generateAsync({type:'uint8array',compression:'DEFLATE'});
