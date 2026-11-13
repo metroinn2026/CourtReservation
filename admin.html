@@ -10545,7 +10545,7 @@ async function exportFormRowMappingCsv(button){
     const escapeCsv=value=>{
       let v=String(value??'');
       // 避免 Google Sheets / Excel 將民眾提供的文字當成公式執行。
-      if(/^[\\s]*[=+@-]/.test(v))v="'"+v;
+      if(/^\s*[=+@-]/.test(v))v="'"+v;
       return '"'+v.replace(/"/g,'""')+'"';
     };
     const fields=[
