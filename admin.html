@@ -7067,6 +7067,7 @@ function renderRecordsPage(){
           <div class="records-export-popover">
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
             <button id="exportQualifiedBtn" class="records-menu-item" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
+            ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
           </div>
         </details>
       </div>
@@ -7135,6 +7136,8 @@ function renderRecordsPage(){
 
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
   document.getElementById('exportQualifiedBtn').onclick=()=>exportPendingLotteryWorkbook(getStageGroups(getFilteredRecords()));
+  const exportMappingButton=document.getElementById('exportFormRowMappingBtn');
+  if(exportMappingButton)exportMappingButton.onclick=()=>void exportFormRowMappingCsv(exportMappingButton);
 
   document.querySelectorAll('.records-function-tab').forEach(btn=>{
     btn.onclick=()=>{
@@ -10523,6 +10526,53 @@ function confirmModal(title, body){
   return new Promise(resolve=>{
     showModal(title, body, ()=>resolve(true), false, ()=>resolve(false));
   });
+}
+
+async function exportFormRowMappingCsv(button){
+  if(currentAdmin?.role!=='super_admin'||!courtAuthLoginActive){
+    alert('只有已登入的超級管理員可匯出表單序號對照表。');return;
+  }
+  if(!confirm('將匯出完整登記資料的原始表單對照表，包含姓名、會員識別末四碼、登記時間及序號，但不含身分證全碼。\\n\\n此檔案供公司內部核對使用，請存放於受保護的公司電腦，核對完成後依規定處理。是否繼續？'))return;
+  button.disabled=true;
+  try{
+    const client=reviewDbClient();
+    const {data,error}=await client.rpc('court_export_form_row_mapping_v1');
+    if(error)throw error;
+    const rows=Array.isArray(data?.rows)?data.rows:[];
+    const total=Number(data?.total);
+    if(!Number.isSafeInteger(total)||total<1||total!==rows.length)
+      throw new Error('資料庫回傳的對照數量不一致，已停止下載');
+    const escapeCsv=value=>{
+      let v=String(value??'');
+      // 避免 Google Sheets / Excel 將民眾提供的文字當成公式執行。
+      if(/^[\\s]*[=+@-]/.test(v))v="'"+v;
+      return '"'+v.replace(/"/g,'""')+'"';
+    };
+    const fields=[
+      ['表單類型','form_type'],['原始Excel列號','excel_row'],
+      ['原始表單時間戳記','source_timestamp'],['後台登記時間','registered_at'],
+      ['後台登記序號','serial_number'],['後台完整紀錄ID','record_id'],
+      ['表單回覆識別碼','import_submission_key'],['匯入批次ID','import_batch_id'],
+      ['姓名','applicant_name'],['會員身分類型','member_type'],
+      ['會員識別末四碼','member_identifier_last4'],
+      ['場地','venue_type'],['使用項目','sport_usage'],['星期','day_of_week'],['時段','time_slot']
+    ];
+    const csv=[
+      fields.map(([label])=>escapeCsv(label)).join(','),
+      ...rows.map(r=>fields.map(([,key])=>escapeCsv(r[key])).join(','))
+    ].join('\r\n');
+    const blob=new Blob(['\uFEFF',csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='長租登記_原始表單與後台序號對照_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    alert('已產出 '+rows.length+' 筆場次對照。請依「表單類型＋原始列號＋時間戳記」尋找原始資料；遇到重複列號，以完整回覆識別碼及批次ID確認，不要只憑六碼序號判斷。');
+  }catch(e){
+    console.error('原始表單對照匯出失敗',e);
+    alert('對照表匯出失敗：'+(e?.message||'請檢查管理員權限及網路連線'));
+  }finally{button.disabled=false;}
 }
 
 function exportToCsv(records){
