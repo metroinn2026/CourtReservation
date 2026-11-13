@@ -8,6 +8,7 @@ on:
       - 'admin.html'
       - 'applicant-safe.html'
       - 'admin-session-policy.js'
+      - 'admin-mfa.js'
       - 'tests/**'
       - '.github/workflows/security-regression.yml'
   pull_request:
@@ -16,6 +17,7 @@ on:
       - 'admin.html'
       - 'applicant-safe.html'
       - 'admin-session-policy.js'
+      - 'admin-mfa.js'
       - 'tests/**'
   workflow_dispatch:
 
@@ -34,4 +36,4 @@ jobs:
         with:
           node-version: '22'
       - name: Verify JavaScript, Session policy and public boundaries
-        run: node --test tests/security.test.cjs
+        run: node --test tests/security.test.cjs tests/mfa.test.cjs
