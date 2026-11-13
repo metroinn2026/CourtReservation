@@ -6782,7 +6782,7 @@ function renderRecordsPage(){
         </details>
       </div>
 
-      <div id="recordsWorkspace"></div>
+      <div id="courtImportReviewQueue" style="margin:10px 0"></div><div id="recordsWorkspace"></div>
       </div>
     </div>
     <div id="courtImportModal" class="court-import-modal" hidden role="dialog" aria-modal="true" aria-labelledby="courtImportModalTitle">
@@ -6858,6 +6858,7 @@ function renderRecordsPage(){
   });
 
   renderRecordsWorkspace();
+  void renderImportReviewQueue();
 }
 
 // v52: per-registration qualification review; distinct from lottery result and anomaly events.
@@ -6950,6 +6951,34 @@ async function renderQualificationReview(container){
     if(error){alert('儲存失敗：'+error.message);btn.disabled=false;return;}
     window.qualificationFocusId=null;
     await renderQualificationReview(container);
+  });
+}
+async function renderImportReviewQueue(){
+  const box=document.getElementById('courtImportReviewQueue');if(!box)return;
+  box.innerHTML='<div class="small">正在確認待審查匯入資料…</div>';
+  const {data,error}=await authMigrationClient.rpc('court_list_import_review_queue_v1');
+  if(!box.isConnected)return;
+  if(error){box.innerHTML='<div class="small">待審查匯入資料暫時無法取得，請確認管理員權限。</div>';return;}
+  const queue=Array.isArray(data)?data:[];
+  const pending=queue.filter(x=>x.review_status==='pending');
+  const closed=queue.length-pending.length;
+  box.innerHTML=`<div class="records-section-card" style="padding:14px 16px;margin:0 0 12px">
+    <div class="admin-section-head" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <h3 style="margin:0">待審查匯入資料 ${pending.length?'<span class="tag anomaly-red">'+pending.length+' 筆待確認</span>':'<span class="tag gray">無待確認資料</span>'}</h3>
+      <button type="button" id="refreshImportReviewQueue" class="btn btn-gray btn-compact">重新整理</button>
+    </div>
+    <div class="small" style="margin:6px 0 10px">來源表單已保留異常回覆，但尚未進入正式抽籤名單；核對並修正原始資料後，請以「只新增」模式補匯。已處理 ${closed} 筆。</div>
+    ${pending.length?`<div class="table-wrap"><table><thead><tr><th>來源／Excel列</th><th>姓名</th><th>聯絡手機</th><th>會員類型</th><th>異常原因</th><th>處理</th></tr></thead><tbody>${pending.map(r=>`<tr><td>${escapeHtml(r.source_type)}／第 ${r.excel_row} 列</td><td>${escapeHtml(r.applicant_name||'—')}</td><td>${escapeHtml(r.contact_phone||'—')}</td><td>${escapeHtml(r.member_type||'—')}</td><td><span class="tag anomaly-red">待審查</span> ${escapeHtml(r.reason)}</td><td><button type="button" class="btn btn-gray btn-compact" data-import-review-done="${escapeHtml(r.id)}">標記已處理</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="small">目前沒有待審查的匯入回覆。</div>'}
+  </div>`;
+  box.querySelector('#refreshImportReviewQueue')?.addEventListener('click',()=>void renderImportReviewQueue());
+  box.querySelectorAll('[data-import-review-done]').forEach(btn=>{
+    btn.onclick=async()=>{
+      if(!confirm('請確認已核對原始資料。標記已處理只更新審查狀態，不會自動將資料加入抽籤名單。'))return;
+      btn.disabled=true;
+      const {error,data}=await authMigrationClient.rpc('court_resolve_import_review_v1',{p_id:btn.dataset.importReviewDone});
+      if(error||!data){alert('無法更新處理狀態，請確認權限及登入狀態。');btn.disabled=false;return;}
+      await renderImportReviewQueue();
+    };
   });
 }
 function renderRecordsWorkspace(){
@@ -10286,11 +10315,24 @@ async function parseGoogleFormWorkbook(file){
   const validMemberType=isGo||isBeitou;
   const validIdentifier=(isGo&&/^09\d{8}$/.test(identifier))||(isBeitou&&/^[A-Z][0-9]{9}$/.test(identifier));
   if(!validMemberType||!validIdentifier){
-    rejectedRows.push({excelRow,reason:!validMemberType?'會員類別無法辨識':isGo?'Go會員綁定手機格式錯誤':'北投會館會員身分證字號格式錯誤'});
+    rejectedRows.push({
+      excelRow,reason:!validMemberType?'會員類別無法辨識':isGo?'Go會員綁定手機格式錯誤':'北投會館會員身分證字號格式錯誤',
+      source_row_key:await sha256([type,formField(row,'時間戳記'),name,email,memberType,identifier].join('|')),
+      applicant_name:name,contact_phone:formField(row,'聯絡手機號碼（會館會員，10碼）').replace(/\D/g,'').slice(0,20),
+      member_type:memberType,submitted_at:normalizeFormTimestamp(row['時間戳記']),registration_summary:'來源：'+type
+    });
     continue;
   }
   const phone=(isGo?identifier:formField(row,'聯絡手機號碼（會館會員，10碼）')).replace(/\D/g,'');
   const stamp=normalizeFormTimestamp(row['時間戳記']);
+  if(!name||!email||!/^09\d{8}$/.test(phone)){
+    rejectedRows.push({
+      excelRow,reason:!name?'申請人姓名缺漏':!email?'Email 缺漏':'聯絡手機格式錯誤',
+      source_row_key:await sha256([type,stamp,name,email,memberType,identifier].join('|')),
+      applicant_name:name,contact_phone:phone.slice(0,20),member_type:memberType,submitted_at:stamp,registration_summary:'來源：'+type
+    });
+    continue;
+  }
   const memberKeyHash=await sha256(`${isGo?'GO_PHONE':'BEITOU_ID'}:${identifier}`);
   // 來源類型列入唯一識別，避免三張表單恰好同一時間送出的資料互相碰撞。
   const submissionKey=await sha256([type,stamp,email.toLowerCase(),memberType,identifier,name].join('|'));
@@ -10417,7 +10459,7 @@ function renderGoogleFormImportPage(mount, mode='all'){
           const kind=parsed.sourceType;
           if(!['羽球','籃球','桌球'].includes(kind))throw new Error('無法辨識表單來源');
           if(seen.has(kind))throw new Error('同批不可包含兩份「'+kind+'」表單');
-          if(!parsed.submissions?.length||!parsed.records?.length)throw new Error('沒有可匯入的有效資料，禁止覆蓋');
+          if(!parsed.submissions?.length&&!parsed.rejectedRows?.length)throw new Error('沒有可匯入的資料');
           seen.add(kind);
           pendingFormImports.push({...parsed,fileName:file.name});
         }catch(e){errors.push(file.name+'：'+(e.message||String(e)));}
@@ -10474,7 +10516,7 @@ function renderBatchFormImportPreview(){
   if(!pendingFormImports.length){box.innerHTML='';return;}
   const rows=pendingFormImports.map(p=>`<tr><td>${escapeHtml(p.fileName)}</td><td>${escapeHtml(p.sourceType)}</td><td>${p.submissions.length}</td><td>${p.records.length}</td><td>${p.anomalies.length}</td><td>${p.rejectedRows?.length||0}</td></tr>`).join('');
   const rejected=pendingFormImports.flatMap(p=>(p.rejectedRows||[]).map(r=>({source:p.sourceType,...r})));
-  const rejectedNotice=rejected.length?'<div class="msg error">本次有 '+rejected.length+' 列會員識別不符格式，這些列不會寫入資料庫：'+rejected.map(r=>escapeHtml(r.source+' 第'+r.excelRow+'列（'+r.reason+'）')).join('；')+'。請修正原始 Excel 後重新匯入漏掉的資料。</div>':'';
+  const rejectedNotice=rejected.length?'<div class="msg error">本次有 '+rejected.length+' 列資料需要審查，會保存在「待審查匯入資料」，不列入抽籤名單：'+rejected.map(r=>escapeHtml(r.source+' 第'+r.excelRow+'列（'+r.reason+'）')).join('；')+'。可在登記清單查閱；核對後再以「只新增」補匯正確資料。</div>':'';
   const dupes=pendingFormImports.flatMap(p=>p.submissions.filter(x=>allRecords.some(r=>r.import_submission_key===x.submission_key)).map(x=>({source:p.sourceType,file:p.fileName,sub:x,records:p.records.filter(r=>r.submission_key===x.submission_key),existing:allRecords.find(r=>r.import_submission_key===x.submission_key)})));
   window.pendingImportDuplicates=dupes;
   box.innerHTML=`<div class="msg info">已辨識 ${pendingFormImports.length} 份不同來源的表單，請選擇「新增」或「覆蓋」模式；各來源分開處理。</div>${rejectedNotice}
@@ -10501,7 +10543,7 @@ async function commitBatchGoogleFormImports(){
   if(importMode==='replace'&&corrections.length){alert('整批覆蓋模式不支援逐筆修正，請選擇只新增資料。');return;}
   const rejectedTotal=files.reduce((n,p)=>n+(p.rejectedRows?.length||0),0);
   const msg=files.map(p=>`${p.sourceType}：${p.submissions.length} 份有效回覆、${p.records.length} 筆場次、${p.rejectedRows?.length||0} 列待修正`).join('\n');
-  if(importMode==='replace'&&rejectedTotal){alert('這批表單含有 '+rejectedTotal+' 列會員識別錯誤。為避免覆蓋時遺失舊資料，已禁止整批覆蓋。請先修正 Excel，或改用「只新增」模式。');return;}
+  if(importMode==='replace'&&rejectedTotal){alert('這批表單含有 '+rejectedTotal+' 列待審查資料。為避免覆蓋時遺失舊資料，已禁止整批覆蓋。請先修正 Excel，或改用「只新增」模式。');return;}
   if(!confirm((importMode==='replace'?'整批覆蓋將移除舊登記與抽籤結果，請先備份。':'只新增未匯入資料，保留既有登記及抽籤結果。')+'\n'+msg+'\n\n確定執行？'))return;
   const btn=document.getElementById('commitBatchFormImportBtn');
   const progress=document.getElementById('batchFormImportProgress');
@@ -10510,6 +10552,13 @@ async function commitBatchGoogleFormImports(){
   for(const p of files){
     if(progress)progress.textContent='正在處理：'+p.sourceType+'｜已完成 '+lines.length+' / '+files.length;
     try{
+      if((p.rejectedRows||[]).length){
+        const {data:queueCount,error:queueError}=await authMigrationClient.rpc('court_save_import_review_queue_v1',{
+          p_source_type:p.sourceType,p_rows:p.rejectedRows
+        });
+        if(queueError)throw new Error('待審查資料儲存失敗：'+queueError.message);
+        lines.push({ok:true,text:p.sourceType+'：待審查資料已保存 '+queueCount+' 列（不列入抽籤）'});
+      }
       const correctedKeys=new Set(importMode==='append'?corrections.filter(d=>d.source===p.sourceType).map(d=>d.sub.submission_key):[]);
       const submissions=p.submissions.filter(x=>!correctedKeys.has(x.submission_key));
       const records=p.records.filter(x=>!correctedKeys.has(x.submission_key));
@@ -10537,10 +10586,10 @@ async function commitBatchGoogleFormImports(){
     }catch(e){lines.push({ok:false,text:'重複資料覆蓋未完成：'+(e.message||String(e))});}
   }
   if(progress)progress.innerHTML=lines.map(x=>'<div class="msg '+(x.ok?'info':'error')+'">'+escapeHtml(x.text)+'</div>').join('')+
-    (files.some(p=>(p.rejectedRows||[]).length)?'<div class="msg error">會員識別不合格式的列已略過，請依預覽列號修正後使用「只新增」補匯。</div>':'');
+    (files.some(p=>(p.rejectedRows||[]).length)?'<div class="msg error">格式有問題的回覆已保存為待審查資料，不會加入抽籤名單。</div>':'');
   // Only reload after every import/correction has completed successfully.
   // A full page reload also refreshes dashboard summary cards, table counts and cached filters.
-  const complete=lines.length>=files.length && lines.every(x=>x.ok) && files.every(p=>!(p.rejectedRows||[]).length);
+  const complete=lines.every(x=>x.ok) && files.every(p=>lines.some(x=>x.ok&&x.text.startsWith(p.sourceType+'：')));
   if(complete){
     pendingFormImports=[];
     alert('匯入完成！系統將自動重新整理後台，以顯示最新登記筆數及清單。');
