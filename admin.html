@@ -7258,6 +7258,7 @@ function renderRecordsPage(){
           <summary class="btn btn-gray btn-compact">匯出 ▾</summary>
           <div class="records-export-popover">
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
+            <button id="exportReviewNoticeBtn" type="button" class="records-menu-item" title="依場地、球類、用途、星期及時段匯出公開審查名單">匯出抽籤前審查公告 Excel</button>
             <button id="exportQualifiedBtn" class="records-menu-item" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">匯入會館會員名冊比對 CSV</button>':''}
@@ -7329,6 +7330,8 @@ function renderRecordsPage(){
   // 切換球類仍會調整可選用途與時段，但不會立即進行清單查詢。
 
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
+  const exportReviewNoticeButton=document.getElementById('exportReviewNoticeBtn');
+  exportReviewNoticeButton.onclick=()=>void exportReviewNotice(exportReviewNoticeButton);
   document.getElementById('exportQualifiedBtn').onclick=()=>exportPendingLotteryWorkbook(getStageGroups(getFilteredRecords()));
   const exportMappingButton=document.getElementById('exportFormRowMappingBtn');
   if(exportMappingButton)exportMappingButton.onclick=()=>void exportFormRowMappingCsv(exportMappingButton);
@@ -8834,6 +8837,117 @@ async function exportPendingLotteryWorkbook(stages){
   link.href=url;link.download=`SP88_各場次合格抽籤名單_${dateStr}.zip`;
   document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   writeOperationLog('匯出SP88各場次合格抽籤名單',{stage_count:exported,excluded_count:excluded,skipped_empty_stages:skipped,columns:['姓名','手機末三碼','序號']});
+}
+
+const REVIEW_NOTICE_TITLE='116年北投會館運動場域長期租借登記審查名單';
+
+function buildReviewNoticeGroups(records){
+  const groups=new Map();
+  for(const record of records){
+    const location=recordLocation(record);
+    const venue=record.venue_type||'';
+    const day=String(record.day_of_week||'').replace(/^週/,'周');
+    const time=slotRangeKey(record.time_slot);
+    const usage=courtUsage(record);
+    const key=JSON.stringify([location,venue,day,time,usage]);
+    if(!groups.has(key))groups.set(key,{location,venue,day,time,usage,rows:[],pending:0,incomplete:0});
+    const group=groups.get(key);
+    const state=qualificationState(record);
+    if(state!=='qualified'&&state!=='invalid'){
+      group.pending++;
+      continue;
+    }
+    const name=maskLotteryPublicName(record.name);
+    const last3=getLotteryPhoneLast3(record);
+    if(!venue||!days.includes(day)||!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(time)||!usage||usage==='待確認'||!name||!last3){
+      group.incomplete++;
+      continue;
+    }
+    // 單字姓名整字遮蔽。名單只傳入公開欄位。
+    const publicName=Array.from(String(record.name||'').replace(/\s/g,'')).length===1?'○':name;
+    group.rows.push([group.rows.length+1,publicName,last3,state==='qualified'?'審查合格':'審查不合格']);
+  }
+  return [...groups.values()].sort((a,b)=>
+    a.location.localeCompare(b.location,'zh-Hant')||venueSortValue(a.venue)-venueSortValue(b.venue)||
+    daySortValue(a.day)-daySortValue(b.day)||a.time.localeCompare(b.time)||a.usage.localeCompare(b.usage,'zh-Hant'));
+}
+function reviewNoticeStageLabel(stage){
+  return `${locationLabel(stage.location)}・${courtVenueLabel({venue_type:stage.venue})}｜${stage.day.replace(/^周/,'週')} ${stage.time.replace('-','–')}｜用途 ${stage.usage}`;
+}
+async function createReviewNoticeWorkbook(stage){
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet([[REVIEW_NOTICE_TITLE],[reviewNoticeStageLabel(stage)],[],
+    ['項次','姓名','手機末三碼','審查結果'],...stage.rows]);
+  ws['!merges']=[XLSX.utils.decode_range('A1:D1'),XLSX.utils.decode_range('A2:D2')];
+  ws['!cols']=[{wch:10},{wch:20},{wch:17},{wch:23}];
+  ws['!rows']=[{hpt:44},{hpt:35},{hpt:8},{hpt:26},...stage.rows.map(()=>({hpt:22}))];
+  XLSX.utils.book_append_sheet(wb,ws,'審查名單');
+
+  // SheetJS Community 保留合併與列高。字型、底色與對齊寫入本工作簿的 OOXML 樣式。
+  const file=await JSZip.loadAsync(XLSX.write(wb,{bookType:'xlsx',type:'array',cellStyles:true}));
+  const sheet=file.file('xl/worksheets/sheet1.xml');
+  if(!sheet)throw Error('Excel 結構不完整');
+  const font=(size,color,bold=false)=>`<font>${bold?'<b/>':''}<sz val="${size}"/><color rgb="FF${color}"/><name val="Microsoft JhengHei"/></font>`;
+  const fill=color=>`<fill><patternFill patternType="solid"><fgColor rgb="FF${color}"/><bgColor indexed="64"/></patternFill></fill>`;
+  const xf=(fontId,fillId,numFmtId=0)=>`<xf numFmtId="${numFmtId}" fontId="${fontId}" fillId="${fillId}" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>`;
+  const fontStyles=[font(11,'172B41'),font(22,'FFFFFF',true),font(17,'153E61',true),font(12,'153E61',true)];
+  const fillStyles=['<fill><patternFill patternType="none"/></fill>','<fill><patternFill patternType="gray125"/></fill>',fill('163C5C'),fill('E7F1FA'),fill('D6E7F6'),fill('F2F6FA')];
+  const cellStyles=[xf(0,0),xf(1,2),xf(2,3),xf(3,4),xf(0,0),xf(0,5),xf(0,0,49),xf(0,5,49)];
+  file.file('xl/styles.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4">${fontStyles.join('')}</fonts><fills count="6">${fillStyles.join('')}</fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="8">${cellStyles.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`);
+  const xml=await sheet.async('string');
+  file.file('xl/worksheets/sheet1.xml',xml.replace(/<c\b([^>]*\br="([A-D])(\d+)"[^>]*)>/g,(tag,attrs,column,rowText)=>{
+    const row=Number(rowText);
+    const style=row<=2?row:row===4?3:(column==='C'?6:4)+(row%2===0?1:0);
+    return `<c${attrs.replace(/\s+s="\d+"/,'')} s="${style}">`;
+  }));
+  return file.generateAsync({type:'uint8array',compression:'DEFLATE'});
+}
+async function exportReviewNotice(button){
+  if(typeof XLSX==='undefined'||typeof JSZip==='undefined'){
+    alert('Excel 元件尚未載入，請重新整理後再試。');
+    return;
+  }
+  const {location,venue,day,time,usage}=recordState;
+  const records=allRecords.filter(r=>matchesRegistrationSlot(r,{location,venue,day,time})&&(!usage||courtUsage(r)===usage));
+  if(!records.length){alert('目前場次範圍沒有登記資料。');return;}
+  button.disabled=true;
+  try{
+    await loadQualificationReviews();
+    if(!qualificationReviewsLoaded){alert('無法載入審查結果，請確認管理員登入後再試。');return;}
+    const groups=buildReviewNoticeGroups(records);
+    const blocked=groups.filter(group=>group.pending||group.incomplete);
+    const ready=groups.filter(group=>!group.pending&&!group.incomplete);
+    if(blocked.length){
+      const details=blocked.slice(0,8).map(group=>`${reviewNoticeStageLabel(group)}：待審查或補正 ${group.pending} 筆，公告欄位缺漏 ${group.incomplete} 筆`);
+      const message=`${blocked.length} 個場次用途尚未完成審查或有欄位缺漏。\n\n${details.join('\n')}`;
+      if(!ready.length){alert(message);return;}
+      if(!confirm(`${message}\n\n是否只匯出已完成的 ${ready.length} 個場次用途？`))return;
+    }
+    const zip=ready.length>1?new JSZip():null;
+    const used=new Set();
+    let bytes,name;
+    for(const group of ready){
+      bytes=await createReviewNoticeWorkbook(group);
+      const basename=`抽籤前審查名單_${safeLotteryStageFileName(group)}_${group.usage}`.replace(/[\\/:*?"<>|]/g,'-');
+      name=basename;
+      for(let i=2;used.has(name);i++)name=`${basename}_${i}`;
+      used.add(name);
+      if(zip)zip.file(`${name}.xlsx`,bytes);
+    }
+    const blob=zip?await zip.generateAsync({type:'blob'}):
+      new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;
+    link.download=zip?'抽籤前審查名單_各場次及用途.zip':`${name}.xlsx`;
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    void writeOperationLog('匯出抽籤前審查公告',{workbook_count:ready.length,record_count:ready.reduce((sum,group)=>sum+group.rows.length,0)});
+  }catch(error){
+    console.error(error);
+    alert('無法產生抽籤前審查名單，請重新整理後再試。');
+  }finally{button.disabled=false;}
 }
 
 function renderLotteryPage(){
