@@ -5328,6 +5328,34 @@ body .ux-review-edit{align-items:end}
 #bulkCapTable .capacity-save-status{min-height:0;line-height:1.25}
 #bulkCapTable .capacity-save-status:empty{margin:0}
 </style>
+<style id="admin-mobile-navigation">
+  #adminMenuToggle,#adminMenuClose,#adminMenuBackdrop,.mobile-nav-options{display:none}
+  .admin-page-heading{display:flex;align-items:center;gap:10px;min-width:0}
+  @media(max-width:860px){
+    #app .topbar{padding:0 12px!important;gap:8px}
+    #app .topbar-right{gap:8px;flex-shrink:0}
+    #app .topbar h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #adminMenuToggle,#adminMenuClose{display:inline-flex;align-items:center;justify-content:center;width:44px;min-width:44px;height:44px;padding:0!important;font-size:24px;line-height:1}
+    #app.mobile-nav-open #adminSidebar{
+      display:flex!important;position:fixed;inset:0 auto 0 0;z-index:1501;
+      width:min(310px,calc(100% - 44px));height:100dvh;
+      padding:16px!important;overflow:auto;overscroll-behavior:contain;gap:14px
+    }
+    #app.mobile-nav-open #adminMenuBackdrop{
+      display:block;position:fixed;inset:0;z-index:1500;background:rgba(15,23,42,.44)
+    }
+    #adminSidebar .mobile-nav-header{display:flex;gap:8px;align-items:flex-start}
+    #adminSidebar .brand{flex:1}
+    #adminSidebar .nav{display:flex;flex-direction:column}
+    #adminSidebar .nav button{min-height:44px!important}
+    #adminSidebar .mobile-nav-options{display:block}
+    #adminSidebar .side-footer{margin-top:auto}
+  }
+  @media(max-width:480px){
+    #app .topbar .userbox .avatar{width:32px;height:32px}
+    #app .topbar .userbox>div:nth-child(2){display:none}
+  }
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5367,9 +5395,13 @@ body .ux-review-edit{align-items:end}
   </section>
 
   <section id="app" class="app hidden">
-    <aside class="sidebar">
-      <div class="brand"><h1>北投會館運動場域智慧租借管理系統｜管理後台</h1><span>Admin Console</span></div>
-      <nav class="nav">
+    <div id="adminMenuBackdrop" aria-hidden="true"></div>
+    <aside class="sidebar" id="adminSidebar">
+      <div class="mobile-nav-header">
+        <div class="brand"><h1>北投會館運動場域智慧租借管理系統｜管理後台</h1><span>Admin Console</span></div>
+        <button id="adminMenuClose" type="button" class="btn btn-gray" aria-label="關閉功能選單">×</button>
+      </div>
+      <nav class="nav" aria-label="後台功能">
         <button data-page="dashboard" class="active">作業總覽</button>
         <button data-page="records">登記資料</button>
         <button data-page="capacity">名額設定</button>
@@ -5378,11 +5410,15 @@ body .ux-review-edit{align-items:end}
         <button data-page="logs">操作紀錄</button>
         <button data-page="accounts" id="accountsNav">帳號權限</button>
       </nav>
+      <div id="mobileNavOptions" class="mobile-nav-options"></div>
       <div class="side-footer"><div id="sideUser">-</div><button id="logoutBtn" class="btn btn-gray" style="width:100%;margin-top:10px;">登出</button></div>
     </aside>
     <main class="app-main">
       <header class="topbar">
-        <h2 id="pageTitle">作業總覽</h2>
+        <div class="admin-page-heading">
+          <button id="adminMenuToggle" type="button" class="btn btn-gray" aria-label="開啟功能選單" aria-expanded="false" aria-controls="adminSidebar">☰</button>
+          <h2 id="pageTitle">作業總覽</h2>
+        </div>
         <div class="topbar-right">
           <div class="admin-font-control" aria-label="文字大小">
             <span class="admin-font-a">A</span>
@@ -11549,7 +11585,60 @@ async function loadFormAnomalies(){
  });
 }
 
-document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage(btn.dataset.page));
+function initAdminNavigation(){
+  const app=document.getElementById('app');
+  const main=app.querySelector('.app-main');
+  const sidebar=document.getElementById('adminSidebar');
+  const toggle=document.getElementById('adminMenuToggle');
+  const close=document.getElementById('adminMenuClose');
+  const mobile=window.matchMedia('(max-width:860px)');
+  const topbarActions=app.querySelector('.topbar-right');
+  const fontControl=topbarActions.querySelector('.admin-font-control');
+  const mobileOptions=document.getElementById('mobileNavOptions');
+
+  function setOpen(open,restoreFocus=false){
+    app.classList.toggle('mobile-nav-open',open);
+    toggle.setAttribute('aria-expanded',String(open));
+    main.inert=open;
+    if(open){
+      sidebar.setAttribute('role','dialog');
+      sidebar.setAttribute('aria-modal','true');
+      sidebar.setAttribute('aria-label','後台功能選單');
+      close.focus();
+    }else{
+      sidebar.removeAttribute('role');
+      sidebar.removeAttribute('aria-modal');
+      sidebar.removeAttribute('aria-label');
+      if(restoreFocus&&mobile.matches)toggle.focus({preventScroll:true});
+    }
+  }
+  function syncLayout(){
+    setOpen(false);
+    if(mobile.matches)mobileOptions.appendChild(fontControl);
+    else topbarActions.prepend(fontControl);
+  }
+  toggle.onclick=()=>{if(mobile.matches)setOpen(true);};
+  close.onclick=()=>setOpen(false,true);
+  document.getElementById('adminMenuBackdrop').onclick=()=>setOpen(false,true);
+  sidebar.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&app.classList.contains('mobile-nav-open')){
+      event.preventDefault();
+      setOpen(false,true);
+    }
+  });
+  document.getElementById('logoutBtn').addEventListener('click',()=>setOpen(false));
+  sidebar.querySelectorAll('.nav button').forEach(button=>{
+    button.onclick=()=>{
+      const wasOpen=app.classList.contains('mobile-nav-open');
+      setOpen(false,wasOpen);
+      renderPage(button.dataset.page);
+      if(wasOpen)window.scrollTo(0,0);
+    };
+  });
+  mobile.addEventListener('change',syncLayout);
+  syncLayout();
+}
+initAdminNavigation();
 
 window.CourtAdminMfa.init(
   authMigrationClient,
