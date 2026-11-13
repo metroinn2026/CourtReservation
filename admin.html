@@ -10673,9 +10673,9 @@ async function importOfflineReviewCsv(file,button){
        if(Number(data?.processed)!==Math.min(50,rows.length-offset))throw Error('回傳筆數異常，請檢查操作紀錄');
        completed+=Number(data.processed);
      }
-     await loadHallRosterChecks();
+     await Promise.all([loadHallRosterChecks(),loadQualificationReviews()]);
      renderRecordsWorkspace();
-     alert('已匯入 '+completed+' 筆會館會員名冊比對結果。請在後台統一審查會員資格及重複申請。');
+     alert('已匯入 '+completed+' 筆會館會員名冊比對結果；名冊有資料的會館會員將自動顯示「已確認會員」，查無者仍需審查，Go 會員不受影響。');
    }finally{button.disabled=false;}
  }catch(error){
    console.warn('會館會員名冊比對匯入失敗',error?.message||error);
