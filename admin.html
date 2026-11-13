@@ -7005,9 +7005,37 @@ function qualificationIssueTypes(r){
 }
 function qualificationState(r){
   const saved=qualificationReviews.get(String(r.id));
-  return saved?.review_status || (qualificationIssueTypes(r).length?'pending':'qualified');
+  return saved?.member_check_status==='not_member'?'invalid':(saved?.review_status || (qualificationIssueTypes(r).length?'pending':'qualified'));
 }
 function isQualifiedForLottery(r){return qualificationReviewsLoaded && qualificationState(r)==='qualified';}
+function membershipCheckCell(r){
+  if(!qualificationReviewsLoaded)return '<span class="tag gray">未載入</span>';
+  const member=qualificationReviews.get(String(r.id))?.member_check_status||'unchecked';
+  const label={unchecked:'未查核',verified:'已確認會員',not_member:'非會員'}[member]||'未查核';
+  const color={unchecked:'gray',verified:'review-qualified',not_member:'review-invalid'}[member]||'gray';
+  return `<button type="button" class="tag ${color}" data-membership-check="${escapeHtml(String(r.id))}" title="人工核對會員名冊後設定查核結果" style="cursor:pointer;font:inherit;font-weight:600">${label} ▾</button>`;
+}
+async function setManualMembershipCheck(recordId){
+  if(!qualificationReviewsLoaded){alert('資格審查資料尚未載入，請重新登入後再試');return;}
+  const record=allRecords.find(r=>String(r.id)===String(recordId));if(!record)return;
+  const prior=qualificationReviews.get(String(record.id))?.member_check_status||'unchecked';
+  const choice=prompt('會員身分人工查核：'+record.name+'\\n請先向會員資料來源核對。\\n輸入 1：確認為會員\\n輸入 2：確認非會員（同步列為不合格）\\n輸入 0：清除查核結果\\n取消：不變更',prior==='verified'?'1':prior==='not_member'?'2':'');
+  if(choice===null)return;
+  const status=({'1':'verified','2':'not_member','0':'unchecked'})[choice.trim()];
+  if(!status){alert('請輸入 1、2 或 0');return;}
+  let note='';
+  if(status==='not_member'){
+    const response=prompt('請填寫確認非會員的依據或查核說明（必填）。不需輸入完整身分證字號。','會員名冊查無有效會員資格');
+    if(response===null)return;
+    note=response.trim();
+    if(!note){alert('非會員必須記錄查核原因');return;}
+  }
+  if(!confirm('確認將「'+record.name+'」設定為「'+({verified:'已確認會員',not_member:'非會員',unchecked:'未查核'}[status])+'」？'+(status==='not_member'?'\\n該筆將同時列為不合格，不進入抽籤名單。':'')))return;
+  const {error}=await reviewDbClient().rpc('court_set_membership_check_v1',{p_record_id:record.id,p_status:status,p_note:note});
+  if(error){alert('會員查核更新失敗：'+error.message);return;}
+  await loadQualificationReviews();
+  renderRecordsWorkspace();
+}
 function qualificationStatusCell(r){
   if(!qualificationReviewsLoaded)return '<span class="tag gray" title="請先完成資料庫授權及資格資料載入">未載入</span>';
   const st=qualificationState(r);
@@ -7030,7 +7058,7 @@ async function loadQualificationReviews(){
     const client=reviewDbClient();
     const {data:user}=await client.auth.getUser();
     if(!user?.user)return;
-    const {data,error}=await client.rpc('list_registration_qualifications_v52');
+    const {data,error}=await client.rpc('list_registration_qualifications_v53');
     if(error)throw error;
     (data||[]).forEach(row=>qualificationReviews.set(String(row.record_id),row));
     qualificationReviewsLoaded=true;
@@ -7439,16 +7467,17 @@ function renderRecordsTable(){
       <button id="savePendingRecordStatusBtn" class="btn btn-primary btn-compact" ${pendingRecordStatusChanges.size?'':'disabled'}>儲存${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}</button>
     </div>
   </div>` : ''}
-  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:106px;">資格狀態</th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:110px;">${sortHeader('會員身分','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
+  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:106px;">資格狀態</th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:110px;">${sortHeader('會員身分','member_type')}</th><th style="width:104px;">會員查核</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td>${qualificationStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'identity-go':'identity-hall'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
+    <td>${anomalyTags(r)}</td><td>${qualificationStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'identity-go':'identity-hall'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${membershipCheckCell(r)}</td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
   bindIdentityReveal();
+  document.querySelectorAll('#recordsTable [data-membership-check]').forEach(b=>b.onclick=()=>void setManualMembershipCheck(b.dataset.membershipCheck));
   document.querySelectorAll('#recordsTable [data-qopen]').forEach(b=>b.onclick=()=>openQualificationRecord(b.dataset.qopen));
   bindSortHeaders();
   const anomalyHelpBtn=document.getElementById('anomalyHelpBtn'); if(anomalyHelpBtn) anomalyHelpBtn.onclick=showAnomalyDefinitionModal;
