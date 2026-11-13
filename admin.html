@@ -87,6 +87,15 @@
     .pager{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:13px;color:#475569}.pager-controls{display:flex;gap:8px;align-items:center}.inline-form{display:grid;grid-template-columns:repeat(5,1fr) auto;gap:10px;align-items:end}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:18px}.alert{border-left:4px solid var(--orange);background:#fff7ed;color:#9a3412;padding:12px;border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6}
     .account-row{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}.account-row strong{color:#0f172a}.small{font-size:12px;color:var(--muted);line-height:1.6}
     .modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999}.modal-card{background:#fff;border-radius:18px;padding:22px;max-width:430px;width:92%;box-shadow:0 24px 70px rgba(0,0,0,.2)}.modal-card h3{margin:0 0 10px;color:#0f172a}.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+    .court-details-dialog{box-sizing:border-box;width:min(960px,calc(100% - 24px));max-width:none;max-height:calc(100dvh - 24px);padding:0;color:var(--text)}
+    .court-details-dialog[open]{display:flex;flex-direction:column}
+    .court-details-dialog::backdrop{background:rgba(15,23,42,.42)}
+    .court-details-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border)}
+    .court-details-head h3{margin:0}
+    .court-details-body{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 20px 14px}
+    .court-details-body .table-wrap{max-width:100%}
+    .court-details-body table{min-width:640px}
+    .court-details-body th,.court-details-body td{white-space:normal}
     @media(max-width:1100px){.login-page{grid-template-columns:1fr}.hero{display:none}.app{grid-template-columns:1fr}.sidebar{position:static}.nav{display:grid;grid-template-columns:repeat(3,1fr)}.cards{grid-template-columns:repeat(2,1fr)}.toolbar{grid-template-columns:1fr 1fr}.inline-form{grid-template-columns:1fr 1fr}.two-col{grid-template-columns:1fr}}
     @media(max-width:700px){.content{padding:16px}.cards{grid-template-columns:1fr}.nav{grid-template-columns:1fr}.topbar{padding:0 16px}.topbar h2{font-size:18px}}
   
@@ -6141,7 +6150,7 @@ function openCourtSharedPhoneRelations(recordId){
  <div class="table-wrap"><table><thead><tr><th>登記時間</th><th>序號</th><th>姓名</th><th>會員類型</th><th>識別末四碼</th><th>場地／時段</th><th>與選取紀錄關係</th></tr></thead><tbody>
  ${rows.map(x=>`<tr><td>${escapeHtml(formatCompactDateTime(x.registered_at))}</td><td>${escapeHtml(compactRecordCode(x))}</td><td>${escapeHtml(x.name||'')}</td><td>${escapeHtml(memberIdentityType(x))}</td><td>${escapeHtml(memberIdentifierLast4(x)||'—')}</td><td>${escapeHtml(courtVenueLabel(x))} ${escapeHtml(x.day_of_week||'')} ${escapeHtml(x.time_slot||'')}</td><td>${x===r?'目前登記':courtMemberIdentityKey(x)===courtMemberIdentityKey(r)?'同會員識別・姓名不同':'共用聯絡手機'}</td></tr>`).join('')}
  </tbody></table></div><p class="small">僅顯示識別末四碼，不顯示完整身分證。此處不修改審查結論。</p>`;
- showModal('關聯登記｜會員資料核對',body,()=>{},false);
+ showCourtDetailsDialog('關聯登記｜會員資料核對',body);
 }
 
 function buildDataAnomalies(){
@@ -6590,7 +6599,7 @@ function openRegistrationLimitDetails(id){
       <td>${qualificationReviewsLoaded?escapeHtml(stateLabel[qualificationState(r)]||'待確認'):'未載入'}</td>
     </tr>`).join('')}
     </tbody></table></div>`;
-  showModal('超過次數｜相關登記',body,()=>{});
+  showCourtDetailsDialog('超過次數｜相關登記',body);
 }
 function renderRegistrationLimitEditor(){
   const box=document.getElementById('registrationLimitEditor');
@@ -10879,6 +10888,24 @@ function showAnomalyDefinitionModal(){
     </div>`;
   showModal('異常註記說明', body, ()=>{}, false);
 }
+function showCourtDetailsDialog(title,body){
+  const opener=document.activeElement;
+  const dialog=document.createElement('dialog');
+  dialog.className='modal-card court-details-dialog';
+  dialog.setAttribute('aria-labelledby','courtDetailsTitle');
+  dialog.innerHTML=`<header class="court-details-head">
+    <h3 id="courtDetailsTitle">${escapeHtml(title)}</h3>
+    <form method="dialog"><button class="btn btn-gray btn-compact" autofocus>關閉 ✕</button></form>
+  </header>
+  <div class="court-details-body small" tabindex="0" role="region" aria-label="登記明細">${body}</div>`;
+  document.body.appendChild(dialog);
+  dialog.addEventListener('close',()=>{
+    dialog.remove();
+    if(opener instanceof HTMLElement&&opener.isConnected)opener.focus({preventScroll:true});
+  },{once:true});
+  dialog.showModal();
+}
+
 function showModal(title,body,onOk,withInput=false,onCancel=null){
   const el=document.createElement('div'); el.className='modal';
   el.innerHTML=`<div class="modal-card"><h3>${title}</h3><div class="small">${body}</div>${withInput?'<input id="modalInput" type="password" style="width:100%;margin-top:12px;border:1px solid #d1d5db;border-radius:10px;padding:10px">':''}<div class="modal-actions"><button class="btn btn-gray" id="mCancel">取消</button><button class="btn btn-primary" id="mOk">確認</button></div></div>`;
