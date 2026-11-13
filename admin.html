@@ -5228,6 +5228,8 @@ async function endAdminSession(reason='signed-out',notify=false){
   if(adminSigningOut)return;
   adminSigningOut=true;
   adminSessionEpoch++;
+  // Clear any unverified authenticator QR/secret before revoking the session.
+  window.CourtAdminMfa?.closeSettings?.();
   courtAuthLoginActive=false;
   currentAdmin=null;
   // Preserve the Auth token briefly for Supabase to revoke the remote session.
