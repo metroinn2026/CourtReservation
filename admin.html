@@ -6713,7 +6713,30 @@ function renderPage(page){
   if(page==='accounts') renderAccountsPage();
   if(page==='form-import'){ recordsActionTab='filter'; renderPage('records'); setTimeout(()=>openCourtImportModal('import'),0); return; }
 }
-const dashboardTaskState={page:1,perPage:20};
+const dashboardTaskState={page:1,perPage:20,reviewFilter:'all'};
+function dashboardReviewStorageKey(){
+  return 'court-stage-review-v1:'+JSON.stringify([
+    currentAdmin?.id,systemSettings.registration_start,systemSettings.registration_end
+  ]);
+}
+function readDashboardStageReviews(){
+  try{return new Map(JSON.parse(localStorage.getItem(dashboardReviewStorageKey())||'[]'));}
+  catch{return new Map();}
+}
+function dashboardStageSignature(stage){
+  return JSON.stringify(stage.records.map(r=>String(r.id)).sort());
+}
+function dashboardDrawStatus(stage){
+  if(isStageClosed(stage))return '未開放';
+  const quota=getStageCapacity(stage);
+  if(!(quota>0))return '請核對名額';
+  if(!qualificationReviewsLoaded)return stage.total>quota?'登記超額・待審查':'登記未超額・待審查';
+  const qualified=stage.records.filter(isQualifiedForLottery).length;
+  if(qualified>quota)return '需抽籤';
+  const unresolved=stage.records.filter(r=>['pending','correction'].includes(qualificationState(r))).length;
+  if(qualified+unresolved>quota)return '待資格確認';
+  return '無須抽籤';
+}
 function renderDashboard(){
   const stageMap={};
   allRecords.forEach(r=>{
@@ -6740,8 +6763,11 @@ function renderDashboard(){
   const anomalyIssues=buildDataAnomalies();
 
   const priority={'待抽籤':1,'待公告':2};
-  const taskRows=stages
-    .filter(x=>x.state==='待抽籤'||x.state==='待公告')
+  const stageReviews=readDashboardStageReviews();
+  const pendingTasks=stages.filter(x=>x.state==='待抽籤'||x.state==='待公告');
+  const isReviewed=x=>stageReviews.get(x.key)===dashboardStageSignature(x);
+  const taskRows=pendingTasks
+    .filter(x=>dashboardTaskState.reviewFilter==='all'||isReviewed(x)===(dashboardTaskState.reviewFilter==='clear'))
     .sort((a,b)=>
       (priority[a.state]-priority[b.state]) ||
       String(a.location).localeCompare(String(b.location),'zh-Hant') ||
@@ -6763,16 +6789,18 @@ function renderDashboard(){
   const taskHtml=taskTotal?`
     <div class="table-wrap dashboard-task-table-wrap">
       <table class="dashboard-task-table">
-        <thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記筆數</th><th>狀態</th><th>操作</th></tr></thead>
+        <thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記筆數</th><th>抽籤名額</th><th>狀態</th><th>場次核對</th><th>操作</th></tr></thead>
         <tbody>
           ${visibleTaskRows.map(x=>`<tr>
             <td>${escapeHtml(locationLabel(x.location))}</td>
             <td><strong>${escapeHtml(x.venue)}</strong></td>
             <td>${escapeHtml(x.day)}</td>
             <td>${escapeHtml(x.time)}</td>
-            <td>${x.total}</td>
+            <td>${x.total}${qualificationReviewsLoaded?`<div class="small">合格 ${x.records.filter(isQualifiedForLottery).length} 筆</div>`:''}</td>
+            <td>${isStageClosed(x)?'未開放':getStageCapacity(x)||'未設定'}${x.state==='待抽籤'&&!isStageClosed(x)?`<div class="small">${dashboardDrawStatus(x)}</div>`:''}</td>
             <td>${statusTag(x)}</td>
-            <td class="dashboard-action-cell"><button class="btn btn-primary dashboard-action" data-state="${x.state}" data-location="${escapeHtml(x.location)}" data-venue="${escapeHtml(x.venue)}" data-day="${escapeHtml(x.day)}" data-time="${escapeHtml(x.time)}">前往處理</button></td>
+            <td><label class="records-inline-control"><input type="checkbox" data-dashboard-stage-review="${escapeHtml(x.key)}" ${isReviewed(x)?'checked':''} aria-label="${escapeHtml([x.venue,x.day,x.time].join(' '))} 已核對、無異常">無異常</label></td>
+            <td class="dashboard-action-cell"><button class="btn btn-primary dashboard-action" data-state="${x.state}" data-location="${escapeHtml(x.location)}" data-venue="${escapeHtml(x.venue)}" data-day="${escapeHtml(x.day)}" data-time="${escapeHtml(x.time)}">前往處理</button> <button type="button" class="btn btn-gray btn-compact" data-dashboard-stage-records="${escapeHtml(x.key)}">查看登記</button></td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -6791,7 +6819,7 @@ function renderDashboard(){
         <span class="small">第 ${dashboardTaskState.page}／${taskTotalPages} 頁</span>
         <button type="button" class="btn btn-gray btn-compact" id="dashboardTasksNext" ${dashboardTaskState.page>=taskTotalPages?'disabled':''}>下一頁</button>
       </div>
-    </div>`:`<div class="msg ok">目前沒有待處理場次。</div>`;
+    </div>`:`<div class="msg ok">${pendingTasks.length?'此篩選條件下沒有場次。':'目前沒有待處理場次。'}</div>`;
 
   const regState=getRegistrationState();
   const regClass=regState.key==='open'?'green':regState.key==='closed'?'gray':'blue';
@@ -6821,8 +6849,15 @@ function renderDashboard(){
     <div class="panel admin-section-card dashboard-tasks-panel">
       <div class="admin-section-head"><h3>待處理場次</h3></div>
       <div class="pending-stage-info-row">
-        <div class="small">只列出尚待抽籤或尚待公告的場次，完成後會自動移除。</div>
-        <div class="pending-stage-total">共 ${pendingLotteryStages.length+pendingPublishStages.length} 個待辦場次</div>
+        <div class="small">勾選「無異常」表示已核對，勾選紀錄儲存在此瀏覽器。</div>
+        <label class="records-inline-control">場次核對
+          <select id="dashboardTaskReviewFilter">
+            <option value="all" ${dashboardTaskState.reviewFilter==='all'?'selected':''}>全部場次</option>
+            <option value="open" ${dashboardTaskState.reviewFilter==='open'?'selected':''}>待核對</option>
+            <option value="clear" ${dashboardTaskState.reviewFilter==='clear'?'selected':''}>已核對、無異常</option>
+          </select>
+        </label>
+        <div class="pending-stage-total">顯示 ${taskTotal}／${pendingTasks.length} 場</div>
       </div>
       ${taskHtml}
     </div>
@@ -6833,6 +6868,37 @@ function renderDashboard(){
     renderDashboard();
     document.querySelector('.dashboard-tasks-panel')?.scrollIntoView({block:'start'});
   };
+  document.getElementById('dashboardTaskReviewFilter').onchange=e=>{
+    dashboardTaskState.reviewFilter=e.target.value;
+    moveDashboardTasksPage(1);
+    document.getElementById('dashboardTaskReviewFilter').focus({preventScroll:true});
+  };
+  const visibleStages=new Map(visibleTaskRows.map(x=>[x.key,x]));
+  document.querySelectorAll('[data-dashboard-stage-review]').forEach(box=>{
+    box.onchange=()=>{
+      const stage=visibleStages.get(box.dataset.dashboardStageReview);
+      if(!stage)return;
+      const reviews=readDashboardStageReviews();
+      if(box.checked)reviews.set(stage.key,dashboardStageSignature(stage));
+      else reviews.delete(stage.key);
+      try{localStorage.setItem(dashboardReviewStorageKey(),JSON.stringify([...reviews]));}
+      catch{
+        box.checked=!box.checked;
+        alert('無法儲存場次核對紀錄，請確認瀏覽器允許儲存網站資料。');
+        return;
+      }
+      if(dashboardTaskState.reviewFilter!=='all')moveDashboardTasksPage(dashboardTaskState.page);
+    };
+  });
+  document.querySelectorAll('[data-dashboard-stage-records]').forEach(button=>{
+    button.onclick=()=>{
+      const stage=visibleStages.get(button.dataset.dashboardStageRecords);
+      if(!stage)return;
+      Object.assign(recordState,{location:stage.location,venue:stage.venue,day:stage.day,time:stage.time,q:'',usage:'',anomaly:'',lotteryFilter:'',page:1});
+      recordsActionTab='filter';
+      renderPage('records');
+    };
+  });
   const dashboardTasksPrev=document.getElementById('dashboardTasksPrev');
   if(dashboardTasksPrev)dashboardTasksPrev.onclick=()=>moveDashboardTasksPage(dashboardTaskState.page-1);
   const dashboardTasksNext=document.getElementById('dashboardTasksNext');
