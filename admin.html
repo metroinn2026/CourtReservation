@@ -7068,10 +7068,12 @@ function renderRecordsPage(){
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
             <button id="exportQualifiedBtn" class="records-menu-item" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
+            ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">回匯本機查核結果 CSV</button>':''}
           </div>
         </details>
       </div>
 
+      <input id="offlineReviewCsvInput" type="file" accept=".csv,text/csv" hidden>
       <div id="courtImportReviewQueue" class="records-import-review-compact"></div>
       <div id="recordsWorkspace"></div>
       </div>
@@ -7138,6 +7140,12 @@ function renderRecordsPage(){
   document.getElementById('exportQualifiedBtn').onclick=()=>exportPendingLotteryWorkbook(getStageGroups(getFilteredRecords()));
   const exportMappingButton=document.getElementById('exportFormRowMappingBtn');
   if(exportMappingButton)exportMappingButton.onclick=()=>void exportFormRowMappingCsv(exportMappingButton);
+  const offlineButton=document.getElementById('importOfflineReviewBtn');
+  const offlineFile=document.getElementById('offlineReviewCsvInput');
+  if(offlineButton&&offlineFile){
+    offlineButton.onclick=()=>{if(!secureIdentityAuthenticated){alert('請先使用「資料權限」完成二次驗證');return;}offlineFile.value='';offlineFile.click();};
+    offlineFile.onchange=()=>{if(offlineFile.files[0])void importOfflineReviewCsv(offlineFile.files[0],offlineButton);};
+  }
 
   document.querySelectorAll('.records-function-tab').forEach(btn=>{
     btn.onclick=()=>{
@@ -7224,7 +7232,7 @@ async function loadQualificationReviews(){
     let offset=0;
     const batchSize=500;
     for(;;){
-      const {data,error}=await client.rpc('list_registration_qualifications_v53')
+      const {data,error}=await client.rpc('list_registration_qualifications_v54')
         .order('record_id',{ascending:true}).range(offset,offset+batchSize-1);
       if(error)throw error;
       const rows=Array.isArray(data)?data:[];
@@ -10573,6 +10581,58 @@ async function exportFormRowMappingCsv(button){
     console.error('原始表單對照匯出失敗',e);
     alert('對照表匯出失敗：'+(e?.message||'請檢查管理員權限及網路連線'));
   }finally{button.disabled=false;}
+}
+
+async function importOfflineReviewCsv(file,button){
+ if(currentAdmin?.role!=='super_admin'||!courtAuthLoginActive||!secureIdentityAuthenticated){alert('僅完成資料權限授權的超級管理員可回匯');return;}
+ if(file.size>2e6){alert('CSV 不可超過 2 MB');return;}
+ try{
+  const text=String(await file.text()).replace(/^\uFEFF/,'');
+  let parsed=[],row=[],field='',quoted=false;
+  for(let i=0;i<text.length;i++){
+   const c=text[i];
+   if(quoted){if(c==='"'){if(text[i+1]==='"'){field+='"';i++;}else quoted=false;}else field+=c;}
+   else if(c==='"')quoted=true;
+   else if(c===','){row.push(field);field='';}
+   else if(c==='\n'){row.push(field.replace(/\r$/,''));parsed.push(row);row=[];field='';}
+   else field+=c;
+  }
+  if(quoted)throw Error('CSV 格式錯誤');
+  if(field||row.length){row.push(field.replace(/\r$/,''));parsed.push(row);}
+  const header=['後台完整紀錄ID','後台登記序號','會員查核決定','重複申請決定','處理說明'];
+  if(parsed.length<2||parsed[0].length!==5||parsed[0].some((s,i)=>s.trim()!==header[i]))throw Error('不是本機工具的人工確認回匯 CSV');
+  const rows=parsed.slice(1).filter(r=>r.some(x=>x.trim())).map((r,i)=>{
+   if(r.length!==5)throw Error('第 '+(i+2)+' 列欄數錯誤');
+   return {record_id:r[0].trim(),serial_number:r[1].trim(),member_status:r[2].trim(),duplicate_status:r[3].trim(),note:r[4].trim()};
+  });
+  if(!rows.length||rows.length>3000)throw Error('單次限 1–3,000 筆');
+  const recordMap=new Map(allRecords.map(r=>[String(r.id),r]));
+  const seen=new Set();
+  for(const [i,r] of rows.entries()){
+   const record=recordMap.get(r.record_id);
+   if(seen.has(r.record_id)||!record||String(record.serial_number)!==r.serial_number)throw Error('第 '+(i+2)+' 列紀錄 ID 重複或序號不一致');
+   seen.add(r.record_id);
+   if(record.lottery_locked||record.result_published||String(record.lottery_status||'').trim())throw Error('第 '+(i+2)+' 列已有抽籤結果、鎖定或公告，禁止回匯');
+   if(!['pending','verified','not_member'].includes(r.member_status)||!['none','first','duplicate_invalid'].includes(r.duplicate_status)||(r.member_status==='pending'&&r.duplicate_status==='none')||(r.member_status==='not_member'&&r.duplicate_status==='first')||r.note.length>500||((r.member_status==='not_member'||r.duplicate_status==='duplicate_invalid')&&r.note.length<4))throw Error('第 '+(i+2)+' 列審查決定或原因不完整');
+  }
+  const {data:identity,error:identityError}=await sensitiveAuthClient.rpc('get_court_admin_identity_v1');
+  if(identityError||identity?.role!=='super_admin'||String(identity.id)!==String(currentAdmin?.id))throw Error('二次驗證身分不符，請重新授權');
+  const nonmember=rows.filter(r=>r.member_status==='not_member').length;
+  const duplicated=rows.filter(r=>r.duplicate_status==='duplicate_invalid').length;
+  if(!confirm('將回匯 '+rows.length+' 筆人工確認資料，其中非會員 '+nonmember+' 筆、重複不合格 '+duplicated+' 筆。\n只更新資格及查核紀錄，不刪除登記資料、不修改抽籤結果。\n請確認已檢查原始表單及會員名冊，確定執行？'))return;
+  button.disabled=true;let finished=0,invalid=0;
+  try{
+   for(let i=0;i<rows.length;i+=50){
+    if(!secureIdentityAuthenticated)throw Error('二次授權已失效');
+    const {data,error}=await sensitiveAuthClient.rpc('court_import_offline_review_batch_v1',{p_rows:rows.slice(i,i+50)});
+    if(error)throw Error('已完成 '+finished+' 筆；後續批次失敗：'+error.message);
+    if(Number(data?.processed)!==Math.min(50,rows.length-i))throw Error('筆數不一致，請檢查操作紀錄');
+    finished+=Number(data.processed);invalid+=Number(data.invalid||0);
+   }
+   await loadQualificationReviews();renderRecordsWorkspace();
+   alert('完成回匯 '+finished+' 筆，其中 '+invalid+' 筆列為不合格。');
+  }finally{button.disabled=false;}
+ }catch(e){console.warn('本機查核回匯失敗',e);alert('回匯失敗：'+(e?.message||'請檢查檔案及權限'));}
 }
 
 function exportToCsv(records){
