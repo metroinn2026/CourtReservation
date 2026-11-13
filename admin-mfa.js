@@ -159,7 +159,9 @@
     if(!settingsDialog||state.busy)return;
     const btn=el('adminMfaAddBtn');btn.disabled=true;state.busy=true;
     try{
-      const {data,error}=await state.client.auth.mfa.enroll({factorType:'totp'});
+      // A distinct name also avoids collisions with unfinished enrollments in other tabs.
+      const friendlyName='北投會館驗證器 '+root.crypto.randomUUID();
+      const {data,error}=await state.client.auth.mfa.enroll({factorType:'totp',friendlyName});
       if(error)throw error;
       if(!settingsDialog){await state.client.auth.mfa.unenroll({factorId:data.id}).catch(()=>{});return;}
       state.pendingId=data.id;
