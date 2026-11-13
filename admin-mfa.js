@@ -8,6 +8,17 @@
   const el=id=>document.getElementById(id);
   function show(id,visible){el(id)?.classList.toggle('hidden',!visible);}
   function message(id,content){const node=el(id);if(node)node.textContent=String(content||'');}
+  function qrImageSource(qrCode){
+    const raw=String(qrCode||'').trim();
+    const dataUrl=raw.match(/^data:image\/svg\+xml(?:;(utf-8|charset=utf-8|base64))?,([\s\S]*)$/i);
+    if(dataUrl?.[1]?.toLowerCase()==='base64')return dataUrl[2]?raw:'';
+    let svg=dataUrl?dataUrl[2]:raw;
+    if(/^\s*%3c/i.test(svg)){
+      try{svg=decodeURIComponent(svg);}catch{return '';}
+    }
+    if(!/^\s*(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(svg))return '';
+    return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  }
   function sixDigits(raw){return /^\d{6}$/.test(String(raw||'').trim());}
   function setLoginVisible(visible){
     show('loginBox',!visible);
@@ -103,8 +114,8 @@
         <p class="small" style="line-height:1.8">使用手機驗證器保護個人管理員帳號。設定完成後，往後登入需輸入一次性驗證碼。</p>
         <p id="adminMfaSettingStatus" class="small" aria-live="polite">正在查詢驗證器...</p>
         <div id="adminMfaEnrollment" class="hidden">
-          <img id="adminMfaQr" alt="驗證器設定 QR Code" width="180" height="180" style="display:block;margin:12px auto;max-width:100%;"/>
-          <details class="small"><summary>無法掃描？顯示手動設定密鑰</summary><code id="adminMfaSecret" style="display:block;overflow-wrap:anywhere;padding:8px 0;user-select:all"></code></details>
+          <img id="adminMfaQr" class="hidden" alt="驗證器設定 QR Code" width="180" height="180" style="display:block;margin:12px auto;max-width:100%;"/>
+          <details id="adminMfaManualSetup" class="small"><summary>無法掃描？顯示手動設定密鑰</summary><code id="adminMfaSecret" style="display:block;overflow-wrap:anywhere;padding:8px 0;user-select:all"></code></details>
           <label for="adminMfaEnrollCode" style="display:block;font-size:13px;margin:12px 0 5px">驗證器顯示的 6 位數驗證碼</label>
           <input id="adminMfaEnrollCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位數驗證碼" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:9px"/>
           <button id="adminMfaEnrollVerifyBtn" type="button" class="btn btn-primary" style="margin-top:10px;width:100%">驗證並啟用</button>
@@ -140,13 +151,24 @@
       if(error)throw error;
       if(!settingsDialog){await state.client.auth.mfa.unenroll({factorId:data.id}).catch(()=>{});return;}
       state.pendingId=data.id;
-      const svg=String(data.totp?.qr_code||'');
-      if(!svg.includes('<svg'))throw Error('驗證器 QR Code 無法讀取');
-      el('adminMfaQr').src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+      const image=el('adminMfaQr');
+      const manualSetup=el('adminMfaManualSetup');
+      const src=qrImageSource(data.totp?.qr_code);
+      const showManualSetup=()=>{
+        image.classList.add('hidden');
+        manualSetup.open=true;
+        message('adminMfaSettingMsg','QR Code 無法顯示。可用手動設定密鑰加入驗證器，再輸入 6 位數驗證碼。');
+      };
+      image.onerror=showManualSetup;
       el('adminMfaSecret').textContent=data.totp?.secret||'';
+      manualSetup.open=false;
       show('adminMfaEnrollment',true);
       show('adminMfaAddBtn',false);
-      message('adminMfaSettingMsg','請掃描 QR Code，並輸入驗證器顯示的 6 位數密碼。');
+      if(src){
+        show('adminMfaQr',true);
+        message('adminMfaSettingMsg','請掃描 QR Code，並輸入驗證器顯示的 6 位數驗證碼。');
+        image.src=src;
+      }else showManualSetup();
       el('adminMfaEnrollCode').focus();
     }catch(e){
       message('adminMfaSettingMsg','無法設定驗證器：'+(e.message||String(e)));
