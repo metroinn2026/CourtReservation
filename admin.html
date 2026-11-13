@@ -5536,6 +5536,7 @@ async function loginWithCourtAuth(){
   }
 }
 async function deleteCourtRecords(ids){
+ if(currentAdmin?.role!=='super_admin')return {error:new Error('僅超級管理員可以永久刪除登記資料；請改由異常清單設定不合格。')};
  if(!courtAuthLoginActive)return {error:new Error('請先完成 Supabase Auth 管理員登入')};
  const {data,error}=await authMigrationClient.rpc('court_admin_delete_records_v1',{p_ids:ids});
  if(error)return {error};
@@ -7434,7 +7435,7 @@ function renderRecordsTable(){
       </select>
       <button id="applySelectedStatusBtn" class="btn btn-gray btn-compact" ${selectedRecordIds.size?'':'disabled'}>套用</button>
       <button id="markSelectedNotWonBtn" class="btn btn-gray btn-compact" ${selectedRecordIds.size?'':'disabled'}>設為未中籤</button>
-      <button id="deleteSelectedFromListBtn" class="btn btn-gray btn-compact" ${selectedRecordIds.size?'':'disabled'}>刪除</button>
+      ${currentAdmin?.role==='super_admin'?'<button id="deleteSelectedFromListBtn" class="btn btn-gray btn-compact" '+(selectedRecordIds.size?'':'disabled')+'>刪除</button>':''}
       <button id="savePendingRecordStatusBtn" class="btn btn-primary btn-compact" ${pendingRecordStatusChanges.size?'':'disabled'}>儲存${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}</button>
     </div>
   </div>` : ''}
@@ -7504,6 +7505,7 @@ function renderRecordsTable(){
   }
 }
 function confirmDelete(id){
+  if(currentAdmin?.role!=='super_admin'){alert('只有超級管理員可以永久刪除，請改用資格審查設定不合格。');return;}
   const r=allRecords.find(x=>x.id===id);
   showModal('確認刪除',`確定刪除 ${escapeHtml(r?.name||'')} 的登記資料嗎？`,async()=>{
     const serial=r?.serial_number;
@@ -7567,6 +7569,7 @@ async function batchUpdateSelectedLotteryStatus(){
 }
 
 function batchDeleteSelectedRecords(){
+  if(currentAdmin?.role!=='super_admin'){alert('只有超級管理員可以永久刪除，請改用資格審查設定不合格。');return;}
   const ids=[...selectedRecordIds];
   if(ids.length===0){ alert('請先勾選要刪除的資料'); return; }
   showModal('確認批次刪除',`確定要刪除已勾選的 ${ids.length} 筆登記資料嗎？刪除後無法復原。`,async()=>{
