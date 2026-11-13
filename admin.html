@@ -5886,10 +5886,17 @@ function getRecordAnomalyTypes(record){
   if(stageResultCount===recStage.records.length && stageResultCount>0 && stagePublished<recStage.records.length) types.push('結果待發布');
   return [...new Set(types)];
 }
+const COURT_ANOMALY_GROUPS={
+  '__registration__':{label:'登記資料需確認',types:['手機重複','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常']},
+  '__lottery__':{label:'抽籤結果需確認',types:['超過名額','候補異常','結果漏匯']},
+  '__publication__':{label:'公告進度需確認',types:['公布未完成','結果待發布']}
+};
 function anomalyTags(record){
   const types=getRecordAnomalyTypes(record);
-  if(!types.length) return '<span class="tag gray">正常</span>';
-  return types.map(t=>`<span class="tag anomaly-red">${escapeHtml(t)}</span>`).join('');
+  if(!types.length)return '<span class="tag gray">正常</span>';
+  const groups=Object.values(COURT_ANOMALY_GROUPS).filter(g=>types.some(t=>g.types.includes(t)));
+  const details=escapeHtml(types.join('、'));
+  return groups.map(g=>`<span class="tag anomaly-red" title="${details}">${escapeHtml(g.label)}</span>`).join(' ');
 }
 
 function getStageStartTime(timeSlot){
@@ -6946,7 +6953,10 @@ function getFilteredRecords(){
     if(recordState.anomaly){
       const anomalyTypes=getRecordAnomalyTypes(r);
       if(recordState.anomaly==='__normal__' && anomalyTypes.length>0) return false;
-      if(recordState.anomaly!=='__normal__' && !anomalyTypes.includes(recordState.anomaly)) return false;
+      if(recordState.anomaly!=='__normal__'){
+        const group=COURT_ANOMALY_GROUPS[recordState.anomaly];
+        if(group ? !anomalyTypes.some(t=>group.types.includes(t)) : !anomalyTypes.includes(recordState.anomaly))return false;
+      }
     }
     if(q){
       const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${secureIdentityBySubmission.get(String(r.import_submission_key||''))||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${courtUsage(r)} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
@@ -7050,7 +7060,7 @@ function renderRecordsPage(){
         <select id="filterAnomaly" title="篩選異常狀態">
           <option value="" ${recordState.anomaly===''?'selected':''}>全部狀態</option>
           <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
-          ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','開放前登記','截止後登記','登記時間異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
+          ${Object.entries(COURT_ANOMALY_GROUPS).map(([key,group])=>`<option ${recordState.anomaly===key?'selected':''} value="${key}">${group.label}</option>`).join('')}
         </select>
         <button id="applyFilterBtn" type="button" class="btn btn-primary btn-compact">篩選</button>
         <button id="clearRecordFiltersBtn" type="button" class="records-clear-link">清除</button>
@@ -10648,6 +10658,10 @@ function exportToCsv(records){
 function showAnomalyDefinitionModal(){
   const body=`
     <div style="display:grid;gap:8px;text-align:left;">
+      <div><strong>登記資料需確認</strong>：手機重複、超過登記次數、不開放場次、登記時間異常等。</div>
+      <div><strong>抽籤結果需確認</strong>：超過名額、候補順位異常、部分結果尚未匯入。</div>
+      <div><strong>公告進度需確認</strong>：結果未完成或尚未公告。</div>
+      <div style="border-top:1px solid #e2e8f0;padding-top:8px"><strong>詳細原因對照</strong></div>
       <div><strong>手機重複</strong>：同一手機對應不同身分。</div>
       <div><strong>超過次數</strong>：同一申請人登記次數超過規則。</div>
       <div><strong>超過名額</strong>：中籤人數超過場次名額。</div>
