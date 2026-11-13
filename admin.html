@@ -6296,20 +6296,20 @@ async function loadAllData(){
   }
 
   allRecords=(recordsRes.data||[]).map(r=>({...r,__backendId:r.id}));
-  await loadSensitiveIdentifiers();
+  // 彼此獨立的敏感資料、資格查核與操作紀錄同步載入，減少初次進入後台的等待。
+  const logsPromise=(async()=>{
+    const reviewClient=reviewDbClient();
+    try{
+      const {data:{user}}=await reviewClient.auth.getUser();
+      return user ? await reviewClient.rpc('court_admin_list_logs_v1',{p_limit:200}) : {data:[],error:null};
+    }catch(e){return {data:[],error:e};}
+  })();
+  await Promise.all([loadSensitiveIdentifiers(),loadQualificationReviews()]);
   if(!requestStillAuthorized()){allRecords=[];return false;}
-  await loadQualificationReviews();
-  if(!requestStillAuthorized()){allRecords=[];return false;}
-
-  let logsRes={data:[],error:null};
-  const reviewClient=reviewDbClient();
-  try{
-    const {data:{user}}=await reviewClient.auth.getUser();
-    if(user) logsRes=await reviewClient.rpc('court_admin_list_logs_v1',{p_limit:200});
-  }catch(e){logsRes={data:[],error:e};}
+  const logsRes=await logsPromise;
   if(!requestStillAuthorized())return false;
-  allLogs = logsRes.error ? [] : (logsRes.data || []);
-  if(logsRes.error) console.warn('操作紀錄讀取失敗，需先完成 Supabase 管理員授權。', logsRes.error);
+  allLogs=logsRes.error?[]:(logsRes.data||[]);
+  if(logsRes.error)console.warn('操作紀錄讀取失敗，需先完成 Supabase 管理員授權。',logsRes.error);
 
   capacitySettings={};
   closedSlotSettings={};
