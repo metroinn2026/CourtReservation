@@ -7879,7 +7879,12 @@ function renderRecordsTable(){
     <td>${publishStatusTag(r)}</td>
     <td>${registrationReviewStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td>${membershipCheckCell(r)}</td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}${courtSharedPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
   });
-  html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
+  html+=`</tbody></table></div><div class="pager"><label class="records-inline-control">第
+    <select id="recordsPageJump" aria-label="跳到第幾頁" ${totalPages===1?'disabled':''}>
+      ${Array.from({length:totalPages},(_,i)=>i+1).map(page=>`<option value="${page}" ${page===recordState.page?'selected':''}>${page}</option>`).join('')}
+    </select>
+    / ${totalPages} 頁
+  </label><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
   bindIdentityReveal();
   bindRegistrationLimitButtons(document.getElementById('recordsTable'));
@@ -7888,6 +7893,13 @@ function renderRecordsTable(){
   document.querySelectorAll('#recordsTable [data-qopen]').forEach(b=>b.onclick=()=>openQualificationRecord(b.dataset.qopen));
   bindSortHeaders();
   const anomalyHelpBtn=document.getElementById('anomalyHelpBtn'); if(anomalyHelpBtn) anomalyHelpBtn.onclick=showAnomalyDefinitionModal;
+  document.getElementById('recordsPageJump').onchange=event=>{
+    const page=Number(event.currentTarget.value);
+    if(!Number.isInteger(page)||page<1||page>totalPages)return;
+    recordState.page=page;
+    renderRecordsTable();
+    document.getElementById('recordsPageJump')?.focus({preventScroll:true});
+  };
   document.getElementById('prevPage').disabled=recordState.page<=1;
   document.getElementById('nextPage').disabled=recordState.page>=totalPages;
   document.getElementById('prevPage').onclick=()=>{recordState.page--;renderRecordsTable();};
