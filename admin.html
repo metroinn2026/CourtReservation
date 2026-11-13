@@ -6138,26 +6138,47 @@ function courtMemberNameConflicts(r){
  });
 }
 function courtMemberNameConflict(r){return courtMemberNameConflicts(r).length>0;}
-function courtRelatedRecords(r){
- return [...new Set([...courtSharedPhoneRelations(r),...courtMemberNameConflicts(r)])];
+function courtRelatedRecords(record){
+ const phone=normalizePhone(record.phone);
+ const direct=phone?allRecords.filter(r=>normalizePhone(r.phone)===phone):[];
+ const related=new Map([record,...direct,...courtMemberNameConflicts(record)].map(r=>[String(r.id),r]));
+ for(const r of [...related.values()]){
+   for(const item of registrationLimitRows(getRegistrationLimitEvidence(r))){
+     related.set(String(item.id),item);
+   }
+ }
+ return [...related.values()];
 }
 function courtSharedPhoneCell(r){
- const related=courtRelatedRecords(r);
- if(!related.length)return '';
- const covered=new Set(registrationLimitRows(getRegistrationLimitEvidence(r)).map(record=>String(record.id)));
- if(related.every(record=>covered.has(String(record.id))))return '';
- return `<button type="button" class="court-phone-relations" data-shared-phone-id="${escapeHtml(String(r.id))}" title="查看共用聯絡手機及同會員識別姓名不同的登記">關聯 ${related.length} 筆</button>`;
+ const count=courtRelatedRecords(r).length;
+ if(count<2||getRegistrationLimitEvidence(r).length)return '';
+ return `<button type="button" class="court-phone-relations" data-shared-phone-id="${escapeHtml(String(r.id))}" title="查看相關登記及異常，筆數包含目前登記">關聯 ${count} 筆</button>`;
 }
 function openCourtSharedPhoneRelations(recordId){
- const r=allRecords.find(x=>String(x.id)===String(recordId));if(!r)return;
- const related=courtRelatedRecords(r);
- if(!related.length)return;
- const rows=[r,...related].sort((a,b)=>new Date(a.registered_at||0)-new Date(b.registered_at||0));
- const body=`<p>會館會員以身分證字號識別，Go 會員以綁定手機識別。共用聯絡手機的登記可在此一併查閱。同一會員識別出現不同姓名時，請核對會員資料。</p>
- <div class="table-wrap"><table><thead><tr><th>登記時間</th><th>序號</th><th>姓名</th><th>會員類型</th><th>識別末四碼</th><th>場地／時段</th><th>與選取紀錄關係</th></tr></thead><tbody>
- ${rows.map(x=>`<tr><td>${escapeHtml(formatCompactDateTime(x.registered_at))}</td><td>${escapeHtml(compactRecordCode(x))}</td><td>${escapeHtml(x.name||'')}</td><td>${escapeHtml(memberIdentityType(x))}</td><td>${escapeHtml(memberIdentifierLast4(x)||'—')}</td><td>${escapeHtml(courtVenueLabel(x))} ${escapeHtml(x.day_of_week||'')} ${escapeHtml(x.time_slot||'')}</td><td>${x===r?'目前登記':courtMemberIdentityKey(x)===courtMemberIdentityKey(r)?'同會員識別・姓名不同':'共用聯絡手機'}</td></tr>`).join('')}
- </tbody></table></div><p class="small">僅顯示識別末四碼，不顯示完整身分證。此處不修改審查結論。</p>`;
- showCourtDetailsDialog('關聯登記｜會員資料核對',body);
+ const record=allRecords.find(r=>String(r.id)===String(recordId));
+ if(!record)return;
+ const rows=courtRelatedRecords(record).sort((a,b)=>
+   (new Date(a.registered_at||0)-new Date(b.registered_at||0)) ||
+   compactRecordCode(a).localeCompare(compactRecordCode(b)));
+ const stateLabel={qualified:'合格',pending:'待確認',correction:'待補正',invalid:'不合格'};
+ const body=`<p>共關聯 ${rows.length} 筆，包含目前登記。會館依身分證字號計算登記次數，Go 依綁定手機計算。共用手機的登記也會列在這裡，請依各列的異常與審查狀態核對。</p>
+ <div class="table-wrap"><table><thead><tr><th>序號</th><th>登記時間</th><th>姓名</th><th>會員類型／識別末四碼</th><th>場次</th><th>異常與核對項目</th><th>資格審查</th></tr></thead><tbody>
+ ${rows.map(r=>{
+   const limit=getRegistrationLimitEvidence(r);
+   const reasons=registrationReviewReasons(r).filter(reason=>reason!=='超過次數');
+   reasons.push(...limit.map(issue=>`超過次數：${issue.label}（${issue.rows.length} 筆）`));
+   const state=registrationWindowRejection(r)?'不合格':qualificationReviewsLoaded?stateLabel[qualificationState(r)]:'未載入';
+   return `<tr>
+     <td><strong>${escapeHtml(compactRecordCode(r))}</strong>${r===record?'<div class="small">目前登記</div>':''}</td>
+     <td>${escapeHtml(formatCompactDateTime(r.registered_at))}</td>
+     <td>${escapeHtml(r.name)}</td>
+     <td>${escapeHtml(memberIdentityType(r))}／${escapeHtml(memberIdentifierLast4(r)||'—')}</td>
+     <td>${escapeHtml(courtVenueLabel(r))}／${escapeHtml(courtUsage(r))}<br>${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</td>
+     <td>${reasons.map(escapeHtml).join('<br>')||'—'}</td><td>${escapeHtml(state||'待確認')}</td>
+   </tr>`;
+ }).join('')}
+ </tbody></table></div>`;
+ showCourtDetailsDialog('關聯登記｜異常明細',body);
 }
 
 function buildDataAnomalies(){
@@ -6586,36 +6607,12 @@ function registrationLimitRows(evidence){
   return [...new Map(evidence.flatMap(issue=>issue.rows.map(r=>[String(r.id),r]))).values()];
 }
 function registrationLimitButton(record){
-  const evidence=getRegistrationLimitEvidence(record);
-  return `<button type="button" class="court-phone-relations" data-limit-record="${escapeHtml(record.id)}">超過次數｜涉及 ${registrationLimitRows(evidence).length} 筆</button>`;
+  return `<button type="button" class="court-phone-relations" data-limit-record="${escapeHtml(record.id)}">超過次數｜涉及 ${courtRelatedRecords(record).length} 筆</button>`;
 }
 function bindRegistrationLimitButtons(container){
   container.querySelectorAll('[data-limit-record]').forEach(button=>{
-    button.onclick=()=>openRegistrationLimitDetails(button.dataset.limitRecord);
+    button.onclick=()=>openCourtSharedPhoneRelations(button.dataset.limitRecord);
   });
-}
-function openRegistrationLimitDetails(id){
-  const record=allRecords.find(r=>String(r.id)===id);
-  if(!record)return;
-  const evidence=getRegistrationLimitEvidence(record);
-  const rows=registrationLimitRows(evidence).sort((a,b)=>
-    (new Date(a.registered_at||0)-new Date(b.registered_at||0)) ||
-    compactRecordCode(a).localeCompare(compactRecordCode(b)));
-  if(!rows.length)return;
-  const stateLabel={qualified:'合格',pending:'待確認',correction:'待補正',invalid:'不合格'};
-  const body=`<p>共涉及 ${rows.length} 筆（含目前登記）。同一會員依會員識別比對。</p>
-    <ul>${evidence.map(issue=>`<li>${escapeHtml(issue.label)}，目前 ${issue.rows.length} 筆</li>`).join('')}</ul>
-    <div class="table-wrap"><table><thead><tr><th>序號</th><th>登記時間</th><th>姓名</th><th>球類／用途</th><th>星期／時段</th><th>資格審查</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr>
-      <td><strong>${escapeHtml(compactRecordCode(r))}</strong>${String(r.id)===id?'<div class="small">目前登記</div>':''}</td>
-      <td>${escapeHtml(formatCompactDateTime(r.registered_at))}</td>
-      <td>${escapeHtml(r.name)}</td>
-      <td>${escapeHtml(courtVenueLabel(r))}／${escapeHtml(courtUsage(r))}</td>
-      <td>${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</td>
-      <td>${qualificationReviewsLoaded?escapeHtml(stateLabel[qualificationState(r)]||'待確認'):'未載入'}</td>
-    </tr>`).join('')}
-    </tbody></table></div>`;
-  showCourtDetailsDialog('超過次數｜相關登記',body);
 }
 function renderRegistrationLimitEditor(){
   const box=document.getElementById('registrationLimitEditor');
@@ -7415,7 +7412,7 @@ async function setManualMembershipCheck(recordId,status){
   await loadQualificationReviews();
   renderRecordsWorkspace();
 }
-function registrationReviewStatusCell(r){
+function registrationReviewReasons(r){
   const types=getRecordAnomalyTypes(r);
   const roster=hallRosterChecks.get(String(r.id));
   const saved=qualificationReviews.get(String(r.id));
@@ -7423,6 +7420,10 @@ function registrationReviewStatusCell(r){
     types.push('會館會員名冊查無，待複核');
   }
   if(saved?.member_check_status==='not_member')types.push('會員資格不符');
+  return types;
+}
+function registrationReviewStatusCell(r){
+  const types=registrationReviewReasons(r);
   const hasLimitIssue=types.includes('超過次數');
   const unique=[...new Set(types.filter(type=>type!=='超過次數'))];
   const notice=unique.length
