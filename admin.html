@@ -7031,7 +7031,10 @@ async function setManualMembershipCheck(recordId){
     if(!note){alert('非會員必須記錄查核原因');return;}
   }
   if(!confirm('確認將「'+record.name+'」設定為「'+({verified:'已確認會員',not_member:'非會員',unchecked:'未查核'}[status])+'」？'+(status==='not_member'?'\\n該筆將同時列為不合格，不進入抽籤名單。':'')))return;
-  const {error}=await reviewDbClient().rpc('court_set_membership_check_v1',{p_record_id:record.id,p_status:status,p_note:note});
+  const {error}=await reviewDbClient().rpc('court_set_membership_check_v2',{
+    p_record_id:record.id,p_status:status,p_note:note,
+    p_initial_review_status:qualificationState(record)==='qualified'?'qualified':'pending'
+  });
   if(error){alert('會員查核更新失敗：'+error.message);return;}
   await loadQualificationReviews();
   renderRecordsWorkspace();
@@ -7058,9 +7061,18 @@ async function loadQualificationReviews(){
     const client=reviewDbClient();
     const {data:user}=await client.auth.getUser();
     if(!user?.user)return;
-    const {data,error}=await client.rpc('list_registration_qualifications_v53');
-    if(error)throw error;
-    (data||[]).forEach(row=>qualificationReviews.set(String(row.record_id),row));
+    let offset=0;
+    const batchSize=500;
+    for(;;){
+      const {data,error}=await client.rpc('list_registration_qualifications_v53')
+        .order('record_id',{ascending:true}).range(offset,offset+batchSize-1);
+      if(error)throw error;
+      const rows=Array.isArray(data)?data:[];
+      rows.forEach(row=>qualificationReviews.set(String(row.record_id),row));
+      if(rows.length<batchSize)break;
+      offset+=batchSize;
+      if(offset>=100000)throw new Error('資格審查資料數量異常，停止載入');
+    }
     qualificationReviewsLoaded=true;
   }catch(e){console.warn('資格審查讀取失敗',e);}
 }
