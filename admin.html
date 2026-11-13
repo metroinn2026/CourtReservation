@@ -5210,6 +5210,17 @@ body .ux-review-edit{align-items:end}
  .dashboard-tasks-panel .dashboard-task-page-actions{width:100%;justify-content:space-between}
 }
 </style>
+<style id="court-record-filters-submit-v1">
+.records-compact-filterbar #applyFilterBtn{
+  display:inline-flex!important;
+  visibility:visible!important;
+  align-items:center!important;
+  justify-content:center!important;
+  white-space:nowrap!important;
+  min-height:36px;
+}
+.records-compact-filterbar #clearRecordFiltersBtn{white-space:nowrap}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -6849,9 +6860,11 @@ function getFilteredRecords(){
     if(lf==='__not_drawn__' && String(lotteryStatus||'').trim())return false;
     if(lf==='__backup__' && !/^候補\d+$/.test(String(lotteryStatus||'')))return false;
     if(lf && lf!=='__not_drawn__' && lf!=='__backup__' && lotteryStatus!==lf)return false;
-    const anomalyTypes=getRecordAnomalyTypes(r);
-    if(recordState.anomaly==='__normal__' && anomalyTypes.length>0) return false;
-    if(recordState.anomaly && recordState.anomaly!=='__normal__' && !anomalyTypes.includes(recordState.anomaly)) return false;
+    if(recordState.anomaly){
+      const anomalyTypes=getRecordAnomalyTypes(r);
+      if(recordState.anomaly==='__normal__' && anomalyTypes.length>0) return false;
+      if(recordState.anomaly!=='__normal__' && !anomalyTypes.includes(recordState.anomaly)) return false;
+    }
     if(q){
       const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${secureIdentityBySubmission.get(String(r.import_submission_key||''))||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${courtUsage(r)} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
       if(!hay.includes(q)) return false;
@@ -6956,8 +6969,8 @@ function renderRecordsPage(){
           <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
           ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','開放前登記','截止後登記','登記時間異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
         </select>
+        <button id="applyFilterBtn" type="button" class="btn btn-primary btn-compact">篩選</button>
         <button id="clearRecordFiltersBtn" type="button" class="records-clear-link">清除</button>
-        <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
       </div>
 
       </div>
@@ -7037,10 +7050,9 @@ function renderRecordsPage(){
     };
   }
   document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
-  ['filterLocation','filterVenue','filterUsage','filterDay','filterTime','filterAnomaly'].forEach(id=>{
-    document.getElementById(id)?.addEventListener('change',applyRecordFilters);
-  });
-  document.getElementById('searchQ').addEventListener('input',applyRecordFilters);
+  // 篩選條件先留在輸入欄位；僅按下「篩選」或在搜尋框按 Enter 才更新登記清單。
+  // 切換球類仍會調整可選用途與時段，但不會立即進行清單查詢。
+
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
   document.getElementById('exportQualifiedBtn').onclick=()=>exportPendingLotteryWorkbook(getStageGroups(getFilteredRecords()));
 
