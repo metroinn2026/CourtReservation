@@ -5788,7 +5788,11 @@ function refreshRuleTimeSelect(selectId, venue, selected=''){
   el.value=keep;
 }
 function settingKey(venue, day, timeSlot){ return `${venue}|${day}|${timeSlot}`; }
-function countSlot(venue,day,startTime,location=DEFAULT_LOCATION){ return allRecords.filter(r=>recordLocation(r)===location && r.venue_type===venue && r.day_of_week===day && String(r.time_slot||'').includes(startTime)).length; }
+function countSlot(venue,day,startTime,location=DEFAULT_LOCATION){
+  const slot=slotRangeKey(formatTimeSlotDisplay(startTime,venue));
+  return allRecords.filter(r=>recordLocation(r)===location && r.venue_type===venue &&
+    String(r.day_of_week||'').replace(/^週/,'周')===day && slotRangeKey(r.time_slot)===slot).length;
+}
 // 僅供承辦人辨識相鄰的桌球登記，不影響資格或抽籤。
 function continuousRegistrationRecordIds(records){
   const groups=new Map(), marked=new Set();
@@ -6675,9 +6679,21 @@ function getStageCapacity(stage){
   const start=getStageStartTime(stage.time);
   return Number(capacitySettings[settingKey(stage.venue,stage.day,stage.time)] ?? capacitySettings[settingKey(stage.venue,stage.day,start)] ?? capacityMap[stage.venue] ?? 0);
 }
+function slotRangeKey(time){
+  const normalized=String(time||'').trim().replace(/\s/g,'').replace(/[－–—～~]/g,'-');
+  const match=normalized.match(/^(\d{2}:\d{2})-(\d{2}):59$/);
+  if(!match)return normalized;
+  return `${match[1]}-${String(Number(match[2])+1).padStart(2,'0')}:00`;
+}
 function isStageClosed(stage){
+  const day=String(stage.day||'').replace(/^週/,'周');
   const start=getStageStartTime(stage.time);
-  return closedSlotSettings[settingKey(stage.venue,stage.day,stage.time)]===true || closedSlotSettings[settingKey(stage.venue,stage.day,start)]===true;
+  const displayedSlot=formatTimeSlotDisplay(start,stage.venue);
+  const value=(time)=>closedSlotSettings[settingKey(stage.venue,day,time)];
+  if(slotRangeKey(displayedSlot)===slotRangeKey(stage.time)&&value(displayedSlot)!==undefined){
+    return value(displayedSlot)===true;
+  }
+  return (value(stage.time) ?? value(slotRangeKey(stage.time)) ?? value(start))===true;
 }
 function getAutomationStageState(stage){
   const total=stage.records.length;
@@ -7099,8 +7115,8 @@ function getFilteredRecords(){
     if(recordState.location && recordLocation(r)!==recordState.location) return false;
     if(recordState.venue && r.venue_type!==recordState.venue) return false;
     if(recordState.usage && courtUsage(r)!==recordState.usage) return false;
-    if(recordState.day && r.day_of_week!==recordState.day) return false;
-    if(recordState.time && r.time_slot!==recordState.time) return false;
+    if(recordState.day && String(r.day_of_week||'').replace(/^週/,'周')!==recordState.day) return false;
+    if(recordState.time && slotRangeKey(r.time_slot)!==slotRangeKey(recordState.time)) return false;
     const lotteryStatus=pendingRecordStatusChanges.has(String(r.id))?pendingRecordStatusChanges.get(String(r.id)):r.lottery_status;
     const lf=recordState.lotteryFilter||'';
     if(lf==='__not_drawn__' && String(lotteryStatus||'').trim())return false;
@@ -8214,7 +8230,7 @@ function renderBulkCapacityTable(){
       const slot=formatTimeSlotDisplay(st,venue);
       const key=settingKey(venue,day,slot);
       const val=Number(capacitySettings[key] ?? capacityMap[venue] ?? 0);
-      const isClosed=closedSlotSettings[key] === true;
+      const isClosed=isStageClosed({venue,day,time:slot});
       if(isClosed) closedCount++;
       else {
         openCount++;
@@ -8250,7 +8266,7 @@ function renderBulkCapacityTable(){
               ${days.map(day=>{
                 const key=settingKey(venue,day,slot);
                 const val=capacitySettings[key] ?? capacityMap[venue] ?? 0;
-                const isClosed=closedSlotSettings[key] === true;
+                const isClosed=isStageClosed({venue,day,time:slot});
                 const registered=countSlot(venue,day,st,location);
                 return `
                   <td class="capacity-cell ${isClosed?'is-closed':''}" style="text-align:center;vertical-align:top;">
@@ -8278,6 +8294,7 @@ function renderBulkCapacityTable(){
                       <span>不開放</span>
                     </label>
                     <div class="small" style="margin-top:4px;color:${registered>0?'var(--blue)':'#94a3b8'};">已報${registered}</div>
+                    ${registered?`<button type="button" class="btn btn-gray btn-compact" data-closed-slot-records ${isClosed?'':'hidden'}>查看登記</button>`:''}
                     <div class="capacity-save-status" aria-live="polite"></div>
                   </td>`;
               }).join('')}
@@ -8325,6 +8342,15 @@ function renderBulkCapacityTable(){
     window.addEventListener('resize', syncScrollWidth, { once:true });
   }
 
+  container.querySelectorAll('[data-closed-slot-records]').forEach(button=>{
+    button.onclick=()=>confirmDiscardCapacityDraft(()=>{
+      const slot=button.closest('.capacity-cell').querySelector('.cap-input').dataset;
+      Object.assign(recordState,{q:'',location,venue:slot.venue,usage:'',day:slot.day,time:slot.slot,
+        anomaly:'__registration__',lotteryFilter:'',page:1});
+      recordsActionTab='filter';
+      renderPage('records');
+    });
+  });
   container.querySelectorAll('.cap-input').forEach(input=>{
     input.addEventListener('input',()=>markCapacityCellDraft(input.closest('.capacity-cell')));
   });
@@ -8371,6 +8397,9 @@ function renderBulkCapacityTable(){
       capacitySettings[key]=winnerCount;
       closedSlotSettings[key]=payload.is_closed;
       if(cell)delete cell.dataset.capacityDraft;
+      if(cell?.querySelector('[data-closed-slot-records]')){
+        cell.querySelector('[data-closed-slot-records]').hidden=!payload.is_closed;
+      }
       if(statusEl){
         statusEl.textContent='已儲存';
         statusEl.className='capacity-save-status ok';
