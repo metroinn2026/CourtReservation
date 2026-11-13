@@ -5852,13 +5852,8 @@ function renderLocationOptions(selected='', includeAll=false, allLabel='全部�
   return options.join('');
 }
 function shouldLockLocationFilter(){ return getAdminLocations().length<=1; }
-function isSuspiciousPhone(record){
-  const phone = normalizePhone(record.phone);
-  if(!phone) return false;
-  const ids = new Set(allRecords.filter(r=>normalizePhone(r.phone)===phone).map(r=>String(r.id_last4||'')).filter(Boolean));
-  return ids.size > 1;
-}
-function suspiciousTag(record){ return isSuspiciousPhone(record) ? '<span class="tag warn">同手機多身分</span>' : '<span class="tag gray">正常</span>'; }
+function isSuspiciousPhone(record){return courtSharedPhoneRelations(record).length>0;}
+function suspiciousTag(record){return isSuspiciousPhone(record)?'<span class="tag gray" title="僅表示共用聯絡電話，不是資格異常">共用聯絡手機</span>':'<span class="tag gray">正常</span>';}
 function getRecordAnomalyTypes(record){
   const types=[];
   const records=allRecords||[];
@@ -6170,7 +6165,7 @@ function buildDataAnomalies(){
   // 2. 超過次數：合併重複場次與超過申請上限
   const personSportGroups={};
   records.forEach(r=>{
-    const pk=personKey(r); if(pk==='|') return;
+    const pk=personKey(r); if(pk.startsWith('UNVERIFIED:')) return;
     const k=`${pk}|${recordLocation(r)}|${r.venue_type||''}`;
     if(!personSportGroups[k]) personSportGroups[k]=[];
     personSportGroups[k].push(r);
@@ -10767,7 +10762,7 @@ function exportToCsv(records){
   if(!records.length){alert('沒有資料可以匯出');return;}
   let csv='序號,抽籤狀態,公布狀態,鎖定,異常狀態,姓名,聯絡手機,Email,會員身分,會員識別末4碼,地點,運動類型,星期,時段,登記時間\n';
   records.forEach(r=>{
-    const state=isSuspiciousPhone(r)?'手機重複':'正常';
+    const state=getRecordAnomalyTypes(r).length?'需確認':'正常';
     csv += `"${r.serial_number||''}","${r.lottery_status||'未抽籤'}","${r.result_published?'已公布':'未公布'}","${r.lottery_locked?'已鎖定':'未鎖定'}","${state}","${r.name||''}","${r.phone||''}","${(courtAuthLoginActive||secureIdentityAuthenticated)?(secureEmailBySubmission.get(String(r.import_submission_key||''))||''):''}","${r.member_type||'未記錄'}","${memberIdentifierLast4(r)}","${r.location_name||''}","${r.venue_type||''}","${r.day_of_week||''}","${r.time_slot||''}","${r.registered_at||''}"\n`;
   });
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
@@ -10989,8 +10984,8 @@ async function parseGoogleFormWorkbook(file){
   if(new Set(group.map(x=>x.name.trim())).size>1)anomalies.push({type:'相同會員識別資料對應不同姓名',submissionKeys:keys,recordKeys:related.map(r=>r.record_key)});
  });
  // 跨運動同一時段允許登記，不於匯入時取消資格；抽籤結果另行確認。
- const phoneGroups=new Map();submissions.forEach(x=>{if(!x.phone)return;const g=phoneGroups.get(x.phone)||[];g.push(x);phoneGroups.set(x.phone,g);});
- phoneGroups.forEach(g=>{if(new Set(g.map(x=>x.member_key_hash)).size>1)anomalies.push({type:'聯絡手機重複待審查（不得直接判無效）',submissionKeys:g.map(x=>x.submission_key),recordKeys:records.filter(r=>g.some(x=>x.submission_key===r.submission_key)).map(r=>r.record_key)});});
+ // 同一聯絡手機可能由不同會館會員共同使用，不再將共用電話加入匯入異常。
+ // 已匯入紀錄可在登記清單點選「關聯」查看相關申請，且不會自動判重複。
  // 大量會員類別無法辨識通常是 Google 表單選項改版，而不是大量民眾填錯。
  // 先停止整份預覽，防止正常資料被錯放待審查名單。
  const unknownCount=[...unknownMemberLabels.values()].reduce((a,b)=>a+b,0);
