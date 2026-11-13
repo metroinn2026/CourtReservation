@@ -6394,7 +6394,7 @@ async function loadAllData(){
       return user ? await reviewClient.rpc('court_admin_list_logs_v1',{p_limit:200}) : {data:[],error:null};
     }catch(e){return {data:[],error:e};}
   })();
-  await Promise.all([loadSensitiveIdentifiers(),loadQualificationReviews()]);
+  await Promise.all([loadSensitiveIdentifiers(),loadQualificationReviews(),loadHallRosterChecks()]);
   if(!requestStillAuthorized()){allRecords=[];return false;}
   const logsRes=await logsPromise;
   if(!requestStillAuthorized())return false;
@@ -7078,7 +7078,7 @@ function renderRecordsPage(){
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
             <button id="exportQualifiedBtn" class="records-menu-item" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
-            ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">回匯本機查核結果 CSV</button>':''}
+            ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">匯入會館會員名冊比對 CSV</button>':''}
           </div>
         </details>
       </div>
@@ -7174,6 +7174,25 @@ function renderRecordsPage(){
 // v52: per-registration qualification review; distinct from lottery result and anomaly events.
 let qualificationReviews=new Map();
 let qualificationReviewsLoaded=false;
+let hallRosterChecks=new Map();
+async function loadHallRosterChecks(){
+  const next=new Map();
+  try{
+    const client=reviewDbClient();
+    const {data:user,error:authError}=await client.auth.getUser();
+    if(authError||!user?.user)return;
+    const batchSize=500;
+    for(let offset=0;offset<100000;offset+=batchSize){
+      const {data,error}=await client.rpc('court_list_member_roster_checks_v1')
+        .order('record_id',{ascending:true}).range(offset,offset+batchSize-1);
+      if(error)throw error;
+      const rows=Array.isArray(data)?data:[];
+      for(const row of rows)next.set(String(row.record_id),row);
+      if(rows.length<batchSize)break;
+    }
+    hallRosterChecks=next;
+  }catch(error){console.warn('會員名冊比對結果載入失敗',error?.code||error?.message);}
+}
 function qualificationIssueTypes(r){
   // Only actual eligibility concerns count here; publication and lottery workflow are excluded.
   return getRecordAnomalyTypes(r).filter(x=>/手機重複|超過次數|不開放場次有登記|開放前登記|截止後登記|登記時間異常/.test(x));
@@ -7186,12 +7205,18 @@ function isQualifiedForLottery(r){return qualificationReviewsLoaded && qualifica
 function membershipCheckCell(r){
   if(!qualificationReviewsLoaded)return '<span class="tag gray">未載入</span>';
   const member=qualificationReviews.get(String(r.id))?.member_check_status||'unchecked';
-  return `<select data-membership-check="${escapeHtml(String(r.id))}" aria-label="會員查核：${escapeHtml(r.name)}"
+  const roster=hallRosterChecks.get(String(r.id));
+  const rosterMark=/會館會員/.test(String(r.member_type||''))&&roster
+    ? '<div class="small" style="margin-top:3px;color:#64748b" title="僅代表與當次名冊比對結果，最終資格由承辦人審查">'+escapeHtml(
+      roster.roster_match==='found'?'名冊比對：有資料':roster.roster_match==='not_found'?'名冊比對：查無，待複核':'名冊比對：待確認'
+      )+'</div>'
+    : '';
+  return `<div><select data-membership-check="${escapeHtml(String(r.id))}" aria-label="會員查核：${escapeHtml(r.name)}"
     title="向會員資料來源核對後，選擇會員查核結果" style="width:100%;min-width:106px;max-width:138px;height:32px;font-size:12px;border:1px solid #dce3ec;border-radius:7px;background:#fff;padding:0 4px">
     <option value="unchecked" ${member==='unchecked'?'selected':''}>未查核</option>
     <option value="verified" ${member==='verified'?'selected':''}>已確認會員</option>
     <option value="not_member" ${member==='not_member'?'selected':''}>非會員</option>
-  </select>`;
+  </select>${rosterMark}</div>`;
 }
 async function setManualMembershipCheck(recordId,status){
   if(!qualificationReviewsLoaded){alert('資格審查資料尚未載入，請重新登入後再試');return;}
@@ -10594,55 +10619,65 @@ async function exportFormRowMappingCsv(button){
 }
 
 async function importOfflineReviewCsv(file,button){
- if(currentAdmin?.role!=='super_admin'||!courtAuthLoginActive||!secureIdentityAuthenticated){alert('僅完成資料權限授權的超級管理員可回匯');return;}
- if(file.size>2e6){alert('CSV 不可超過 2 MB');return;}
+ if(currentAdmin?.role!=='super_admin'||!courtAuthLoginActive||!secureIdentityAuthenticated){
+   alert('此功能僅限已完成資料權限驗證的超級管理員');return;
+ }
+ if(file.size>2e6){alert('CSV 檔案大小不可超過 2 MB');return;}
  try{
-  const text=String(await file.text()).replace(/^\uFEFF/,'');
-  let parsed=[],row=[],field='',quoted=false;
-  for(let i=0;i<text.length;i++){
-   const c=text[i];
-   if(quoted){if(c==='"'){if(text[i+1]==='"'){field+='"';i++;}else quoted=false;}else field+=c;}
-   else if(c==='"')quoted=true;
-   else if(c===','){row.push(field);field='';}
-   else if(c==='\n'){row.push(field.replace(/\r$/,''));parsed.push(row);row=[];field='';}
-   else field+=c;
-  }
-  if(quoted)throw Error('CSV 格式錯誤');
-  if(field||row.length){row.push(field.replace(/\r$/,''));parsed.push(row);}
-  const header=['後台完整紀錄ID','後台登記序號','會員查核決定','重複申請決定','處理說明'];
-  if(parsed.length<2||parsed[0].length!==5||parsed[0].some((s,i)=>s.trim()!==header[i]))throw Error('不是本機工具的人工確認回匯 CSV');
-  const rows=parsed.slice(1).filter(r=>r.some(x=>x.trim())).map((r,i)=>{
-   if(r.length!==5)throw Error('第 '+(i+2)+' 列欄數錯誤');
-   return {record_id:r[0].trim(),serial_number:r[1].trim(),member_status:r[2].trim(),duplicate_status:r[3].trim(),note:r[4].trim()};
-  });
-  if(!rows.length||rows.length>3000)throw Error('單次限 1–3,000 筆');
-  const recordMap=new Map(allRecords.map(r=>[String(r.id),r]));
-  const seen=new Set();
-  for(const [i,r] of rows.entries()){
-   const record=recordMap.get(r.record_id);
-   if(seen.has(r.record_id)||!record||String(record.serial_number)!==r.serial_number)throw Error('第 '+(i+2)+' 列紀錄 ID 重複或序號不一致');
-   seen.add(r.record_id);
-   if(record.lottery_locked||record.result_published||String(record.lottery_status||'').trim())throw Error('第 '+(i+2)+' 列已有抽籤結果、鎖定或公告，禁止回匯');
-   if(!['pending','verified','not_member'].includes(r.member_status)||!['none','first','duplicate_invalid'].includes(r.duplicate_status)||(r.member_status==='pending'&&r.duplicate_status==='none')||(r.member_status==='not_member'&&r.duplicate_status==='first')||r.note.length>500||((r.member_status==='not_member'||r.duplicate_status==='duplicate_invalid')&&r.note.length<4))throw Error('第 '+(i+2)+' 列審查決定或原因不完整');
-  }
-  const {data:identity,error:identityError}=await sensitiveAuthClient.rpc('get_court_admin_identity_v1');
-  if(identityError||identity?.role!=='super_admin'||String(identity.id)!==String(currentAdmin?.id))throw Error('二次驗證身分不符，請重新授權');
-  const nonmember=rows.filter(r=>r.member_status==='not_member').length;
-  const duplicated=rows.filter(r=>r.duplicate_status==='duplicate_invalid').length;
-  if(!confirm('將回匯 '+rows.length+' 筆人工確認資料，其中非會員 '+nonmember+' 筆、重複不合格 '+duplicated+' 筆。\n只更新資格及查核紀錄，不刪除登記資料、不修改抽籤結果。\n請確認已檢查原始表單及會員名冊，確定執行？'))return;
-  button.disabled=true;let finished=0,invalid=0;
-  try{
-   for(let i=0;i<rows.length;i+=50){
-    if(!secureIdentityAuthenticated)throw Error('二次授權已失效');
-    const {data,error}=await sensitiveAuthClient.rpc('court_import_offline_review_batch_v1',{p_rows:rows.slice(i,i+50)});
-    if(error)throw Error('已完成 '+finished+' 筆；後續批次失敗：'+error.message);
-    if(Number(data?.processed)!==Math.min(50,rows.length-i))throw Error('筆數不一致，請檢查操作紀錄');
-    finished+=Number(data.processed);invalid+=Number(data.invalid||0);
+   const content=String(await file.text()).replace(/^\uFEFF/,'');
+   const parsed=[];let row=[],cell='',quoted=false;
+   for(let i=0;i<content.length;i++){
+     const c=content[i];
+     if(quoted){if(c==='"'){if(content[i+1]==='"'){cell+='"';i++;}else quoted=false;}else cell+=c;}
+     else if(c==='"')quoted=true;
+     else if(c===','){row.push(cell);cell='';}
+     else if(c==='\n'){row.push(cell.replace(/\r$/,''));parsed.push(row);row=[];cell='';}
+     else cell+=c;
    }
-   await loadQualificationReviews();renderRecordsWorkspace();
-   alert('完成回匯 '+finished+' 筆，其中 '+invalid+' 筆列為不合格。');
-  }finally{button.disabled=false;}
- }catch(e){console.warn('本機查核回匯失敗',e);alert('回匯失敗：'+(e?.message||'請檢查檔案及權限'));}
+   if(quoted)throw Error('CSV 引號格式錯誤');
+   if(cell||row.length){row.push(cell.replace(/\r$/,''));parsed.push(row);}
+   const header=['後台完整紀錄ID','後台登記序號','名冊比對結果','比對備註'];
+   if(parsed.length<2||parsed[0].length!==header.length||parsed[0].some((v,i)=>v.trim()!==header[i]))
+     throw Error('檔案格式不符。請使用本機 v6「匯出會館會員比對結果（回匯後台）」產生的 CSV；舊版人工資格判定 CSV 不再接受。');
+   const rows=parsed.slice(1).filter(r=>r.some(v=>v.trim())).map((r,i)=>{
+     if(r.length!==header.length)throw Error('第 '+(i+2)+' 列欄位數量不正確');
+     return {record_id:r[0].trim(),serial_number:r[1].trim(),roster_match:r[2].trim(),note:r[3].trim()};
+   });
+   if(rows.length<1||rows.length>3000)throw Error('單次檔案限 1 至 3,000 筆');
+   const recordMap=new Map(allRecords.map(r=>[String(r.id),r]));
+   const seen=new Set();
+   const summary={found:0,not_found:0,uncertain:0};
+   for(const [index,item] of rows.entries()){
+     const record=recordMap.get(item.record_id);
+     if(seen.has(item.record_id)||!record||String(record.serial_number)!==item.serial_number)
+       throw Error('第 '+(index+2)+' 列 ID 重複、紀錄不存在或序號不一致');
+     if(!/會館會員/.test(String(record.member_type||'')))throw Error('第 '+(index+2)+' 列包含 Go 或其他非會館會員，禁止匯入');
+     if(!Object.prototype.hasOwnProperty.call(summary,item.roster_match)||item.note.length>250)
+       throw Error('第 '+(index+2)+' 列比對結果或說明不正確');
+     seen.add(item.record_id);summary[item.roster_match]++;
+   }
+   const {data:identity,error:identityError}=await sensitiveAuthClient.rpc('get_court_admin_identity_v1');
+   if(identityError||identity?.role!=='super_admin'||String(identity.id)!==String(currentAdmin?.id))
+     throw Error('敏感資料二次授權已失效，請重新驗證');
+   if(!confirm('準備匯入會館會員名冊比對結果：\n有資料 '+summary.found+' 筆／查無 '+summary.not_found+' 筆／待確認 '+summary.uncertain+' 筆。\n\n這些只是名冊比對紀錄，絕不自動更改合格、不合格、重複申請、抽籤或公告結果。\nGo 會員也完全不受影響。\n\n確認匯入？'))return;
+   button.disabled=true;
+   let completed=0;
+   try{
+     for(let offset=0;offset<rows.length;offset+=50){
+       if(!secureIdentityAuthenticated)throw Error('資料權限已解除，已停止後續批次');
+       const {data,error}=await sensitiveAuthClient.rpc('court_import_hall_roster_matches_v1',{p_rows:rows.slice(offset,offset+50)});
+       if(error)throw Error('已完成 '+completed+' 筆，下一批失敗：'+error.message);
+       if(Number(data?.processed)!==Math.min(50,rows.length-offset))throw Error('回傳筆數異常，請檢查操作紀錄');
+       completed+=Number(data.processed);
+     }
+     await loadHallRosterChecks();
+     renderRecordsWorkspace();
+     alert('已匯入 '+completed+' 筆會館會員名冊比對結果。請在後台統一審查會員資格及重複申請。');
+   }finally{button.disabled=false;}
+ }catch(error){
+   console.warn('會館會員名冊比對匯入失敗',error?.message||error);
+   alert('回匯失敗：'+(error?.message||'請確認檔案及權限'));
+ }
 }
 
 function exportToCsv(records){
