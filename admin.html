@@ -10321,10 +10321,26 @@ async function parseGoogleFormWorkbook(file){
  const submissions=[],records=[],anomalies=[],seen=new Set(),rejectedRows=[];
  // 不寫入格式不符的會員識別；保留 Excel 列號供承辦人回頭修正。
  const normalizeIdentifier=v=>String(v||'').normalize('NFKC').replace(/[\s\u3000\-－]/g,'').toUpperCase();
+ // Google 表單選項可能含臺/台、Go App、括號說明或空白；統一後再判斷。
+ // 不從證號或手機推測會員類型，避免把未知選項錯誤認成合格會員。
+ const normalizeMemberType=value=>{
+   const normalized=String(value||'').normalize('NFKC').trim()
+     .replace(/[\s\u3000（）()【】\[\]]/g,'').toLowerCase();
+   if(/^(?:(?:台|臺)北捷運)?go(?:app)?會員(?:[：:、，,\-].*)?$/.test(normalized) ||
+      /^(?:台|臺)北捷運go(?:app)?會員(?:.*)?$/.test(normalized))return '台北捷運Go會員';
+   if(/^北投會館會員(?:.*)?$/.test(normalized))return '北投會館會員';
+   return '';
+ };
+ const unknownMemberLabels=new Map();
  function flag(type,sub,detail='',keys=[]){anomalies.push({type,submissionKeys:[sub],recordKeys:keys,detail});}
  for(let i=0;i<rows.length;i++){
-  const row=rows[i],excelRow=i+2,memberType=formField(row,'申請會員身分（請擇一）');
+  const row=rows[i],excelRow=i+2,memberTypeRaw=formField(row,'申請會員身分（請擇一）');
+  const memberType=normalizeMemberType(memberTypeRaw);
   const isGo=memberType==='台北捷運Go會員',isBeitou=memberType==='北投會館會員';
+  if(!memberType){
+    const label=memberTypeRaw||'（空白）';
+    unknownMemberLabels.set(label,(unknownMemberLabels.get(label)||0)+1);
+  }
   const name=formField(row,'申請人姓名');
   const email=formField(row,'電子郵件地址')||formField(row,'電子郵件');
   const identifier=normalizeIdentifier(isGo?formFieldAny(row,'台北捷運Go App會員綁定手機（10碼）','台北捷運Go會員綁定手機（10碼）'):formField(row,'北投會館會員身分證字號（10碼）'));
@@ -10335,7 +10351,7 @@ async function parseGoogleFormWorkbook(file){
       excelRow,reason:!validMemberType?'會員類別無法辨識':isGo?'Go會員綁定手機格式錯誤':'北投會館會員身分證字號格式錯誤',
       source_row_key:await sha256([type,formField(row,'時間戳記'),name,email,memberType,identifier].join('|')),
       applicant_name:name,contact_phone:formField(row,'聯絡手機號碼（會館會員，10碼）').replace(/\D/g,'').slice(0,20),
-      member_type:memberType,submitted_at:normalizeFormTimestamp(row['時間戳記']),registration_summary:'來源：'+type
+      member_type:memberTypeRaw,submitted_at:normalizeFormTimestamp(row['時間戳記']),registration_summary:'來源：'+type
     });
     continue;
   }
@@ -10345,7 +10361,7 @@ async function parseGoogleFormWorkbook(file){
     rejectedRows.push({
       excelRow,reason:!name?'申請人姓名缺漏':!email?'Email 缺漏':'聯絡手機格式錯誤',
       source_row_key:await sha256([type,stamp,name,email,memberType,identifier].join('|')),
-      applicant_name:name,contact_phone:phone.slice(0,20),member_type:memberType,submitted_at:stamp,registration_summary:'來源：'+type
+      applicant_name:name,contact_phone:phone.slice(0,20),member_type:memberTypeRaw,submitted_at:stamp,registration_summary:'來源：'+type
     });
     continue;
   }
@@ -10412,6 +10428,13 @@ async function parseGoogleFormWorkbook(file){
  // 跨運動同一時段允許登記，不於匯入時取消資格；抽籤結果另行確認。
  const phoneGroups=new Map();submissions.forEach(x=>{if(!x.phone)return;const g=phoneGroups.get(x.phone)||[];g.push(x);phoneGroups.set(x.phone,g);});
  phoneGroups.forEach(g=>{if(new Set(g.map(x=>x.member_key_hash)).size>1)anomalies.push({type:'聯絡手機重複待審查（不得直接判無效）',submissionKeys:g.map(x=>x.submission_key),recordKeys:records.filter(r=>g.some(x=>x.submission_key===r.submission_key)).map(r=>r.record_key)});});
+ // 大量會員類別無法辨識通常是 Google 表單選項改版，而不是大量民眾填錯。
+ // 先停止整份預覽，防止正常資料被錯放待審查名單。
+ const unknownCount=[...unknownMemberLabels.values()].reduce((a,b)=>a+b,0);
+ if(unknownCount>=10 && unknownCount/rows.length>=0.05){
+   const examples=[...unknownMemberLabels.entries()].slice(0,5).map(([label,n])=>label+'（'+n+'筆）').join('、');
+   throw new Error('會員類別欄位有 '+unknownCount+' 筆無法辨識，疑似表單選項格式不同，已停止匯入以避免誤判。選項範例：'+examples+'。請提供原始表單欄位或聯繫管理員修正對應規則。');
+ }
  return {submissions,records,anomalies,rejectedRows,sourceType:type};
 }
 
@@ -10532,7 +10555,11 @@ function renderBatchFormImportPreview(){
   if(!pendingFormImports.length){box.innerHTML='';return;}
   const rows=pendingFormImports.map(p=>`<tr><td>${escapeHtml(p.fileName)}</td><td>${escapeHtml(p.sourceType)}</td><td>${p.submissions.length}</td><td>${p.records.length}</td><td>${p.anomalies.length}</td><td>${p.rejectedRows?.length||0}</td></tr>`).join('');
   const rejected=pendingFormImports.flatMap(p=>(p.rejectedRows||[]).map(r=>({source:p.sourceType,...r})));
-  const rejectedNotice=rejected.length?'<div class="msg error">本次有 '+rejected.length+' 列資料需要審查，會保存在「待審查匯入資料」，不列入抽籤名單：'+rejected.map(r=>escapeHtml(r.source+' 第'+r.excelRow+'列（'+r.reason+'）')).join('；')+'。可在登記清單查閱；核對後再以「只新增」補匯正確資料。</div>':'';
+  const rejectedNotice=rejected.length?
+    '<div class="msg error">有 '+rejected.length+' 列待審查資料（不列入抽籤名單）。'+
+    '原因及來源列號：'+rejected.slice(0,12).map(r=>escapeHtml(r.source+' 第'+r.excelRow+'列（'+r.reason+'）')).join('；')+
+    (rejected.length>12?'；另有 '+(rejected.length-12)+' 列，請於匯入後待審查清單查看。':'')+
+    '。請核對原始 Excel，再以「只新增」補匯修正資料。</div>':'';
   const dupes=pendingFormImports.flatMap(p=>p.submissions.filter(x=>allRecords.some(r=>r.import_submission_key===x.submission_key)).map(x=>({source:p.sourceType,file:p.fileName,sub:x,records:p.records.filter(r=>r.submission_key===x.submission_key),existing:allRecords.find(r=>r.import_submission_key===x.submission_key)})));
   window.pendingImportDuplicates=dupes;
   box.innerHTML=`<div class="msg info">已辨識 ${pendingFormImports.length} 份不同來源的表單，請選擇「新增」或「覆蓋」模式；各來源分開處理。</div>${rejectedNotice}
