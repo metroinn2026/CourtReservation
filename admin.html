@@ -5221,6 +5221,89 @@ body .ux-review-edit{align-items:end}
 }
 .records-compact-filterbar #clearRecordFiltersBtn{white-space:nowrap}
 </style>
+<style id="court-records-unified-compact-v1">
+/* 登記資料：摘要、篩選、頁籤與清單整合為單一白色卡片 */
+#content .records-main-panel-compact>.records-filter-section-card{
+  margin:0!important;
+  padding:14px 16px 12px!important;
+  border:1px solid #e1e8f0!important;
+  border-radius:14px!important;
+  background:#fff!important;
+  box-shadow:none!important;
+}
+#content .records-filter-section-card .records-compact-head{
+  margin:0!important;padding:0 0 8px!important;
+}
+#content .records-filter-section-card .records-compact-head h3{
+  font-size:16px!important;line-height:1.45!important;
+}
+#content .records-filter-section-card .records-summary-line{
+  margin-top:4px!important;font-size:12px!important;
+}
+#content .records-filter-section-card .records-compact-filterbar{
+  display:flex!important;
+  flex-flow:row nowrap!important;
+  align-items:center!important;
+  gap:7px!important;
+  margin:0!important;
+  padding:10px 0 9px!important;
+}
+#content .records-compact-filterbar .records-search{
+  flex:2 1 205px!important;min-width:140px!important;max-width:none!important;
+}
+#content .records-compact-filterbar select{
+  flex:1 1 104px!important;min-width:85px!important;max-width:none!important;
+}
+#content .records-compact-filterbar #filterAnomaly{min-width:110px!important}
+#content .records-compact-filterbar #applyFilterBtn{
+  flex:0 0 auto!important;min-width:59px!important;
+  min-height:36px!important;padding:0 12px!important;
+}
+#content .records-compact-filterbar #clearRecordFiltersBtn{
+  flex:0 0 auto!important;min-height:36px!important;
+  margin:0!important;padding:0 6px!important;
+}
+#content .records-filter-section-card .records-content-nav{
+  margin:0!important;padding:5px 0 0!important;min-height:40px!important;
+  border-top:1px solid #edf1f6!important;
+  border-bottom:1px solid #e5eaf2!important;
+}
+#content .records-filter-section-card .records-import-review-compact{
+  margin:0!important;padding:0!important;
+}
+#content .records-import-review-disclosure{
+  border-bottom:1px solid #edf1f6!important;
+}
+#content .records-import-review-disclosure>summary{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;min-height:34px;padding:6px 2px;
+  cursor:pointer;color:#64748b;font-size:12px;font-weight:600;
+  list-style:none;
+}
+#content .records-import-review-disclosure>summary::-webkit-details-marker{display:none}
+#content .records-import-review-summary{display:flex;align-items:center;gap:7px}
+#content .records-import-review-indicator{
+  width:7px;height:7px;border-radius:50%;background:#aebdca;flex-shrink:0;
+}
+#content .records-import-review-indicator.has-pending{background:#d97706}
+#content .records-import-review-expand{font-size:11px;color:#64748b}
+#content .records-import-review-disclosure[open] .records-import-review-expand{display:none}
+#content .records-import-review-details{padding:3px 0 12px}
+#content .records-import-review-tools{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:9px;flex-wrap:wrap}
+#content .records-filter-section-card #recordsWorkspace{padding:0!important}
+@media(max-width:1280px){
+  #content .records-filter-section-card .records-compact-filterbar{flex-wrap:wrap!important}
+  #content .records-compact-filterbar .records-search{flex:2 1 220px!important}
+  #content .records-compact-filterbar select{flex:1 1 130px!important}
+}
+@media(max-width:680px){
+  #content .records-filter-section-card .records-compact-filterbar{gap:8px!important}
+  #content .records-compact-filterbar .records-search{flex:1 1 100%!important}
+  #content .records-compact-filterbar select{flex:1 1 calc(50% - 8px)!important}
+  #content .records-filter-section-card .records-compact-head{flex-wrap:wrap!important}
+  #content .records-filter-section-card .records-content-nav{gap:8px!important}
+}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -6973,10 +7056,6 @@ function renderRecordsPage(){
         <button id="clearRecordFiltersBtn" type="button" class="records-clear-link">清除</button>
       </div>
 
-      </div>
-
-      <div class="records-section-card records-list-section-card">
-      <div class="admin-section-head records-list-head"><h3>登記清單</h3></div>
       <div class="records-content-nav">
         <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
           <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
@@ -6992,7 +7071,8 @@ function renderRecordsPage(){
         </details>
       </div>
 
-      <div id="courtImportReviewQueue" style="margin:10px 0"></div><div id="recordsWorkspace"></div>
+      <div id="courtImportReviewQueue" class="records-import-review-compact"></div>
+      <div id="recordsWorkspace"></div>
       </div>
     </div>
     <div id="courtImportModal" class="court-import-modal" hidden role="dialog" aria-modal="true" aria-labelledby="courtImportModalTitle">
@@ -7214,14 +7294,14 @@ async function renderImportReviewQueue(){
   const queue=Array.isArray(data)?data:[];
   const pending=queue.filter(x=>x.review_status==='pending');
   const closed=queue.length-pending.length;
-  box.innerHTML=`<div class="records-section-card" style="padding:14px 16px;margin:0 0 12px">
-    <div class="admin-section-head" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-      <h3 style="margin:0">待審查匯入資料 ${pending.length?'<span class="tag anomaly-red">'+pending.length+' 筆待確認</span>':'<span class="tag gray">無待確認資料</span>'}</h3>
-      <button type="button" id="refreshImportReviewQueue" class="btn btn-gray btn-compact">重新整理</button>
+  const reviewLabel=pending.length?'待審查匯入資料 '+pending.length+' 筆':'待審查匯入資料：無待確認';
+  box.innerHTML=`<details class="records-import-review-disclosure" ${pending.length?'':'data-empty="true"'}>
+    <summary><span class="records-import-review-summary"><span class="records-import-review-indicator ${pending.length?'has-pending':''}"></span>${escapeHtml(reviewLabel)}</span><span class="records-import-review-expand">查看明細</span></summary>
+    <div class="records-import-review-details">
+      <div class="records-import-review-tools"><span class="small">原始異常回覆尚未列入正式抽籤名單，核對後請以「只新增」補匯。已處理 ${closed} 筆。</span><button type="button" id="refreshImportReviewQueue" class="btn btn-gray btn-compact">重新整理</button></div>
+      ${pending.length?`<div class="table-wrap"><table><thead><tr><th>來源／Excel列</th><th>姓名</th><th>聯絡手機</th><th>會員類型</th><th>異常原因</th><th>處理</th></tr></thead><tbody>${pending.map(r=>`<tr><td>${escapeHtml(r.source_type)}／第 ${r.excel_row} 列</td><td>${escapeHtml(r.applicant_name||'—')}</td><td>${escapeHtml(r.contact_phone||'—')}</td><td>${escapeHtml(r.member_type||'—')}</td><td><span class="tag anomaly-red">待審查</span> ${escapeHtml(r.reason)}</td><td><button type="button" class="btn btn-gray btn-compact" data-import-review-done="${escapeHtml(r.id)}">標記已處理</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="small">目前沒有待審查的匯入回覆。</div>'}
     </div>
-    <div class="small" style="margin:6px 0 10px">來源表單已保留異常回覆，但尚未進入正式抽籤名單；核對並修正原始資料後，請以「只新增」模式補匯。已處理 ${closed} 筆。</div>
-    ${pending.length?`<div class="table-wrap"><table><thead><tr><th>來源／Excel列</th><th>姓名</th><th>聯絡手機</th><th>會員類型</th><th>異常原因</th><th>處理</th></tr></thead><tbody>${pending.map(r=>`<tr><td>${escapeHtml(r.source_type)}／第 ${r.excel_row} 列</td><td>${escapeHtml(r.applicant_name||'—')}</td><td>${escapeHtml(r.contact_phone||'—')}</td><td>${escapeHtml(r.member_type||'—')}</td><td><span class="tag anomaly-red">待審查</span> ${escapeHtml(r.reason)}</td><td><button type="button" class="btn btn-gray btn-compact" data-import-review-done="${escapeHtml(r.id)}">標記已處理</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="small">目前沒有待審查的匯入回覆。</div>'}
-  </div>`;
+  </details>`;
   box.querySelector('#refreshImportReviewQueue')?.addEventListener('click',()=>void renderImportReviewQueue());
   box.querySelectorAll('[data-import-review-done]').forEach(btn=>{
     btn.onclick=async()=>{
