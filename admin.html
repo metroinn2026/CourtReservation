@@ -5694,6 +5694,9 @@ async function deleteCourtRecords(ids){
 }
 async function updateAuthorizedRecords(ids,changes,options={}){
  if(!courtAuthLoginActive) return {data:[],error:new Error('請先完成 Supabase Auth 管理員登入')};
+ if(/^(中籤|候補\d+)$/.test(changes.lottery_status||'')&&containsRegistrationWindowRejection(ids)){
+   return {data:[],error:new Error('包含登記期間外的申請，無法設定為中籤或候補。')};
+ }
  const {data,error}=await authMigrationClient.rpc('court_admin_update_records_v1',{
   p_ids:ids,p_changes:changes,
   p_expect_unpublished:!!options.expectUnpublished,p_expect_unlocked:!!options.expectUnlocked
@@ -6259,17 +6262,18 @@ function renderAnomalyCenter(issues){
 
   const grouped={};
   issues.forEach(x=>{
-    if(!grouped[x.type]) grouped[x.type]=[];
-    grouped[x.type].push(x);
+    const key=COURT_ANOMALY_GROUPS.__registration__.types.includes(x.type)?'__registration__':x.type;
+    if(!grouped[key])grouped[key]=[];
+    grouped[key].push(x);
   });
 
   const rows=Object.entries(grouped).map(([type,list])=>{
     const total=list.reduce((s,x)=>s+(x.count||1),0);
-    const examples=list.slice(0,2).map(x=>escapeHtml(x.detail)).join('<br>');
+    const examples=list.slice(0,2).map(x=>escapeHtml(type==='__registration__'?x.type+'｜'+x.detail:x.detail)).join('<br>');
     const more=list.length>2 ? `<div class="anomaly-more">另有 ${list.length-2} 項</div>` : '';
     return `
       <div class="anomaly-flat-row">
-        <div class="anomaly-flat-type">${escapeHtml(type)}</div>
+        <div class="anomaly-flat-type">${escapeHtml(COURT_ANOMALY_GROUPS[type]?.label||type)}</div>
         <div class="anomaly-flat-count">${list.length} 項 / ${total} 筆</div>
         <div class="anomaly-flat-detail">${examples}${more}</div>
         <button class="anomaly-text-action" data-target="records" data-anomaly="${escapeHtml(type)}" title="在登記清單查看相關紀錄">查看</button>
@@ -6489,6 +6493,14 @@ function court116RegistrationTimeIssue(value){
   if(ms<COURT_116_REGISTRATION_START_MS)return '開放前登記';
   if(ms>=COURT_116_REGISTRATION_END_EXCLUSIVE_MS)return '截止後登記';
   return '';
+}
+function registrationWindowRejection(record){
+  const issue=court116RegistrationTimeIssue(record.registered_at);
+  return issue==='開放前登記'||issue==='截止後登記'?issue:'';
+}
+function containsRegistrationWindowRejection(ids){
+  const targets=new Set(ids.map(String));
+  return allRecords.some(r=>targets.has(String(r.id))&&registrationWindowRejection(r));
 }
 function parseSettingDate(value){
   if(!value) return null;
@@ -6949,10 +6961,10 @@ function renderDashboard(){
 
   // v51: 首頁異常查看統一進入待確認資料分頁。
   document.querySelectorAll('.anomaly-text-action, .anomaly-go').forEach(b=>b.onclick=()=>{
-    const limitOnly=b.dataset.anomaly==='超過次數';
-    recordsActionTab=limitOnly?'filter':'review';
+    const registrationIssues=b.dataset.anomaly==='__registration__';
+    recordsActionTab=registrationIssues?'filter':'review';
     Object.assign(recordState,{q:'',location:DEFAULT_LOCATION,venue:'',usage:'',day:'',time:'',
-      anomaly:limitOnly?'超過次數':'',lotteryFilter:'',page:1});
+      anomaly:registrationIssues?'__registration__':'',lotteryFilter:'',page:1});
     renderPage('records');
     document.querySelector('.records-function-tabs')?.scrollIntoView({behavior:'smooth',block:'start'});
   });
@@ -7205,7 +7217,6 @@ function renderRecordsPage(){
         <select id="filterAnomaly" title="篩選異常狀態">
           <option value="" ${recordState.anomaly===''?'selected':''}>全部狀態</option>
           <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
-          <option value="超過次數" ${recordState.anomaly==='超過次數'?'selected':''}>超過次數</option>
           ${Object.entries(COURT_ANOMALY_GROUPS).map(([key,group])=>`<option ${recordState.anomaly===key?'selected':''} value="${key}">${group.label}</option>`).join('')}
         </select>
         <button id="applyFilterBtn" type="button" class="btn btn-primary btn-compact">篩選</button>
@@ -7347,6 +7358,7 @@ function qualificationIssueTypes(r){
   return issues;
 }
 function qualificationState(r){
+  if(registrationWindowRejection(r))return 'invalid';
   const saved=qualificationReviews.get(String(r.id));
   return saved?.member_check_status==='not_member'?'invalid':(saved?.review_status || (qualificationIssueTypes(r).length?'pending':'qualified'));
 }
@@ -7415,6 +7427,8 @@ function registrationReviewStatusCell(r){
   return `<div class="records-review-combined">${notice}${hasLimitIssue?registrationLimitButton(r):''}${qualificationStatusCell(r)}</div>`;
 }
 function qualificationStatusCell(r){
+  const rejection=registrationWindowRejection(r);
+  if(rejection)return `<span class="tag review-invalid" title="${escapeHtml(rejection)}">審查不合格</span>`;
   if(!qualificationReviewsLoaded)return '<span class="tag gray" title="請先完成資料庫授權及資格資料載入">未載入</span>';
   const st=qualificationState(r);
   const display={qualified:'合格',pending:'待審查',correction:'待補正',invalid:'審查不合格'};
@@ -7467,7 +7481,7 @@ async function renderQualificationReview(container){
         <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong>
         <div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div>
         <div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}｜手機：${escapeHtml(r.phone||'—')}</div></div>
-        <span class="ux-review-current">待核對</span></div>
+        <span class="ux-review-current">${registrationWindowRejection(r)?'不合格':'待核對'}</span></div>
       </article>`).join('')||'<div class="ux-review-empty">目前沒有系統偵測到的異常案件。</div>'}</div>
       <div class="small" style="margin-top:14px">此清單依目前登記資料即時計算，未讀取已保存的審查結論；已完成審查的案件可能仍會列在此處。要查看完整處理紀錄及儲存審查結果，需另行授權。</div>
     </div>`;
@@ -7485,10 +7499,10 @@ async function renderQualificationReview(container){
   container.innerHTML=`<div class="panel ux-review-panel ux-review-simple admin-inner-section">
     <p class="ux-review-help">這裡只顯示目前不能列入抽籤的申請。請先確認申請資料及原因，再選擇審查結果並儲存；改為「合格」後，該筆就能列入合格抽籤名單。</p>
     <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待確認／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
-    <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
+    <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const rejection=registrationWindowRejection(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
       <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>reason==='超過次數'?registrationLimitButton(r):`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):'此筆原有審查狀態尚未完成，請核對登記內容。'}</div></div>
       <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
-      <div class="ux-review-edit"><div class="ux-review-field"><label for="qstate-${r.id}">處理結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><div class="ux-review-field-help">只有「合格」可列入抽籤名單。</div></div><div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">處理說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="填寫原因或處理說明">${escapeHtml(saved.review_note||'')}</textarea></div><div class="ux-review-save"><button class="btn btn-primary" data-qsave="${r.id}">儲存</button></div></div>
+      ${rejection?`<p class="small">依登記期間判定不合格（${escapeHtml(rejection)}）。</p>`:`<div class="ux-review-edit"><div class="ux-review-field"><label for="qstate-${r.id}">處理結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><div class="ux-review-field-help">只有「合格」可列入抽籤名單。</div></div><div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">處理說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="填寫原因或處理說明">${escapeHtml(saved.review_note||'')}</textarea></div><div class="ux-review-save"><button class="btn btn-primary" data-qsave="${r.id}">儲存</button></div></div>`}
       ${saved.reviewed_at?`<div class="ux-review-history">最近處理：${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</div>`:''}
     </article>`}).join('')||'<div class="ux-review-empty">目前沒有符合此篩選條件的申請。</div>'}</div></div>`;
   bindRegistrationLimitButtons(container);
@@ -8480,6 +8494,12 @@ async function updateRecordLotteryStatus(recordId, status){
 async function publishRecords(recordIds, published, meta={}){
   if(!recordIds || recordIds.length===0){
     alert('沒有可更新的資料');
+    return false;
+  }
+
+  if(published&&allRecords.some(r=>recordIds.some(id=>String(id)===String(r.id))&&
+    /^(中籤|候補\d+)$/.test(r.lottery_status||'')&&registrationWindowRejection(r))){
+    alert('公布範圍含有登記期間外的中籤或候補紀錄，請先核對結果。');
     return false;
   }
 
@@ -9867,7 +9887,8 @@ async function applyPromotionSuggestion(stage){
   };
 
   document.getElementById('previewLot').onclick=()=>{
-    const {location,venue,day,time,selectedComplete,records:rec}=getSelectedRecords();
+    const {location,venue,day,time,selectedComplete,records}=getSelectedRecords();
+    const rec=records.filter(r=>!registrationWindowRejection(r));
     const n=parseInt(document.getElementById('lotWinnerCount').value,10)||0;
     const w=parseInt(document.getElementById('lotWaitlistCount').value,10)||0;
     if(!selectedComplete){alert('請先選擇完整的「場地＋球類＋星期＋時段」。');return;}
@@ -10068,6 +10089,7 @@ async function applyPromotionSuggestion(stage){
     const map={};
 
     allRecords.forEach(r=>{
+      if(registrationWindowRejection(r))return;
       if(locationFilter && recordLocation(r)!==locationFilter) return;
       if(venueFilter && r.venue_type!==venueFilter) return;
 
