@@ -6206,12 +6206,37 @@ async function loadAllData(){
   const requestEpoch=adminSessionEpoch;
   const requestStillAuthorized=()=>courtAuthLoginActive&&!adminSigningOut&&requestEpoch===adminSessionEpoch;
   if(!requestStillAuthorized())return false;
+  // Supabase/PostgREST 單次查詢預設最多回傳 1,000 筆。分批取回完整名單，
+  // 避免重複登記、異常判斷及抽籤名單漏掉第 1,001 筆以後的資料。
+  async function fetchAllCourtAdminRecords(client){
+    const batchSize=500;
+    const collected=[];
+    const seen=new Set();
+    for(let offset=0;offset<1000000;offset+=batchSize){
+      if(!requestStillAuthorized())return {data:[],error:new Error('管理員登入狀態已變更')};
+      const {data,error}=await client.rpc('court_admin_records_v1')
+        .order('registered_at',{ascending:false})
+        .order('id',{ascending:true})
+        .range(offset,offset+batchSize-1);
+      if(error)return {data:[],error};
+      const page=Array.isArray(data)?data:[];
+      for(const record of page){
+        if(!record?.id||seen.has(record.id)){
+          return {data:[],error:new Error('登記名單分批讀取出現重複或缺少識別碼，已停止使用不完整名單')};
+        }
+        seen.add(record.id);
+        collected.push(record);
+      }
+      if(page.length<batchSize)return {data:collected,error:null};
+    }
+    return {data:[],error:new Error('登記名單超出安全讀取上限，請洽系統管理員')};
+  }
   let recordsPromise;
   try{
     const secureClient=reviewDbClient();
     const {data:{user}}=await secureClient.auth.getUser();
     recordsPromise=user
-      ? secureClient.rpc('court_admin_records_v1')
+      ? fetchAllCourtAdminRecords(secureClient)
       : Promise.resolve({data:[],error:new Error('Supabase 管理員授權尚未完成')});
   }catch(e){
     recordsPromise=Promise.resolve({data:[],error:e});
