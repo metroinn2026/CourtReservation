@@ -5696,6 +5696,9 @@ async function deleteCourtRecords(ids){
 }
 async function updateAuthorizedRecords(ids,changes,options={}){
  if(!courtAuthLoginActive) return {data:[],error:new Error('請先完成 Supabase Auth 管理員登入')};
+ if(/^(中籤|候補\d+)$/.test(changes.lottery_status||'')&&allRecords.some(r=>ids.map(String).includes(String(r.id))&&goMembershipPending(r))){
+   return {data:[],error:new Error('包含尚未查核的 Go 會員，無法設定為中籤或候補。')};
+ }
  if(/^(中籤|候補\d+)$/.test(changes.lottery_status||'')&&containsRegistrationWindowRejection(ids)){
    return {data:[],error:new Error('包含登記期間外的申請，無法設定為中籤或候補。')};
  }
@@ -7351,17 +7354,24 @@ async function loadHallRosterChecks(){
     hallRosterChecks=next;
   }catch(error){console.warn('會員名冊比對結果載入失敗',error?.code||error?.message);}
 }
-function qualificationIssueTypes(r){
+function goMembershipPending(r){
+  return memberIdentityType(r)==='Go會員' &&
+    !['verified','not_member'].includes(qualificationReviews.get(String(r.id))?.member_check_status);
+}
+function qualificationIssueTypes(r,{includeGoMembership=true}={}){
   // 名冊查無只代表需要承辦人核對，不等於非會員或審查不合格。
   const issues=getRecordAnomalyTypes(r).filter(x=>/同會員識別姓名不同|超過次數|不開放場次有登記|開放前登記|截止後登記|登記時間異常/.test(x));
   const roster=hallRosterChecks.get(String(r.id));
   if(roster?.roster_match==='not_found'&&/會館會員/.test(String(r.member_type||'')))issues.push('會館會員名冊查無，待確認');
+  if(includeGoMembership&&goMembershipPending(r))issues.push('Go 會員尚未查核');
   return issues;
 }
 function qualificationState(r){
   if(registrationWindowRejection(r))return 'invalid';
   const saved=qualificationReviews.get(String(r.id));
-  return saved?.member_check_status==='not_member'?'invalid':(saved?.review_status || (qualificationIssueTypes(r).length?'pending':'qualified'));
+  if(saved?.member_check_status==='not_member'||saved?.review_status==='invalid')return 'invalid';
+  if(goMembershipPending(r))return saved?.review_status==='correction'?'correction':'pending';
+  return saved?.review_status || (qualificationIssueTypes(r).length?'pending':'qualified');
 }
 function isQualifiedForLottery(r){return qualificationReviewsLoaded && qualificationState(r)==='qualified';}
 function membershipCheckCell(r){
@@ -7406,7 +7416,9 @@ async function setManualMembershipCheck(recordId,status){
   }
   const {error}=await reviewDbClient().rpc('court_set_membership_check_v2',{
     p_record_id:record.id,p_status:status,p_note:note,
-    p_initial_review_status:qualificationState(record)==='qualified'?'qualified':'pending'
+    p_initial_review_status:status==='verified'&&memberIdentityType(record)==='Go會員'
+      ? (qualificationIssueTypes(record,{includeGoMembership:false}).length?'pending':'qualified')
+      : (qualificationState(record)==='qualified'?'qualified':'pending')
   });
   if(error){alert('會員查核更新失敗：'+error.message);renderRecordsWorkspace();return;}
   await loadQualificationReviews();
@@ -7420,6 +7432,7 @@ function registrationReviewReasons(r){
     types.push('會館會員名冊查無，待複核');
   }
   if(saved?.member_check_status==='not_member')types.push('會員資格不符');
+  if(goMembershipPending(r))types.push('Go 會員尚未查核');
   return types;
 }
 function registrationReviewStatusCell(r){
@@ -7516,6 +7529,7 @@ async function renderQualificationReview(container){
   container.querySelector('#refreshQualificationV52').onclick=()=>renderQualificationReview(container);
   container.querySelectorAll('[data-qsave]').forEach(btn=>btn.onclick=async()=>{
     const id=btn.dataset.qsave,st=container.querySelector(`[data-qstate="${id}"]`).value,note=container.querySelector(`[data-qnote="${id}"]`).value.trim();
+    if(st==='qualified'&&allRecords.some(r=>String(r.id)===id&&goMembershipPending(r))){alert('請先完成 Go 會員查核，再將登記設為合格。');return;}
     if(st==='invalid'&&!note){alert('不合格時請填寫原因。');return;}
     btn.disabled=true;
     const {error}=await reviewDbClient().rpc('save_registration_qualification_v52',{p_record_id:id,p_status:st,p_note:note});
@@ -9906,7 +9920,7 @@ async function applyPromotionSuggestion(stage){
 
   document.getElementById('previewLot').onclick=()=>{
     const {location,venue,day,time,selectedComplete,records}=getSelectedRecords();
-    const rec=records.filter(r=>!registrationWindowRejection(r));
+    const rec=records.filter(r=>!registrationWindowRejection(r)&&!goMembershipPending(r));
     const n=parseInt(document.getElementById('lotWinnerCount').value,10)||0;
     const w=parseInt(document.getElementById('lotWaitlistCount').value,10)||0;
     if(!selectedComplete){alert('請先選擇完整的「場地＋球類＋星期＋時段」。');return;}
@@ -9939,6 +9953,7 @@ async function applyPromotionSuggestion(stage){
       alert('目前場次條件已變更，請重新抽籤。'); clearPendingBuiltInLottery(); return;
     }
     const currentRecords=allRecords.filter(r=>pending.sourceIds.includes(r.id));
+    if(currentRecords.some(goMembershipPending)){alert('Go 會員查核狀態已變更，請重新預覽。');clearPendingBuiltInLottery();return;}
     if(currentRecords.length!==pending.sourceIds.length){ alert('場次資料已變更，請重新載入後抽籤。'); clearPendingBuiltInLottery(); return; }
     if(currentRecords.some(r=>r.result_published || r.lottery_locked === true || r.lottery_locked === 'true' || String(r.lottery_status||'').trim() !== '')){
       alert('其中部分資料已有結果、已鎖定或已公布，請重新載入確認。'); clearPendingBuiltInLottery(); return;
@@ -10107,7 +10122,7 @@ async function applyPromotionSuggestion(stage){
     const map={};
 
     allRecords.forEach(r=>{
-      if(registrationWindowRejection(r))return;
+      if(registrationWindowRejection(r)||goMembershipPending(r))return;
       if(locationFilter && recordLocation(r)!==locationFilter) return;
       if(venueFilter && r.venue_type!==venueFilter) return;
 
