@@ -8,16 +8,28 @@
   const el=id=>document.getElementById(id);
   function show(id,visible){el(id)?.classList.toggle('hidden',!visible);}
   function message(id,content){const node=el(id);if(node)node.textContent=String(content||'');}
-  function qrImageSource(qrCode){
-    const raw=String(qrCode||'').trim();
-    const dataUrl=raw.match(/^data:image\/svg\+xml(?:;(utf-8|charset=utf-8|base64))?,([\s\S]*)$/i);
-    if(dataUrl?.[1]?.toLowerCase()==='base64')return dataUrl[2]?raw:'';
-    let svg=dataUrl?dataUrl[2]:raw;
-    if(/^\s*%3c/i.test(svg)){
-      try{svg=decodeURIComponent(svg);}catch{return '';}
+  function drawEnrollmentQr(canvas,uri){
+    if(typeof uri!=='string'||!uri.startsWith('otpauth://totp/')||typeof root.qrcode!=='function')return false;
+    const qr=root.qrcode(0,'M');
+    qr.addData(uri);
+    qr.make();
+
+    const context=canvas.getContext('2d');
+    if(!context)return false;
+    const modules=qr.getModuleCount();
+    const margin=4;
+    const scale=5;
+    const size=(modules+margin*2)*scale;
+    canvas.width=canvas.height=size;
+    context.fillStyle='#fff';
+    context.fillRect(0,0,size,size);
+    context.fillStyle='#000';
+    for(let row=0;row<modules;row++){
+      for(let col=0;col<modules;col++){
+        if(qr.isDark(row,col))context.fillRect((col+margin)*scale,(row+margin)*scale,scale,scale);
+      }
     }
-    if(!/^\s*(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(svg))return '';
-    return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+    return true;
   }
   function sixDigits(raw){return /^\d{6}$/.test(String(raw||'').trim());}
   function setLoginVisible(visible){
@@ -109,12 +121,12 @@
     settingsDialog.setAttribute('aria-modal','true');
     settingsDialog.setAttribute('aria-label','管理員帳號安全');
     settingsDialog.innerHTML=`
-      <div class="modal-card" style="max-width:440px;width:min(94vw,440px);">
+      <div class="modal-card" style="max-width:440px;width:min(94vw,440px);max-height:calc(100dvh - 24px);overflow:auto;">
         <h3>帳號安全</h3>
         <p class="small" style="line-height:1.8">使用手機驗證器保護個人管理員帳號。設定完成後，往後登入需輸入一次性驗證碼。</p>
         <p id="adminMfaSettingStatus" class="small" aria-live="polite">正在查詢驗證器...</p>
         <div id="adminMfaEnrollment" class="hidden">
-          <img id="adminMfaQr" class="hidden" alt="驗證器設定 QR Code" width="180" height="180" style="display:block;margin:12px auto;max-width:100%;"/>
+          <canvas id="adminMfaQr" class="hidden" role="img" aria-label="驗證器設定 QR Code" style="display:block;margin:12px auto;width:min(228px,100%);height:auto;"></canvas>
           <details id="adminMfaManualSetup" class="small"><summary>無法掃描？顯示手動設定密鑰</summary><code id="adminMfaSecret" style="display:block;overflow-wrap:anywhere;padding:8px 0;user-select:all"></code></details>
           <label for="adminMfaEnrollCode" style="display:block;font-size:13px;margin:12px 0 5px">驗證器顯示的 6 位數驗證碼</label>
           <input id="adminMfaEnrollCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位數驗證碼" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:9px"/>
@@ -151,24 +163,16 @@
       if(error)throw error;
       if(!settingsDialog){await state.client.auth.mfa.unenroll({factorId:data.id}).catch(()=>{});return;}
       state.pendingId=data.id;
-      const image=el('adminMfaQr');
-      const manualSetup=el('adminMfaManualSetup');
-      const src=qrImageSource(data.totp?.qr_code);
-      const showManualSetup=()=>{
-        image.classList.add('hidden');
-        manualSetup.open=true;
-        message('adminMfaSettingMsg','QR Code 無法顯示。可用手動設定密鑰加入驗證器，再輸入 6 位數驗證碼。');
-      };
-      image.onerror=showManualSetup;
+      let qrReady=false;
+      try{qrReady=drawEnrollmentQr(el('adminMfaQr'),data.totp?.uri);}catch{/* 手動設定可繼續使用。 */}
       el('adminMfaSecret').textContent=data.totp?.secret||'';
-      manualSetup.open=false;
+      el('adminMfaManualSetup').open=false;
       show('adminMfaEnrollment',true);
       show('adminMfaAddBtn',false);
-      if(src){
-        show('adminMfaQr',true);
-        message('adminMfaSettingMsg','請掃描 QR Code，並輸入驗證器顯示的 6 位數驗證碼。');
-        image.src=src;
-      }else showManualSetup();
+      show('adminMfaQr',qrReady);
+      message('adminMfaSettingMsg',qrReady
+        ? '請掃描 QR Code，並輸入驗證器顯示的 6 位數驗證碼。'
+        : 'QR Code 無法顯示。請展開手動設定密鑰，並在手機驗證器內新增設定。');
       el('adminMfaEnrollCode').focus();
     }catch(e){
       message('adminMfaSettingMsg','無法設定驗證器：'+(e.message||String(e)));
@@ -184,7 +188,8 @@
       state.pendingId=null;
       if(settingsDialog){
         show('adminMfaEnrollment',false);
-        if(el('adminMfaQr'))el('adminMfaQr').removeAttribute('src');
+        const canvas=el('adminMfaQr');
+        if(canvas)canvas.width=0;
         message('adminMfaSecret','');
         message('adminMfaSettingStatus','已啟用雙重驗證。下次登入必須完成驗證器驗證。');
         message('adminMfaSettingMsg','設定完成。請妥善保管驗證器，建議新增一組備援驗證器。');
