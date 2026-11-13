@@ -5857,19 +5857,10 @@ function suspiciousTag(record){return isSuspiciousPhone(record)?'<span class="ta
 function getRecordAnomalyTypes(record){
   const types=[];
   const records=allRecords||[];
-  const phone=normalizePhone(record.phone);
-  const pk=personKey(record);
-
   // 聯絡手機共用不屬於資格異常，僅提示同會員識別對應不同姓名。
   if(courtMemberNameConflict(record))types.push('同會員識別姓名不同');
 
-  // 超過次數：合併「重複場次登記」與「超過申請上限」
-  if(!pk.startsWith('UNVERIFIED:')){
-    const sameStage=records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
-    const sameSportSlots=new Set(records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type).map(r=>`${r.day_of_week||''}|${r.time_slot||''}`));
-    const exceedsRule = sameStage.length>1 || getLimitViolationsForRecord(record,records).length>0;
-    if(exceedsRule) types.push('超過次數');
-  }
+  if(getRegistrationLimitEvidence(record,records).length)types.push('超過次數');
 
   const stage=records.filter(r=>recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
   if(stage.length){
@@ -6170,30 +6161,17 @@ function buildDataAnomalies(){
     if(names.size>1)issues.push({type:'同會員識別姓名不同',severity:'warn',count:rows.length,detail:'同一會員識別姓名不同，請人工核對',target:'records'});
   });
 
-  // 2. 超過次數：合併重複場次與超過申請上限
-  const personSportGroups={};
-  records.forEach(r=>{
-    const pk=personKey(r); if(pk.startsWith('UNVERIFIED:')) return;
-    const k=`${pk}|${recordLocation(r)}|${r.venue_type||''}`;
-    if(!personSportGroups[k]) personSportGroups[k]=[];
-    personSportGroups[k].push(r);
-  });
-  Object.values(personSportGroups).forEach(rows=>{
-    const r=rows[0];
-    const stageCounts={};
-    rows.forEach(x=>{
-      const k=`${x.day_of_week||''}|${x.time_slot||''}`;
-      stageCounts[k]=(stageCounts[k]||0)+1;
-    });
-    const hasDuplicateStage=Object.values(stageCounts).some(n=>n>1);
-    const distinctSlots=Object.keys(stageCounts).length;
-    const overSportLimit=['羽球','籃球'].includes(r.venue_type) && distinctSlots>1;
-    if(hasDuplicateStage || overSportLimit) issues.push({
-      type:'超過次數', severity:'error', count:rows.length,
-      detail:`${r.name||'申請人'}｜${r.venue_type||'-'}｜${rows.length}筆`,
-      target:'records'
-    });
-  });
+  // 2. 同一組關聯登記只計一次，使用與登記清單相同的限制規則。
+  const countedLimitIssues=new Set();
+  for(const record of records){
+    for(const issue of getRegistrationLimitEvidence(record,records)){
+      const key=JSON.stringify(issue.rows.map(r=>String(r.id)).sort());
+      if(countedLimitIssues.has(key))continue;
+      countedLimitIssues.add(key);
+      issues.push({type:'超過次數',severity:'error',count:issue.rows.length,
+        detail:`${record.name||'申請人'}｜${issue.label}｜${issue.rows.length}筆`,target:'records'});
+    }
+  }
 
   // 3. 場次層級檢核
   const stageGroups={};
@@ -6556,26 +6534,63 @@ function normalizeRegistrationLimitRules(raw){
 function getRegistrationLimitRules(){
   return normalizeRegistrationLimitRules(systemSettings.registration_limit_rules);
 }
-function personRecordKey(r){return courtMemberIdentityKey(r);}
-function recordCountForLimit(records, personKeyValue, venue, location){
-  return records.filter(r=>personRecordKey(r)===personKeyValue && recordLocation(r)===location && r.venue_type===venue).length;
-}
-function getLimitViolationsForRecord(record, records=allRecords){
+function getRegistrationLimitEvidence(record, records=allRecords){
+  const key=personKey(record);
+  if(key.startsWith('UNVERIFIED:'))return [];
+  const location=recordLocation(record);
+  const related=records.filter(r=>personKey(r)===key && recordLocation(r)===location);
+  const sameSport=related.filter(r=>r.venue_type===record.venue_type);
+  const sameStage=sameSport.filter(r=>stageKeyFromRecord(r)===stageKeyFromRecord(record));
   const rules=getRegistrationLimitRules();
-  const pk=personRecordKey(record);
-  const loc=recordLocation(record);
-  const violations=[];
-  const singleMax=Number(rules.single[record.venue_type]||0);
-  if(singleMax>0){
-    const n=recordCountForLimit(records,pk,record.venue_type,loc);
-    if(n>singleMax) violations.push(`${record.venue_type}最多${singleMax}筆`);
+  const evidence=[];
+  if(sameStage.length>1)evidence.push({label:'同場次重複登記',rows:sameStage});
+  const singleMax=rules.single[record.venue_type];
+  if(singleMax>0&&sameSport.length>singleMax){
+    evidence.push({label:`${record.venue_type}最多 ${singleMax} 筆`,rows:sameSport});
   }
-  rules.groups.forEach(g=>{
-    if(!g.venues.includes(record.venue_type)) return;
-    const n=records.filter(r=>personRecordKey(r)===pk && recordLocation(r)===loc && g.venues.includes(r.venue_type)).length;
-    if(n>g.max) violations.push(`${g.venues.join('＋')}合計最多${g.max}筆`);
+  for(const group of rules.groups){
+    if(!group.venues.includes(record.venue_type))continue;
+    const rows=related.filter(r=>group.venues.includes(r.venue_type));
+    if(rows.length>group.max){
+      evidence.push({label:`${group.venues.join('＋')}合計最多 ${group.max} 筆`,rows});
+    }
+  }
+  return evidence;
+}
+function registrationLimitRows(evidence){
+  return [...new Map(evidence.flatMap(issue=>issue.rows.map(r=>[String(r.id),r]))).values()];
+}
+function registrationLimitButton(record){
+  const evidence=getRegistrationLimitEvidence(record);
+  return `<button type="button" class="court-phone-relations" data-limit-record="${escapeHtml(record.id)}">超過次數｜涉及 ${registrationLimitRows(evidence).length} 筆</button>`;
+}
+function bindRegistrationLimitButtons(container){
+  container.querySelectorAll('[data-limit-record]').forEach(button=>{
+    button.onclick=()=>openRegistrationLimitDetails(button.dataset.limitRecord);
   });
-  return violations;
+}
+function openRegistrationLimitDetails(id){
+  const record=allRecords.find(r=>String(r.id)===id);
+  if(!record)return;
+  const evidence=getRegistrationLimitEvidence(record);
+  const rows=registrationLimitRows(evidence).sort((a,b)=>
+    (new Date(a.registered_at||0)-new Date(b.registered_at||0)) ||
+    compactRecordCode(a).localeCompare(compactRecordCode(b)));
+  if(!rows.length)return;
+  const stateLabel={qualified:'合格',pending:'待確認',correction:'待補正',invalid:'不合格'};
+  const body=`<p>共涉及 ${rows.length} 筆（含目前登記）。同一會員依會員識別比對。</p>
+    <ul>${evidence.map(issue=>`<li>${escapeHtml(issue.label)}，目前 ${issue.rows.length} 筆</li>`).join('')}</ul>
+    <div class="table-wrap"><table><thead><tr><th>序號</th><th>登記時間</th><th>姓名</th><th>球類／用途</th><th>星期／時段</th><th>資格審查</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr>
+      <td><strong>${escapeHtml(compactRecordCode(r))}</strong>${String(r.id)===id?'<div class="small">目前登記</div>':''}</td>
+      <td>${escapeHtml(formatCompactDateTime(r.registered_at))}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(courtVenueLabel(r))}／${escapeHtml(courtUsage(r))}</td>
+      <td>${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</td>
+      <td>${qualificationReviewsLoaded?escapeHtml(stateLabel[qualificationState(r)]||'待確認'):'未載入'}</td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
+  showModal('超過次數｜相關登記',body,()=>{});
 }
 function renderRegistrationLimitEditor(){
   const box=document.getElementById('registrationLimitEditor');
@@ -6925,10 +6940,10 @@ function renderDashboard(){
 
   // v51: 首頁異常查看統一進入待確認資料分頁。
   document.querySelectorAll('.anomaly-text-action, .anomaly-go').forEach(b=>b.onclick=()=>{
-    recordsActionTab='review';
-    recordState.anomaly='';
-    recordState.lotteryFilter='';
-    recordState.page=1;
+    const limitOnly=b.dataset.anomaly==='超過次數';
+    recordsActionTab=limitOnly?'filter':'review';
+    Object.assign(recordState,{q:'',location:DEFAULT_LOCATION,venue:'',usage:'',day:'',time:'',
+      anomaly:limitOnly?'超過次數':'',lotteryFilter:'',page:1});
     renderPage('records');
     document.querySelector('.records-function-tabs')?.scrollIntoView({behavior:'smooth',block:'start'});
   });
@@ -7181,6 +7196,7 @@ function renderRecordsPage(){
         <select id="filterAnomaly" title="篩選異常狀態">
           <option value="" ${recordState.anomaly===''?'selected':''}>全部狀態</option>
           <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
+          <option value="超過次數" ${recordState.anomaly==='超過次數'?'selected':''}>超過次數</option>
           ${Object.entries(COURT_ANOMALY_GROUPS).map(([key,group])=>`<option ${recordState.anomaly===key?'selected':''} value="${key}">${group.label}</option>`).join('')}
         </select>
         <button id="applyFilterBtn" type="button" class="btn btn-primary btn-compact">篩選</button>
@@ -7382,11 +7398,12 @@ function registrationReviewStatusCell(r){
     types.push('會館會員名冊查無，待複核');
   }
   if(saved?.member_check_status==='not_member')types.push('會員資格不符');
-  const unique=[...new Set(types)];
+  const hasLimitIssue=types.includes('超過次數');
+  const unique=[...new Set(types.filter(type=>type!=='超過次數'))];
   const notice=unique.length
     ? `<span class="tag anomaly-red records-review-flag" title="${escapeHtml(unique.join('、'))}">${escapeHtml(unique.join('、'))}</span>`
-    : '<span class="tag gray records-review-flag">正常</span>';
-  return `<div class="records-review-combined">${notice}${qualificationStatusCell(r)}</div>`;
+    : hasLimitIssue?'':'<span class="tag gray records-review-flag">正常</span>';
+  return `<div class="records-review-combined">${notice}${hasLimitIssue?registrationLimitButton(r):''}${qualificationStatusCell(r)}</div>`;
 }
 function qualificationStatusCell(r){
   if(!qualificationReviewsLoaded)return '<span class="tag gray" title="請先完成資料庫授權及資格資料載入">未載入</span>';
@@ -7437,7 +7454,7 @@ async function renderQualificationReview(container){
       <button id="refreshQualificationReadOnly" class="btn btn-gray">重新整理清單</button></div>
       <div class="ux-review-cases">${filtered.map(r=>`<article class="ux-review-case">
         <div class="ux-review-reasons"><strong>需要確認的原因</strong>
-        <div>${qualificationIssueTypes(r).map(reason=>`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join('')}</div></div>
+        <div>${qualificationIssueTypes(r).map(reason=>reason==='超過次數'?registrationLimitButton(r):`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join('')}</div></div>
         <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong>
         <div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div>
         <div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}｜手機：${escapeHtml(r.phone||'—')}</div></div>
@@ -7445,6 +7462,7 @@ async function renderQualificationReview(container){
       </article>`).join('')||'<div class="ux-review-empty">目前沒有系統偵測到的異常案件。</div>'}</div>
       <div class="small" style="margin-top:14px">此清單依目前登記資料即時計算，未讀取已保存的審查結論；已完成審查的案件可能仍會列在此處。要查看完整處理紀錄及儲存審查結果，需另行授權。</div>
     </div>`;
+    bindRegistrationLimitButtons(container);
     container.querySelector('#refreshQualificationReadOnly').onclick=()=>renderQualificationReview(container);
     return;
   }
@@ -7459,11 +7477,12 @@ async function renderQualificationReview(container){
     <p class="ux-review-help">這裡只顯示目前不能列入抽籤的申請。請先確認申請資料及原因，再選擇審查結果並儲存；改為「合格」後，該筆就能列入合格抽籤名單。</p>
     <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待確認／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
     <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
-      <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):'此筆原有審查狀態尚未完成，請核對登記內容。'}</div></div>
+      <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>reason==='超過次數'?registrationLimitButton(r):`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):'此筆原有審查狀態尚未完成，請核對登記內容。'}</div></div>
       <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
       <div class="ux-review-edit"><div class="ux-review-field"><label for="qstate-${r.id}">處理結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><div class="ux-review-field-help">只有「合格」可列入抽籤名單。</div></div><div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">處理說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="填寫原因或處理說明">${escapeHtml(saved.review_note||'')}</textarea></div><div class="ux-review-save"><button class="btn btn-primary" data-qsave="${r.id}">儲存</button></div></div>
       ${saved.reviewed_at?`<div class="ux-review-history">最近處理：${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</div>`:''}
     </article>`}).join('')||'<div class="ux-review-empty">目前沒有符合此篩選條件的申請。</div>'}</div></div>`;
+  bindRegistrationLimitButtons(container);
   const sel=container.querySelector('#qualificationFilterV52');sel.value=currentFilter;sel.onchange=()=>{window.qualificationFocusId=null;window.qualificationFilterV52=sel.value;renderQualificationReview(container);};
   const back=container.querySelector('#exitFocusV53');if(back)back.onclick=()=>{window.qualificationFocusId=null;renderQualificationReview(container);};
   container.querySelector('#refreshQualificationV52').onclick=()=>renderQualificationReview(container);
@@ -7838,6 +7857,7 @@ function renderRecordsTable(){
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
   bindIdentityReveal();
+  bindRegistrationLimitButtons(document.getElementById('recordsTable'));
   document.querySelectorAll('#recordsTable [data-shared-phone-id]').forEach(b=>b.onclick=()=>openCourtSharedPhoneRelations(b.dataset.sharedPhoneId));
   document.querySelectorAll('#recordsTable [data-membership-check]').forEach(b=>b.onchange=()=>void setManualMembershipCheck(b.dataset.membershipCheck,b.value));
   document.querySelectorAll('#recordsTable [data-qopen]').forEach(b=>b.onclick=()=>openQualificationRecord(b.dataset.qopen));
