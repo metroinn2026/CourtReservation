@@ -5195,29 +5195,8 @@ body .ux-review-edit{align-items:end}
 </style>
 
 <style id="dashboard-pending-task-pagination-v1">
-.dashboard-tasks-panel .dashboard-task-pagination{
-  display:flex;align-items:center;justify-content:space-between;
-  gap:12px;flex-wrap:wrap;padding:14px 4px 2px;
-}
-.dashboard-tasks-panel .dashboard-task-pagination .records-inline-control{
-  display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
-  font-size:13px;color:#52627a;
-}
-.dashboard-tasks-panel .dashboard-task-pagination select{
-  height:34px;min-width:70px;border:1px solid #d7e1ed;
-  border-radius:8px;background:#fff;padding:0 8px;font-size:13px;
-}
-.dashboard-tasks-panel .dashboard-task-page-actions{
-  display:flex;align-items:center;gap:12px;
-}
-.dashboard-tasks-panel .dashboard-task-page-actions .btn{
-  min-height:34px;
-}
 .dashboard-tasks-panel{scroll-margin-top:85px}
-@media(max-width:720px){
- .dashboard-tasks-panel .dashboard-task-pagination{justify-content:flex-start}
- .dashboard-tasks-panel .dashboard-task-page-actions{width:100%;justify-content:space-between}
-}
+.dashboard-tasks-panel .pager{justify-content:flex-end}
 </style>
 <style id="court-record-filters-submit-v1">
 .records-compact-filterbar #applyFilterBtn{
@@ -6827,6 +6806,24 @@ function renderDashboard(){
   };
 
   const taskHtml=taskTotal?`
+    <div class="records-table-meta records-table-meta-controls">
+      <div class="records-meta-left">
+        <span>顯示 ${taskStart+1}–${Math.min(taskStart+dashboardTaskState.perPage,taskTotal)}／${taskTotal} 場</span>
+      <label class="records-inline-control">每頁
+        <select id="dashboardTasksPerPage" aria-label="每頁顯示場次">
+          <option value="10" ${dashboardTaskState.perPage===10?'selected':''}>10</option>
+          <option value="20" ${dashboardTaskState.perPage===20?'selected':''}>20</option>
+          <option value="50" ${dashboardTaskState.perPage===50?'selected':''}>50</option>
+        </select>
+      </label>
+        <label class="records-inline-control">第
+          <select id="dashboardTasksPageJump" aria-label="跳到第幾頁" ${taskTotalPages===1?'disabled':''}>
+            ${Array.from({length:taskTotalPages},(_,i)=>i+1).map(page=>`<option value="${page}" ${page===dashboardTaskState.page?'selected':''}>${page}</option>`).join('')}
+          </select>
+          / ${taskTotalPages} 頁
+        </label>
+      </div>
+    </div>
     <div class="table-wrap dashboard-task-table-wrap">
       <table class="dashboard-task-table">
         <thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記筆數</th><th>抽籤名額</th><th>狀態</th><th>場次核對</th><th>操作</th></tr></thead>
@@ -6845,18 +6842,9 @@ function renderDashboard(){
         </tbody>
       </table>
     </div>
-    <div class="dashboard-task-pagination" aria-label="待處理場次分頁">
-      <span class="small">顯示 ${taskStart+1}–${Math.min(taskStart+dashboardTaskState.perPage,taskTotal)}／${taskTotal} 場</span>
-      <label class="records-inline-control">每頁
-        <select id="dashboardTasksPerPage" aria-label="每頁顯示場次">
-          <option value="10" ${dashboardTaskState.perPage===10?'selected':''}>10</option>
-          <option value="20" ${dashboardTaskState.perPage===20?'selected':''}>20</option>
-          <option value="50" ${dashboardTaskState.perPage===50?'selected':''}>50</option>
-        </select>
-      </label>
-      <div class="dashboard-task-page-actions">
+    <div class="pager" aria-label="待處理場次分頁">
+      <div class="pager-controls">
         <button type="button" class="btn btn-gray btn-compact" id="dashboardTasksPrev" ${dashboardTaskState.page<=1?'disabled':''}>上一頁</button>
-        <span class="small">第 ${dashboardTaskState.page}／${taskTotalPages} 頁</span>
         <button type="button" class="btn btn-gray btn-compact" id="dashboardTasksNext" ${dashboardTaskState.page>=taskTotalPages?'disabled':''}>下一頁</button>
       </div>
     </div>`:`<div class="msg ok">${pendingTasks.length?'此篩選條件下沒有場次。':'目前沒有待處理場次。'}</div>`;
@@ -6943,6 +6931,13 @@ function renderDashboard(){
   if(dashboardTasksPrev)dashboardTasksPrev.onclick=()=>moveDashboardTasksPage(dashboardTaskState.page-1);
   const dashboardTasksNext=document.getElementById('dashboardTasksNext');
   if(dashboardTasksNext)dashboardTasksNext.onclick=()=>moveDashboardTasksPage(dashboardTaskState.page+1);
+  const dashboardTasksPageJump=document.getElementById('dashboardTasksPageJump');
+  if(dashboardTasksPageJump)dashboardTasksPageJump.onchange=()=>{
+    const page=Number(dashboardTasksPageJump.value);
+    if(!Number.isInteger(page)||page<1||page>taskTotalPages)return;
+    moveDashboardTasksPage(page);
+    document.getElementById('dashboardTasksPageJump')?.focus({preventScroll:true});
+  };
   const dashboardTasksPerPage=document.getElementById('dashboardTasksPerPage');
   if(dashboardTasksPerPage)dashboardTasksPerPage.onchange=()=>{
     const n=Number(dashboardTasksPerPage.value);
