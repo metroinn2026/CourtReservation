@@ -7853,6 +7853,12 @@ function renderRecordsTable(){
           <option value="999999">全部</option>
         </select>
       </label>
+      <label class="records-inline-control">第
+        <select id="recordsPageJump" aria-label="跳到第幾頁" ${totalPages===1?'disabled':''}>
+          ${Array.from({length:totalPages},(_,i)=>i+1).map(page=>`<option value="${page}" ${page===recordState.page?'selected':''}>${page}</option>`).join('')}
+        </select>
+        / ${totalPages} 頁
+      </label>
     </div>
     ${selectedRecordIds.size||pendingRecordStatusChanges.size ? `<span>已選 <strong>${selectedRecordIds.size}</strong>｜待儲存 <strong>${pendingRecordStatusChanges.size}</strong></span>` : ''}
   </div>
@@ -7879,12 +7885,7 @@ function renderRecordsTable(){
     <td>${publishStatusTag(r)}</td>
     <td>${registrationReviewStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td>${membershipCheckCell(r)}</td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}${courtSharedPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
   });
-  html+=`</tbody></table></div><div class="pager"><label class="records-inline-control">第
-    <select id="recordsPageJump" aria-label="跳到第幾頁" ${totalPages===1?'disabled':''}>
-      ${Array.from({length:totalPages},(_,i)=>i+1).map(page=>`<option value="${page}" ${page===recordState.page?'selected':''}>${page}</option>`).join('')}
-    </select>
-    / ${totalPages} 頁
-  </label><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
+  html+=`</tbody></table></div><div class="pager" style="justify-content:flex-end"><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
   bindIdentityReveal();
   bindRegistrationLimitButtons(document.getElementById('recordsTable'));
