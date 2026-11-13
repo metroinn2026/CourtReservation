@@ -6142,6 +6142,8 @@ function courtRelatedRecords(r){
 function courtSharedPhoneCell(r){
  const related=courtRelatedRecords(r);
  if(!related.length)return '';
+ const covered=new Set(registrationLimitRows(getRegistrationLimitEvidence(r)).map(record=>String(record.id)));
+ if(related.every(record=>covered.has(String(record.id))))return '';
  return `<button type="button" class="court-phone-relations" data-shared-phone-id="${escapeHtml(String(r.id))}" title="查看共用聯絡手機及同會員識別姓名不同的登記">關聯 ${related.length} 筆</button>`;
 }
 function openCourtSharedPhoneRelations(recordId){
