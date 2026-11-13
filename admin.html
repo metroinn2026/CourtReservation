@@ -5090,6 +5090,101 @@ body .ux-review-edit{align-items:end}
   }
 </style>
 
+
+<style id="qualification-review-aligned-controls-v1">
+/* 異常清單：三欄底端對齊、字級與控制項高度一致 */
+#recordsWorkspace .ux-review-edit{
+  display:grid!important;
+  grid-template-columns:minmax(170px,235px) minmax(0,1fr) auto!important;
+  gap:12px!important;
+  align-items:end!important;
+  margin-top:12px!important;
+}
+#recordsWorkspace .ux-review-edit>.ux-review-field{
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:flex-end!important;
+  gap:7px!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+}
+#recordsWorkspace .ux-review-edit .ux-review-field>label,
+#recordsWorkspace .ux-review-edit .ux-review-field>label[for^="qstate-"]{
+  display:block!important;
+  font-size:14px!important;
+  line-height:20px!important;
+  font-weight:600!important;
+  color:#334155!important;
+  margin:0!important;
+  padding:0!important;
+  height:20px!important;
+}
+#recordsWorkspace .ux-review-edit .ux-review-field>label[for^="qstate-"]::after{
+  content:none!important;
+  display:none!important;
+}
+#recordsWorkspace .ux-review-edit .ux-review-field select,
+#recordsWorkspace .ux-review-edit .ux-review-field textarea{
+  display:block!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+  height:42px!important;
+  min-height:42px!important;
+  max-height:42px!important;
+  border:1px solid #d7e0eb!important;
+  border-radius:9px!important;
+  background:#fff!important;
+  color:#334155!important;
+  font-family:inherit!important;
+  font-size:14px!important;
+  font-weight:400!important;
+  line-height:20px!important;
+  margin:0!important;
+  box-shadow:none!important;
+}
+#recordsWorkspace .ux-review-edit .ux-review-field select{padding:0 12px!important}
+#recordsWorkspace .ux-review-edit .ux-review-field textarea{
+  padding:10px 12px!important;
+  resize:none!important;
+  overflow-y:auto!important;
+}
+#recordsWorkspace .ux-review-edit .ux-review-field textarea::placeholder{
+  font-size:14px!important;
+  color:#8b98ab!important;
+  opacity:1;
+}
+#recordsWorkspace .ux-review-edit .ux-review-field-help{display:none!important}
+#recordsWorkspace .ux-review-edit>.ux-review-save{
+  display:flex!important;
+  align-items:flex-end!important;
+  align-self:end!important;
+  margin:0!important;
+  padding:0!important;
+}
+#recordsWorkspace .ux-review-edit>.ux-review-save .btn{
+  box-sizing:border-box!important;
+  height:42px!important;
+  min-height:42px!important;
+  min-width:56px!important;
+  padding:0 14px!important;
+  margin:0!important;
+  border-radius:9px!important;
+  font-family:inherit!important;
+  font-size:14px!important;
+  font-weight:600!important;
+  line-height:20px!important;
+}
+@media(max-width:760px){
+  #recordsWorkspace .ux-review-edit{
+    grid-template-columns:minmax(0,1fr)!important;
+    gap:12px!important;
+  }
+  #recordsWorkspace .ux-review-edit>.ux-review-save{justify-content:flex-end!important}
+  #recordsWorkspace .ux-review-edit>.ux-review-save .btn{width:auto!important}
+}
+</style>
+
 </head>
 <body>
   <section id="loginPage" class="login-page">
