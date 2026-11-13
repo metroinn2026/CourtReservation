@@ -183,5 +183,5 @@
     const settingsBtn=el('adminMfaSettingsBtn');
     if(settingsBtn)settingsBtn.onclick=()=>{void openSettings();};
   }
-  root.CourtAdminMfa=Object.freeze({init,gate,openSettings,sixDigits});
+  root.CourtAdminMfa=Object.freeze({init,gate,openSettings,closeSettings,sixDigits});
 })(window);
