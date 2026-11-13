@@ -7011,31 +7011,34 @@ function isQualifiedForLottery(r){return qualificationReviewsLoaded && qualifica
 function membershipCheckCell(r){
   if(!qualificationReviewsLoaded)return '<span class="tag gray">未載入</span>';
   const member=qualificationReviews.get(String(r.id))?.member_check_status||'unchecked';
-  const label={unchecked:'未查核',verified:'已確認會員',not_member:'非會員'}[member]||'未查核';
-  const color={unchecked:'gray',verified:'review-qualified',not_member:'review-invalid'}[member]||'gray';
-  return `<button type="button" class="tag ${color}" data-membership-check="${escapeHtml(String(r.id))}" title="人工核對會員名冊後設定查核結果" style="cursor:pointer;font:inherit;font-weight:600">${label} ▾</button>`;
+  return `<select data-membership-check="${escapeHtml(String(r.id))}" aria-label="會員查核：${escapeHtml(r.name)}"
+    title="向會員資料來源核對後，選擇會員查核結果" style="width:100%;min-width:106px;max-width:138px;height:32px;font-size:12px;border:1px solid #dce3ec;border-radius:7px;background:#fff;padding:0 4px">
+    <option value="unchecked" ${member==='unchecked'?'selected':''}>未查核</option>
+    <option value="verified" ${member==='verified'?'selected':''}>已確認會員</option>
+    <option value="not_member" ${member==='not_member'?'selected':''}>非會員</option>
+  </select>`;
 }
-async function setManualMembershipCheck(recordId){
+async function setManualMembershipCheck(recordId,status){
   if(!qualificationReviewsLoaded){alert('資格審查資料尚未載入，請重新登入後再試');return;}
   const record=allRecords.find(r=>String(r.id)===String(recordId));if(!record)return;
   const prior=qualificationReviews.get(String(record.id))?.member_check_status||'unchecked';
-  const choice=prompt('會員身分人工查核：'+record.name+'\\n請先向會員資料來源核對。\\n輸入 1：確認為會員\\n輸入 2：確認非會員（同步列為不合格）\\n輸入 0：清除查核結果\\n取消：不變更',prior==='verified'?'1':prior==='not_member'?'2':'');
-  if(choice===null)return;
-  const status=({'1':'verified','2':'not_member','0':'unchecked'})[choice.trim()];
-  if(!status){alert('請輸入 1、2 或 0');return;}
+  if(status===prior)return;
+  if(!['unchecked','verified','not_member'].includes(status))return;
   let note='';
   if(status==='not_member'){
-    const response=prompt('請填寫確認非會員的依據或查核說明（必填）。不需輸入完整身分證字號。','會員名冊查無有效會員資格');
-    if(response===null)return;
+    const response=prompt('請填寫確認非會員的依據或查核說明（必填，不需輸入完整身分證字號）。','會員名冊查無有效會員資格');
+    if(response===null){renderRecordsWorkspace();return;}
     note=response.trim();
-    if(!note){alert('非會員必須記錄查核原因');return;}
+    if(!note){alert('非會員必須記錄查核原因');renderRecordsWorkspace();return;}
   }
-  if(!confirm('確認將「'+record.name+'」設定為「'+({verified:'已確認會員',not_member:'非會員',unchecked:'未查核'}[status])+'」？'+(status==='not_member'?'\\n該筆將同時列為不合格，不進入抽籤名單。':'')))return;
+  if(!confirm('確定將「'+record.name+'」設定為「'+({verified:'已確認會員',not_member:'非會員',unchecked:'未查核'}[status])+'」？'+(status==='not_member'?'\\n該筆將同步列為不合格，不進入抽籤名單。':''))){
+    renderRecordsWorkspace();return;
+  }
   const {error}=await reviewDbClient().rpc('court_set_membership_check_v2',{
     p_record_id:record.id,p_status:status,p_note:note,
     p_initial_review_status:qualificationState(record)==='qualified'?'qualified':'pending'
   });
-  if(error){alert('會員查核更新失敗：'+error.message);return;}
+  if(error){alert('會員查核更新失敗：'+error.message);renderRecordsWorkspace();return;}
   await loadQualificationReviews();
   renderRecordsWorkspace();
 }
@@ -7489,7 +7492,7 @@ function renderRecordsTable(){
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
   bindIdentityReveal();
-  document.querySelectorAll('#recordsTable [data-membership-check]').forEach(b=>b.onclick=()=>void setManualMembershipCheck(b.dataset.membershipCheck));
+  document.querySelectorAll('#recordsTable [data-membership-check]').forEach(b=>b.onchange=()=>void setManualMembershipCheck(b.dataset.membershipCheck,b.value));
   document.querySelectorAll('#recordsTable [data-qopen]').forEach(b=>b.onclick=()=>openQualificationRecord(b.dataset.qopen));
   bindSortHeaders();
   const anomalyHelpBtn=document.getElementById('anomalyHelpBtn'); if(anomalyHelpBtn) anomalyHelpBtn.onclick=showAnomalyDefinitionModal;
