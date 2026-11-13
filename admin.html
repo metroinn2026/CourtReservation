@@ -7194,8 +7194,11 @@ async function loadHallRosterChecks(){
   }catch(error){console.warn('會員名冊比對結果載入失敗',error?.code||error?.message);}
 }
 function qualificationIssueTypes(r){
-  // Only actual eligibility concerns count here; publication and lottery workflow are excluded.
-  return getRecordAnomalyTypes(r).filter(x=>/手機重複|超過次數|不開放場次有登記|開放前登記|截止後登記|登記時間異常/.test(x));
+  // 名冊查無只代表需要承辦人核對，不等於非會員或審查不合格。
+  const issues=getRecordAnomalyTypes(r).filter(x=>/手機重複|超過次數|不開放場次有登記|開放前登記|截止後登記|登記時間異常/.test(x));
+  const roster=hallRosterChecks.get(String(r.id));
+  if(roster?.roster_match==='not_found'&&/會館會員/.test(String(r.member_type||'')))issues.push('會館會員名冊查無，待確認');
+  return issues;
 }
 function qualificationState(r){
   const saved=qualificationReviews.get(String(r.id));
