@@ -5178,6 +5178,10 @@ const authMigrationClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   }
 });
 const importDb = authMigrationClient;
+// 敏感資料二次驗證使用獨立 Session，不可覆寫或登出管理後台 Session。
+const sensitiveAuthClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}
+});
 
 /* 管理員 Session 風險控管：每頁籤 20 分鐘閒置退出、最長 8 小時、每 5 分鐘重驗權限。 */
 const ADMIN_SESSION_LAST_KEY='court-admin-last-activity-v1';
@@ -5745,38 +5749,80 @@ function adminPhoneCell(r){
   return escapeHtml(String(r.phone||''));
 }
 async function loadSensitiveIdentifiers(){
-  if(courtAuthLoginActive){secureIdentityBySubmission.clear();secureIdentityAuthenticated=false;revealedSensitiveKeys.clear();await loadCourtAdminEmails();return;}
-  secureIdentityBySubmission=new Map(); secureEmailBySubmission=new Map(); secureIdentityAuthenticated=false; revealedSensitiveKeys.clear();
-  const {data:auth,error:authError}=await importDb.auth.getUser();
-  if(authError||!auth?.user)return;
+  if(!secureIdentityAuthenticated){
+    secureIdentityBySubmission.clear();
+    revealedSensitiveKeys.clear();
+    if(courtAuthLoginActive)await loadCourtAdminEmails();
+    return;
+  }
+  const {data:auth,error:authError}=await sensitiveAuthClient.auth.getUser();
+  if(authError||!auth?.user){secureIdentityAuthenticated=false;secureIdentityBySubmission.clear();return;}
+  const {data:identity,error:identityError}=await sensitiveAuthClient.rpc('get_court_admin_identity_v1');
+  if(identityError||!identity||String(identity.id)!==String(currentAdmin?.id)||
+     !['super_admin','staff'].includes(identity.role)){
+    secureIdentityAuthenticated=false;secureIdentityBySubmission.clear();return;
+  }
+  const identifiers=new Map();
   const keys=[...new Set(allRecords.map(r=>r.import_submission_key).filter(Boolean))];
   for(let i=0;i<Math.max(1,keys.length);i+=150){
-    const {data,error}=await importDb.rpc('admin_get_member_identifiers',{p_keys:keys.slice(i,i+150)});
-    if(error){console.warn('受限證號查閱未啟用或未授權：',error.code);secureIdentityBySubmission.clear();return;}
-    (data||[]).forEach(x=>secureIdentityBySubmission.set(String(x.submission_key),String(x.id_number)));
+    const {data,error}=await sensitiveAuthClient.rpc('admin_get_member_identifiers',{p_keys:keys.slice(i,i+150)});
+    if(error){console.warn('敏感資料權限檢查失敗',error.code);secureIdentityAuthenticated=false;secureIdentityBySubmission.clear();return;}
+    (data||[]).forEach(x=>identifiers.set(String(x.submission_key),String(x.id_number)));
   }
-  // 電子郵件僅從受管理員 RLS 保護的原始回覆讀取，不寫入匿名可讀的登記資料表。
-  for(let i=0;i<keys.length;i+=100){
-    const {data,error}=await importDb.from('lottery_form_submissions')
-      .select('submission_key,contact_email').in('submission_key',keys.slice(i,i+100));
-    if(error){ console.warn('Email 欄位讀取失敗（請檢查資料表的管理員讀取權限）',error.code); break; }
-    (data||[]).forEach(x=>{if(x.contact_email)secureEmailBySubmission.set(String(x.submission_key),String(x.contact_email));});
+  secureIdentityBySubmission=identifiers;
+  if(courtAuthLoginActive)await loadCourtAdminEmails();
+  else{
+    secureEmailBySubmission.clear();
+    for(let i=0;i<keys.length;i+=100){
+      const {data,error}=await sensitiveAuthClient.rpc('court_admin_contact_emails_v1',{p_keys:keys.slice(i,i+100)});
+      if(error){console.warn('Email 查閱權限檢查失敗',error.code);break;}
+      (data||[]).forEach(x=>{if(x.contact_email)secureEmailBySubmission.set(String(x.submission_key),String(x.contact_email));});
+    }
   }
-  secureIdentityAuthenticated=true;
 }
 async function connectSensitiveRecordAccess(){
   const email=document.getElementById('identityAuthEmail')?.value?.trim();
   const password=document.getElementById('identityAuthPassword')?.value;
   const status=document.getElementById('identityAuthState');
-  if(!email||!password){if(status)status.textContent='請輸入資料庫授權帳號及密碼。';return;}
-  const {error}=await importDb.auth.signInWithPassword({email,password});
-  document.getElementById('identityAuthPassword').value='';
-  if(error){secureIdentityAuthenticated=false;updateCourtImportAuthorizationUI();if(status)status.textContent='授權失敗，請確認帳號權限。';return;}
-  await loadSensitiveIdentifiers();
-  if(status)status.textContent=secureIdentityAuthenticated?`已授權｜已有全碼 ${secureIdentityBySubmission.size} 筆（其他舊資料需補匯）`:'權限不足或尚未執行配套 SQL。';
-  updateCourtImportAuthorizationUI();
-  if(secureIdentityAuthenticated)startSensitiveIdleMonitor();
-  renderRecordsWorkspace();
+  if(!email||!password){if(status)status.textContent='請輸入目前的 Supabase Auth Email 與密碼。';return;}
+  if(!courtAuthLoginActive){if(status)status.textContent='請先使用 Supabase Auth 登入管理後台。';return;}
+  const button=document.getElementById('identityAuthBtn');
+  if(button)button.disabled=true;
+  try{
+    const {data,error}=await sensitiveAuthClient.auth.signInWithPassword({email,password});
+    if(error){
+      const code=String(error.code||'');
+      if(status)status.textContent=
+        code==='invalid_credentials'?'Email 或密碼驗證失敗，請確認與登入後台相同。':
+        code==='over_request_rate_limit'?'驗證次數過多，請稍後再試。':
+        code==='email_not_confirmed'?'Email 尚未完成確認。':
+        '驗證服務無法完成授權（'+(code||'請檢查網路與登入狀態')+'）。';
+      return;
+    }
+    const {data:identity,error:identityError}=await sensitiveAuthClient.rpc('get_court_admin_identity_v1');
+    const {data:mainAuth,error:mainError}=await authMigrationClient.auth.getUser();
+    if(identityError||!identity||mainError||String(identity.id)!==String(currentAdmin?.id)||
+       !['super_admin','staff'].includes(identity.role)||String(data?.user?.id)!==String(mainAuth?.user?.id)){
+      if(status)status.textContent='二次驗證帳號與目前登入管理員不一致，或管理員權限不足。';
+      await sensitiveAuthClient.auth.signOut();
+      return;
+    }
+    secureIdentityAuthenticated=true;
+    await loadSensitiveIdentifiers();
+    if(status)status.textContent=secureIdentityAuthenticated?
+      '資料權限已授權（15 分鐘無操作將自動解除）。':
+      '已驗證密碼，但敏感資料讀取權限不足，請檢查匯入授權名單或資料庫 RPC。';
+    updateCourtImportAuthorizationUI();
+    if(secureIdentityAuthenticated)startSensitiveIdleMonitor();
+    renderRecordsWorkspace();
+  }catch(e){
+    console.warn('資料二次驗證未完成',e?.code||e?.name);
+    if(status)status.textContent='驗證過程發生異常，請重新整理頁面後再試。';
+  }finally{
+    const passwordInput=document.getElementById('identityAuthPassword');
+    if(passwordInput)passwordInput.value='';
+    if(button)button.disabled=false;
+  }
 }
 const SENSITIVE_IDLE_MS=15*60*1000;
 let lastSensitiveActivity=Date.now();
@@ -5788,7 +5834,7 @@ async function revokeSensitiveAuthorization(reason='已解除資料庫授權'){
   secureEmailBySubmission.clear();
   revealedSensitiveKeys.clear();
   if(sensitiveIdleTimer){clearInterval(sensitiveIdleTimer);sensitiveIdleTimer=null;}
-  await importDb.auth.signOut().catch(()=>{});
+  await sensitiveAuthClient.auth.signOut().catch(()=>{});
   closeCourtImportModal();
   updateCourtImportAuthorizationUI();
   const status=document.getElementById('identityAuthState');
