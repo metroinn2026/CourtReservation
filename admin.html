@@ -8,6 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="/admin-session-policy.js"></script>
+  <script src="/admin-mfa.js"></script>
   <style>
     :root{
       --blue:#007AB0;--blue2:#005A8C;--green:#40AF36;--orange:#FF9800;--red:#dc2626;
@@ -5107,7 +5108,22 @@ body .ux-review-edit{align-items:end}
           <button id="loginBtn" class="btn btn-primary" style="width:100%;">登入後台</button>
           <button id="forgotPasswordBtn" type="button" class="btn btn-gray" style="width:100%;margin-top:10px;">忘記密碼／重設密碼</button>
         </div>
-<div id="loginMsg"></div>
+<div id="adminMfaLoginBox" class="hidden" aria-label="管理員雙重驗證">
+          <h3 style="margin:0 0 8px">雙重驗證</h3>
+          <p class="small">請開啟你已設定的手機驗證器，輸入 6 位數一次性密碼。</p>
+          <div class="field hidden" id="adminMfaFactorRow">
+            <label for="adminMfaFactorSelect">選擇驗證器</label>
+            <select id="adminMfaFactorSelect" style="width:100%;padding:9px;border:1px solid #d1d5db;border-radius:9px"></select>
+          </div>
+          <div class="field">
+            <label for="adminMfaLoginCode">驗證碼</label>
+            <input id="adminMfaLoginCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位數驗證碼" />
+          </div>
+          <button id="adminMfaVerifyBtn" type="button" class="btn btn-primary" style="width:100%">確認驗證</button>
+          <button id="adminMfaCancelBtn" type="button" class="btn btn-gray" style="width:100%;margin-top:10px">取消並登出</button>
+          <div id="adminMfaLoginMsg" role="status" aria-live="polite" class="small" style="margin-top:10px"></div>
+        </div>
+        <div id="loginMsg"></div>
       </div>
     </div>
   </section>
@@ -5138,6 +5154,7 @@ body .ux-review-edit{align-items:end}
             <span class="admin-font-divider">｜</span>
             <button type="button" class="admin-font-option" data-font-size="xlarge">特大</button>
           </div>
+          <button id="adminMfaSettingsBtn" type="button" class="btn btn-gray btn-compact" title="設定或查看個人雙重驗證">帳號安全</button>
           <div class="userbox"><div class="avatar" id="userAvatar">A</div><div><div id="topUser" style="font-weight:900;">-</div><div id="topRole" class="small">-</div></div></div>
         </div>
       </header>
@@ -5381,24 +5398,41 @@ authMigrationClient.auth.onAuthStateChange((event)=>{
   }
 });
 
-async function loginWithCourtAuth(){
-  const email=document.getElementById('loginUsername').value.trim();
-  const password=document.getElementById('loginPassword').value;
-  if(!email||!password){showMsg('loginMsg','請輸入 管理員 Email 與密碼');return;}
-  const {error}=await authMigrationClient.auth.signInWithPassword({email,password});
-  document.getElementById('loginPassword').value='';
-  if(error){showMsg('loginMsg','登入失敗，請確認 Email 與密碼');return;}
+async function completeAdminSignIn(restored=false){
   const {data,error:roleError}=await authMigrationClient.rpc('get_court_admin_identity_v1');
   if(roleError||!data){
-    await authMigrationClient.auth.signOut();
-    showMsg('loginMsg','此 Supabase Auth 帳號尚未核准後台管理權限');
-    return;
+    await authMigrationClient.auth.signOut({scope:'local'}).catch(()=>{});
+    clearAdminSessionMarkers();
+    if(!restored)showMsg('loginMsg','此帳號尚未核准後台權限，或安全驗證尚未完成');
+    return false;
   }
   courtAuthLoginActive=true;
   currentAdmin=data;
+  if(!beginAdminSession(restored)){await endAdminSession('idle',true);return false;}
   sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
-  if(!beginAdminSession(false)){await endAdminSession('authorization',true);return;}
   await enterApp();
+  return true;
+}
+async function loginWithCourtAuth(){
+  const button=document.getElementById('loginBtn');
+  if(button?.disabled)return;
+  const email=document.getElementById('loginUsername').value.trim();
+  const password=document.getElementById('loginPassword').value;
+  if(!email||!password){showMsg('loginMsg','請輸入 管理員 Email 與密碼');return;}
+  if(button)button.disabled=true;
+  try{
+    const {error}=await authMigrationClient.auth.signInWithPassword({email,password});
+    if(error){showMsg('loginMsg','登入失敗，請確認 Email 與密碼');return;}
+    // Enrolled administrators must complete TOTP before any administrative RPC.
+    if(await window.CourtAdminMfa.gate(false))return;
+    await completeAdminSignIn(false);
+  }catch(e){
+    console.warn('管理員登入驗證未完成',e);
+    showMsg('loginMsg','驗證服務暫時無法確認登入安全，請稍後重試。');
+  }finally{
+    document.getElementById('loginPassword').value='';
+    if(button)button.disabled=false;
+  }
 }
 async function deleteCourtRecords(ids){
  if(!courtAuthLoginActive)return {error:new Error('請先完成 Supabase Auth 管理員登入')};
@@ -10490,6 +10524,12 @@ async function loadFormAnomalies(){
 
 document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage(btn.dataset.page));
 
+window.CourtAdminMfa.init(
+  authMigrationClient,
+  completeAdminSignIn,
+  ()=>endAdminSession('manual',false)
+);
+
 (async function init(){
   const url=new URL(location.href);
   if(url.searchParams.get('reset')==='1'){
@@ -10501,19 +10541,10 @@ document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>renderPage
   try{
     const {data:{user}}=await authMigrationClient.auth.getUser();
     if(user){
-      const {data,error}=await authMigrationClient.rpc('get_court_admin_identity_v1');
-      if(!error&&data){
-        courtAuthLoginActive=true;
-        currentAdmin=data;
-        if(!beginAdminSession(true)){
-          await endAdminSession('idle',true);
-          return;
-        }
-        sessionStorage.setItem('venue_admin_session',JSON.stringify(currentAdmin));
-        await enterApp();
-        return;
-      }
-      await authMigrationClient.auth.signOut().catch(()=>{});
+      // A restored AAL1 session cannot enter the admin console if MFA is enrolled.
+      if(await window.CourtAdminMfa.gate(true))return;
+      if(await completeAdminSignIn(true))return;
+      await authMigrationClient.auth.signOut({scope:'local'}).catch(()=>{});
     }
   }catch(e){
     console.warn('Supabase Auth session restore failed',e);
