@@ -5321,6 +5321,10 @@ body .ux-review-edit{align-items:end}
 #recordsTable .records-member-decision.is-no{background:#fff1f0!important;color:#b42318!important;border-color:#f7d0cc!important}
 #recordsTable .records-member-decision.is-unknown{background:#f8fafc!important;color:#63748b!important}
 </style>
+<style id="court-phone-relations-v1">
+#recordsTable .court-phone-relations{display:block;margin-top:3px;border:0;border-radius:6px;padding:3px 7px;background:#edf4fb;color:#315776;font-size:11px;font-weight:700;cursor:pointer}
+#recordsTable .court-phone-relations:hover{background:#dceafb}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -5861,14 +5865,11 @@ function getRecordAnomalyTypes(record){
   const phone=normalizePhone(record.phone);
   const pk=personKey(record);
 
-  // 手機重複：同一手機對應不同身分
-  if(phone){
-    const ids=new Set(records.filter(r=>normalizePhone(r.phone)===phone).map(r=>String(r.id_last4||'').trim()).filter(Boolean));
-    if(ids.size>1) types.push('手機重複');
-  }
+  // 聯絡手機共用不屬於資格異常，僅提示同會員識別對應不同姓名。
+  if(courtMemberNameConflict(record))types.push('同會員識別姓名不同');
 
   // 超過次數：合併「重複場次登記」與「超過申請上限」
-  if(pk!=='|'){
+  if(!pk.startsWith('UNVERIFIED:')){
     const sameStage=records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
     const sameSportSlots=new Set(records.filter(r=>personKey(r)===pk && recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type).map(r=>`${r.day_of_week||''}|${r.time_slot||''}`));
     const exceedsRule = sameStage.length>1 || getLimitViolationsForRecord(record,records).length>0;
@@ -5904,7 +5905,7 @@ function getRecordAnomalyTypes(record){
   return [...new Set(types)];
 }
 const COURT_ANOMALY_GROUPS={
-  '__registration__':{label:'登記資料需確認',types:['手機重複','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常']},
+  '__registration__':{label:'登記資料需確認',types:['同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常']},
   '__lottery__':{label:'抽籤結果需確認',types:['超過名額','候補異常','結果漏匯']},
   '__publication__':{label:'公告進度需確認',types:['公布未完成','結果待發布']}
 };
@@ -6111,25 +6112,59 @@ function memberIdentityCell(r){
   const kind=isGo?'綁定手機':(/北投會館/.test(type)?'身分證字號':'識別資料');
   return `<span class="tag ${tone}">${escapeHtml(label)}</span><div class="small">${last4?`${kind}末4碼 ${escapeHtml(last4)}`:'識別資料未記錄'}</div>`;
 }
-function personKey(r){ return `${normalizePhone(r.phone)}|${String(r.id_last4||'').trim()}`; }
+// 會館會員用身分證所衍生的會員雜湊，Go 會員用綁定手機雜湊。
+function courtMemberIdentityKey(r){
+ const t=memberIdentityType(r),kind=/Go會員/.test(t)?'GO':/會館會員/.test(t)?'HALL':'UNKNOWN';
+ const hash=String(r.member_key_hash||'').trim();
+ if(kind!=='UNKNOWN'&&hash)return kind+':'+hash;
+ return 'UNVERIFIED:'+kind+':'+String(r.import_submission_key||r.id||'');
+}
+function personKey(r){return courtMemberIdentityKey(r);}
+function courtSharedPhoneRelations(r){
+ const p=normalizePhone(r.phone),self=courtMemberIdentityKey(r);
+ if(!p)return [];
+ return allRecords.filter(x=>String(x.id)!==String(r.id)&&normalizePhone(x.phone)===p&&courtMemberIdentityKey(x)!==self);
+}
+function courtMemberNameConflict(r){
+ const key=courtMemberIdentityKey(r);
+ if(key.startsWith('UNVERIFIED:'))return false;
+ const normalized=x=>String(x||'').normalize('NFKC').replace(/[\s\u3000]/g,'').toLowerCase();
+ const name=normalized(r.name);
+ return !!name&&allRecords.some(x=>String(x.id)!==String(r.id)&&courtMemberIdentityKey(x)===key&&normalized(x.name)&&normalized(x.name)!==name);
+}
+function courtSharedPhoneCell(r){
+ const related=courtSharedPhoneRelations(r);
+ if(!related.length)return '';
+ const n=new Set(related.map(courtMemberIdentityKey)).size;
+ return \`<button type="button" class="court-phone-relations" data-shared-phone-id="\${escapeHtml(String(r.id))}" title="同一聯絡手機另有 \${n} 組不同會員識別，僅供關聯查閱，不表示不合格">關聯 \${n}</button>\`;
+}
+function openCourtSharedPhoneRelations(recordId){
+ const r=allRecords.find(x=>String(x.id)===String(recordId));if(!r)return;
+ const related=courtSharedPhoneRelations(r);
+ if(!related.length)return;
+ const rows=[r,...related].sort((a,b)=>new Date(a.registered_at||0)-new Date(b.registered_at||0));
+ const body=\`<p>共用聯絡手機不代表同一人或重複登記。會館以身分證會員識別為準，Go 以綁定手機會員識別為準。此處僅供承辦人查閱。</p>
+ <div class="table-wrap"><table><thead><tr><th>登記時間</th><th>序號</th><th>姓名</th><th>會員類型</th><th>識別末四碼</th><th>場地／時段</th><th>與選取紀錄關係</th></tr></thead><tbody>
+ \${rows.map(x=>\`<tr><td>\${escapeHtml(formatCompactDateTime(x.registered_at))}</td><td>\${escapeHtml(compactRecordCode(x))}</td><td>\${escapeHtml(x.name||'')}</td><td>\${escapeHtml(memberIdentityType(x))}</td><td>\${escapeHtml(/會館會員/.test(memberIdentityType(x))?memberIdentifierLast4(x):'—')}</td><td>\${escapeHtml(courtVenueLabel(x))} \${escapeHtml(x.day_of_week||'')} \${escapeHtml(x.time_slot||'')}</td><td>\${courtMemberIdentityKey(x)===courtMemberIdentityKey(r)?'同會員識別':'不同會員識別'}</td></tr>\`).join('')}
+ </tbody></table></div><p class="small">僅顯示識別末四碼，不顯示完整身分證。此處不修改審查結論。</p>\`;
+ showModal('共用聯絡手機｜關聯登記',body,()=>{},false);
+}
+
 function buildDataAnomalies(){
   const issues=[];
   const records=allRecords||[];
 
-  // 1. 手機重複
-  const phoneGroups={};
+  // 1. 同會員識別資料不一致（不以聯絡手機推定同人）。
+  const memberGroups=new Map();
   records.forEach(r=>{
-    const phone=normalizePhone(r.phone); if(!phone) return;
-    if(!phoneGroups[phone]) phoneGroups[phone]=[];
-    phoneGroups[phone].push(r);
+    const key=courtMemberIdentityKey(r);
+    if(key.startsWith('UNVERIFIED:'))return;
+    if(!memberGroups.has(key))memberGroups.set(key,[]);
+    memberGroups.get(key).push(r);
   });
-  Object.entries(phoneGroups).forEach(([phone,rows])=>{
-    const ids=[...new Set(rows.map(r=>String(r.id_last4||'').trim()).filter(Boolean))];
-    if(ids.length>1) issues.push({
-      type:'手機重複', severity:'warn', count:rows.length,
-      detail:`${phone}｜${ids.length}組身分`,
-      target:'records'
-    });
+  memberGroups.forEach(rows=>{
+    const names=new Set(rows.map(r=>String(r.name||'').normalize('NFKC').replace(/[\s\u3000]/g,'').toLowerCase()).filter(Boolean));
+    if(names.size>1)issues.push({type:'同會員識別姓名不同',severity:'warn',count:rows.length,detail:'同一會員識別姓名不同，請人工核對',target:'records'});
   });
 
   // 2. 超過次數：合併重複場次與超過申請上限
@@ -6518,7 +6553,7 @@ function normalizeRegistrationLimitRules(raw){
 function getRegistrationLimitRules(){
   return normalizeRegistrationLimitRules(systemSettings.registration_limit_rules);
 }
-function personRecordKey(r){ return `${normalizePhone(r.phone)}|${r.id_last4||''}`; }
+function personRecordKey(r){return courtMemberIdentityKey(r);}
 function recordCountForLimit(records, personKeyValue, venue, location){
   return records.filter(r=>personRecordKey(r)===personKeyValue && recordLocation(r)===location && r.venue_type===venue).length;
 }
@@ -7212,7 +7247,7 @@ async function loadHallRosterChecks(){
 }
 function qualificationIssueTypes(r){
   // 名冊查無只代表需要承辦人核對，不等於非會員或審查不合格。
-  const issues=getRecordAnomalyTypes(r).filter(x=>/手機重複|超過次數|不開放場次有登記|開放前登記|截止後登記|登記時間異常/.test(x));
+  const issues=getRecordAnomalyTypes(r).filter(x=>/同會員識別姓名不同|超過次數|不開放場次有登記|開放前登記|截止後登記|登記時間異常/.test(x));
   const roster=hallRosterChecks.get(String(r.id));
   if(roster?.roster_match==='not_found'&&/會館會員/.test(String(r.member_type||'')))issues.push('會館會員名冊查無，待確認');
   return issues;
@@ -7734,11 +7769,12 @@ function renderRecordsTable(){
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${registrationReviewStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td>${membershipCheckCell(r)}</td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
+    <td>${registrationReviewStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td>${membershipCheckCell(r)}</td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}${courtSharedPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
   bindIdentityReveal();
+  document.querySelectorAll('#recordsTable [data-shared-phone-id]').forEach(b=>b.onclick=()=>openCourtSharedPhoneRelations(b.dataset.sharedPhoneId));
   document.querySelectorAll('#recordsTable [data-membership-check]').forEach(b=>b.onchange=()=>void setManualMembershipCheck(b.dataset.membershipCheck,b.value));
   document.querySelectorAll('#recordsTable [data-qopen]').forEach(b=>b.onclick=()=>openQualificationRecord(b.dataset.qopen));
   bindSortHeaders();
@@ -10740,11 +10776,11 @@ function exportToCsv(records){
 function showAnomalyDefinitionModal(){
   const body=`
     <div style="display:grid;gap:8px;text-align:left;">
-      <div><strong>登記資料需確認</strong>：手機重複、超過登記次數、不開放場次、登記時間異常等。</div>
+      <div><strong>登記資料需確認</strong>：同會員識別姓名不同、超過登記次數、不開放場次、登記時間異常；共用聯絡手機不算資格異常。</div>
       <div><strong>抽籤結果需確認</strong>：超過名額、候補順位異常、部分結果尚未匯入。</div>
       <div><strong>公告進度需確認</strong>：結果未完成或尚未公告。</div>
       <div style="border-top:1px solid #e2e8f0;padding-top:8px"><strong>詳細原因對照</strong></div>
-      <div><strong>手機重複</strong>：同一手機對應不同身分。</div>
+      <div><strong>共用聯絡手機</strong>：點擊手機欄旁「關聯」可查詢，不代表同一人或不合格。</div><div><strong>同會員識別姓名不同</strong>：同一身分證或 Go 綁定手機出現不同姓名，需人工核對。</div>
       <div><strong>超過次數</strong>：同一申請人登記次數超過規則。</div>
       <div><strong>超過名額</strong>：中籤人數超過場次名額。</div>
       <div><strong>公布未完成</strong>：已公布但仍有未完成結果。</div>
