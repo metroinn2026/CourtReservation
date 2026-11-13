@@ -5304,6 +5304,23 @@ body .ux-review-edit{align-items:end}
   #content .records-filter-section-card .records-content-nav{gap:8px!important}
 }
 </style>
+<style id="court-compact-review-member-columns-v1">
+/* 審查與會員查核收斂為兩欄；詳細原因仍可由滑鼠提示及資格狀態點入 */
+#recordsTable .records-review-combined{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:135px}
+#recordsTable .records-review-combined .records-review-flag{font-size:11.5px!important;max-width:165px;overflow:hidden;text-overflow:ellipsis}
+#recordsTable .records-review-combined .qualification-jump{font-size:11.5px!important;line-height:1.3!important}
+#recordsTable .records-member-compact{display:flex;align-items:center;gap:7px;min-width:93px}
+#recordsTable .records-member-kind{min-width:40px;text-align:center;font-size:11.5px!important}
+#recordsTable .records-member-decision{
+  appearance:auto!important;width:49px!important;min-width:49px!important;max-width:49px!important;
+  height:31px!important;min-height:31px!important;padding:3px 4px!important;
+  border:1px solid #dce3ec!important;border-radius:8px!important;background:#fff!important;
+  color:#475569!important;font-size:12px!important;font-weight:800!important;cursor:pointer;
+}
+#recordsTable .records-member-decision.is-yes{background:#eef8f2!important;color:#24734e!important;border-color:#cce7d5!important}
+#recordsTable .records-member-decision.is-no{background:#fff1f0!important;color:#b42318!important;border-color:#f7d0cc!important}
+#recordsTable .records-member-decision.is-unknown{background:#f8fafc!important;color:#63748b!important}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -7206,20 +7223,28 @@ function qualificationState(r){
 }
 function isQualifiedForLottery(r){return qualificationReviewsLoaded && qualificationState(r)==='qualified';}
 function membershipCheckCell(r){
-  if(!qualificationReviewsLoaded)return '<span class="tag gray">未載入</span>';
+  const memberType=memberIdentityType(r);
+  const isGo=/Go會員/.test(memberType);
+  const isHall=/會館會員/.test(memberType);
+  const categoryLabel=isGo?'Go':isHall?'會館':memberType;
+  const categoryTone=isGo?'identity-go':isHall?'identity-hall':'gray';
+  const category=`<span class="tag ${categoryTone} records-member-kind" title="${escapeHtml(memberType)}">${escapeHtml(categoryLabel)}</span>`;
+  if(!qualificationReviewsLoaded)return `<div class="records-member-compact">${category}<span class="tag gray" title="資格資料未載入">?</span></div>`;
   const member=qualificationReviews.get(String(r.id))?.member_check_status||'unchecked';
   const roster=hallRosterChecks.get(String(r.id));
-  const rosterMark=/會館會員/.test(String(r.member_type||''))&&roster
-    ? '<div class="small" style="margin-top:3px;color:#64748b" title="僅代表與當次名冊比對結果，最終資格由承辦人審查">'+escapeHtml(
-      roster.roster_match==='found'?'名冊比對：有資料':roster.roster_match==='not_found'?'名冊比對：查無，待複核':'名冊比對：待確認'
-      )+'</div>'
-    : '';
-  return `<div><select data-membership-check="${escapeHtml(String(r.id))}" aria-label="會員查核：${escapeHtml(r.name)}"
-    title="向會員資料來源核對後，選擇會員查核結果" style="width:100%;min-width:106px;max-width:138px;height:32px;font-size:12px;border:1px solid #dce3ec;border-radius:7px;background:#fff;padding:0 4px">
-    <option value="unchecked" ${member==='unchecked'?'selected':''}>未查核</option>
-    <option value="verified" ${member==='verified'?'selected':''}>已確認會員</option>
-    <option value="not_member" ${member==='not_member'?'selected':''}>非會員</option>
-  </select>${rosterMark}</div>`;
+  const detail=member==='verified'?'已確認會員':member==='not_member'?'已判定非會員':
+    (isHall&&roster?.roster_match==='not_found'?'名冊查無，待人工複核':'尚未完成會員查核');
+  return `<div class="records-member-compact">
+    ${category}
+    <select class="records-member-decision ${member==='verified'?'is-yes':member==='not_member'?'is-no':'is-unknown'}"
+      data-membership-check="${escapeHtml(String(r.id))}"
+      aria-label="${escapeHtml(memberType)}：${escapeHtml(r.name)}會員查核，目前${detail}"
+      title="${escapeHtml(detail)}。Y：確認會員；N：判定非會員；?：未查核。變更須確認。">
+      <option value="unchecked" ${member==='unchecked'?'selected':''}>?</option>
+      <option value="verified" ${member==='verified'?'selected':''}>Y</option>
+      <option value="not_member" ${member==='not_member'?'selected':''}>N</option>
+    </select>
+  </div>`;
 }
 async function setManualMembershipCheck(recordId,status){
   if(!qualificationReviewsLoaded){alert('資格審查資料尚未載入，請重新登入後再試');return;}
@@ -7244,6 +7269,25 @@ async function setManualMembershipCheck(recordId,status){
   if(error){alert('會員查核更新失敗：'+error.message);renderRecordsWorkspace();return;}
   await loadQualificationReviews();
   renderRecordsWorkspace();
+}
+function registrationReviewStatusCell(r){
+  const types=getRecordAnomalyTypes(r);
+  const roster=hallRosterChecks.get(String(r.id));
+  const saved=qualificationReviews.get(String(r.id));
+  if(roster?.roster_match==='not_found'&&/會館會員/.test(String(r.member_type||''))){
+    types.push('會館會員名冊查無，待複核');
+  }
+  if(saved?.member_check_status==='not_member')types.push('會員資格不符');
+  const unique=[...new Set(types)];
+  const labels=Object.values(COURT_ANOMALY_GROUPS)
+    .filter(g=>unique.some(t=>g.types.includes(t)))
+    .map(g=>g.label);
+  if(unique.includes('會館會員名冊查無，待複核')||unique.includes('會員資格不符'))
+    labels.push('會員待確認');
+  const notice=unique.length
+    ? `<span class="tag anomaly-red records-review-flag" title="${escapeHtml(unique.join('、'))}">${escapeHtml(labels[0]||'需確認')}${unique.length>1?' +'+(unique.length-1):''}</span>`
+    : '<span class="tag gray records-review-flag">正常</span>';
+  return `<div class="records-review-combined">${notice}${qualificationStatusCell(r)}</div>`;
 }
 function qualificationStatusCell(r){
   if(!qualificationReviewsLoaded)return '<span class="tag gray" title="請先完成資料庫授權及資格資料載入">未載入</span>';
@@ -7685,12 +7729,12 @@ function renderRecordsTable(){
       <button id="savePendingRecordStatusBtn" class="btn btn-primary btn-compact" ${pendingRecordStatusChanges.size?'':'disabled'}>儲存${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}</button>
     </div>
   </div>` : ''}
-  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:104px;">異常註記 <button type="button" id="anomalyHelpBtn" title="查看異常註記說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:106px;">資格狀態</th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:110px;">${sortHeader('會員身分','member_type')}</th><th style="width:104px;">會員查核</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
+  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:172px;">審查狀態 <button type="button" id="anomalyHelpBtn" title="查看正常／異常分類與資格審查說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:116px;">${sortHeader('會員／查核','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
     <td>${publishStatusTag(r)}</td>
-    <td>${anomalyTags(r)}</td><td>${qualificationStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td><span class="tag ${/Go會員/.test(memberIdentityType(r))?'identity-go':'identity-hall'}">${escapeHtml(memberIdentityType(r))}</span></td><td>${membershipCheckCell(r)}</td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
+    <td>${registrationReviewStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td>${membershipCheckCell(r)}</td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager"><div>第 ${recordState.page} / ${totalPages} 頁</div><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
