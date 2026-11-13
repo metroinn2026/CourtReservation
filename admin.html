@@ -5663,9 +5663,8 @@ function getRecordAnomalyTypes(record){
   }
   const recStage={location:recordLocation(record),venue:record.venue_type||'',day:record.day_of_week||'',time:record.time_slot||'',records:allRecords.filter(r=>stageKeyFromRecord(r)===stageKeyFromRecord(record))};
   if(isStageClosed(recStage)) types.push('不開放場次有登記');
-  const end=parseSettingDate(systemSettings.registration_end);
-  const regAt=parseSettingDate(record.registered_at);
-  if(end && regAt && regAt>end) types.push('截止後登記');
+  const registrationTimeIssue=court116RegistrationTimeIssue(record.registered_at);
+  if(registrationTimeIssue)types.push(registrationTimeIssue);
   const stageResultCount=recStage.records.filter(r=>String(r.lottery_status||'').trim()).length;
   const stagePublished=recStage.records.filter(r=>r.result_published).length;
   if(stageResultCount>0 && stageResultCount<recStage.records.length) types.push('結果漏匯');
@@ -5971,10 +5970,13 @@ function buildDataAnomalies(){
       detail:`${stageLabel}｜已有${rows.length}筆登記`, target:'records'
     });
   });
-  const end=parseSettingDate(systemSettings.registration_end);
-  if(end){
-    const afterEnd=records.filter(r=>{ const d=parseSettingDate(r.registered_at); return d && d>end; });
-    if(afterEnd.length) issues.push({type:'截止後登記',severity:'error',count:afterEnd.length,detail:`截止後仍有 ${afterEnd.length} 筆登記資料`,target:'records'});
+  for(const [type,detail] of [
+    ['開放前登記','正式開放前'],
+    ['截止後登記','登記截止後'],
+    ['登記時間異常','無法辨識登記時間']
+  ]){
+    const count=records.filter(r=>court116RegistrationTimeIssue(r.registered_at)===type).length;
+    if(count)issues.push({type,severity:'error',count,detail:`${detail}：${count} 筆待確認`,target:'records'});
   }
   return issues;
 }
@@ -6187,6 +6189,18 @@ async function loadAllData(){
 }
 
 
+// 116 年長租本次 Google 表單登記期間：2026/10/21 08:46 至 2026/11/12 23:59（臺灣時間）。
+// 截止時間以「分鐘」計，11/12 23:59:59.999 仍屬有效登記。
+const COURT_116_REGISTRATION_START_MS=Date.parse('2026-10-21T08:46:00+08:00');
+const COURT_116_REGISTRATION_END_EXCLUSIVE_MS=Date.parse('2026-11-13T00:00:00+08:00');
+function court116RegistrationTimeIssue(value){
+  const time=parseSettingDate(value);
+  if(!time)return '登記時間異常';
+  const ms=time.getTime();
+  if(ms<COURT_116_REGISTRATION_START_MS)return '開放前登記';
+  if(ms>=COURT_116_REGISTRATION_END_EXCLUSIVE_MS)return '截止後登記';
+  return '';
+}
 function parseSettingDate(value){
   if(!value) return null;
   const d=new Date(value);
@@ -6757,7 +6771,7 @@ function renderRecordsPage(){
         <select id="filterAnomaly" title="篩選異常狀態">
           <option value="" ${recordState.anomaly===''?'selected':''}>全部狀態</option>
           <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
-          ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','截止後登記'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
+          ${['手機重複','超過次數','超過名額','公布未完成','候補異常','結果漏匯','結果待發布','不開放場次有登記','開放前登記','截止後登記','登記時間異常'].map(a=>`<option ${recordState.anomaly===a?'selected':''} value="${a}">${a}</option>`).join('')}
         </select>
         <button id="clearRecordFiltersBtn" type="button" class="records-clear-link">清除</button>
         <button id="applyFilterBtn" class="btn btn-primary" hidden>篩選</button>
@@ -6866,7 +6880,7 @@ let qualificationReviews=new Map();
 let qualificationReviewsLoaded=false;
 function qualificationIssueTypes(r){
   // Only actual eligibility concerns count here; publication and lottery workflow are excluded.
-  return getRecordAnomalyTypes(r).filter(x=>/手機重複|超過次數|不開放場次有登記|截止後登記/.test(x));
+  return getRecordAnomalyTypes(r).filter(x=>/手機重複|超過次數|不開放場次有登記|開放前登記|截止後登記|登記時間異常/.test(x));
 }
 function qualificationState(r){
   const saved=qualificationReviews.get(String(r.id));
@@ -10211,7 +10225,9 @@ function showAnomalyDefinitionModal(){
       <div><strong>結果漏匯</strong>：同一場次只有部分資料已有抽籤結果。</div>
       <div><strong>結果待發布</strong>：結果已完成，但尚未發布至民眾前台。</div>
       <div><strong>不開放場次有登記</strong>：後台已設定不開放，但仍存在登記資料。</div>
-      <div><strong>截止後登記</strong>：登記時間晚於後台設定的截止時間。</div>
+      <div><strong>開放前登記</strong>：登記時間早於 115/10/21 08:46（臺灣時間）。</div>
+      <div><strong>截止後登記</strong>：登記時間自 115/11/13 00:00 起（臺灣時間）。</div>
+      <div><strong>登記時間異常</strong>：登記時間缺漏或無法辨識，需人工確認。</div>
       <div style="margin-top:4px;padding:10px 12px;background:#f8fafc;border-radius:10px;color:#64748b;">僅供檢核提醒，不會自動修改資料。</div>
     </div>`;
   showModal('異常註記說明', body, ()=>{}, false);
