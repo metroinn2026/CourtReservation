@@ -5102,10 +5102,10 @@ body .ux-review-edit{align-items:end}
 
 
 <style id="qualification-review-aligned-controls-v1">
-/* 異常清單：三欄底端對齊、字級與控制項高度一致 */
+/* 異常清單：會員、審查與說明欄底端對齊 */
 #recordsWorkspace .ux-review-edit{
   display:grid!important;
-  grid-template-columns:minmax(170px,235px) minmax(0,1fr) auto!important;
+  grid-template-columns:minmax(115px,165px) minmax(130px,195px) minmax(0,1fr) auto!important;
   gap:12px!important;
   align-items:end!important;
   margin-top:12px!important;
@@ -5725,8 +5725,8 @@ async function deleteCourtRecords(ids){
 }
 async function updateAuthorizedRecords(ids,changes,options={}){
  if(!courtAuthLoginActive) return {data:[],error:new Error('請先完成 Supabase Auth 管理員登入')};
- if(/^(中籤|候補\d+)$/.test(changes.lottery_status||'')&&allRecords.some(r=>ids.map(String).includes(String(r.id))&&goMembershipPending(r))){
-   return {data:[],error:new Error('包含尚未查核的 Go 會員，無法設定為中籤或候補。')};
+ if(/^(中籤|候補\d+)$/.test(changes.lottery_status||'')&&allRecords.some(r=>ids.map(String).includes(String(r.id))&&membershipReviewIssue(r))){
+   return {data:[],error:new Error('包含會員資格尚待審查的登記，請先確認會員查核結果。')};
  }
  if(/^(中籤|候補\d+)$/.test(changes.lottery_status||'')&&containsRegistrationWindowRejection(ids)){
    return {data:[],error:new Error('包含登記期間外的申請，無法設定為中籤或候補。')};
@@ -7435,24 +7435,38 @@ async function loadHallRosterChecks(){
     hallRosterChecks=next;
   }catch(error){console.warn('會員名冊比對結果載入失敗',error?.code||error?.message);}
 }
-function goMembershipPending(r){
-  return memberIdentityType(r)==='Go會員' &&
-    !['verified','not_member'].includes(qualificationReviews.get(String(r.id))?.member_check_status);
+const MEMBER_CHECK_OPTIONS=[['unchecked','未查核'],['verified','是'],['not_member','否']];
+function membershipCheckStatus(r){
+  return qualificationReviews.get(String(r.id))?.member_check_status||'unchecked';
+}
+function membershipCheckOptions(status,compact=false){
+  return MEMBER_CHECK_OPTIONS.map(([value,label])=>
+    `<option value="${value}" ${status===value?'selected':''}>${compact&&value==='unchecked'?'？':label}</option>`).join('');
+}
+function membershipReviewIssue(r,{includeGoMembership=true}={}){
+  const type=memberIdentityType(r);
+  if(type==='Go會員'&&!includeGoMembership)return '';
+  const member=membershipCheckStatus(r);
+  if(member==='not_member'){
+    if(type==='會館會員'&&hallRosterChecks.get(String(r.id))?.roster_match==='not_found')
+      return '會館名冊查無會員';
+    return '會員查核為否';
+  }
+  if(type==='Go會員'&&member==='unchecked')return 'Go 會員尚未查核';
+  return '';
 }
 function qualificationIssueTypes(r,{includeGoMembership=true}={}){
-  // 名冊查無只代表需要承辦人核對，不等於非會員或審查不合格。
   const issues=getRecordAnomalyTypes(r).filter(x=>/同會員識別姓名不同|超過次數|不開放場次有登記|開放前登記|截止後登記|登記時間異常/.test(x));
-  const roster=hallRosterChecks.get(String(r.id));
-  if(roster?.roster_match==='not_found'&&/會館會員/.test(String(r.member_type||'')))issues.push('會館會員名冊查無，待確認');
-  if(includeGoMembership&&goMembershipPending(r))issues.push('Go 會員尚未查核');
+  const memberIssue=membershipReviewIssue(r,{includeGoMembership});
+  if(memberIssue)issues.push(memberIssue);
   return issues;
 }
 function qualificationState(r){
   if(registrationWindowRejection(r))return 'invalid';
-  const saved=qualificationReviews.get(String(r.id));
-  if(saved?.member_check_status==='not_member'||saved?.review_status==='invalid')return 'invalid';
-  if(goMembershipPending(r))return saved?.review_status==='correction'?'correction':'pending';
-  return saved?.review_status || (qualificationIssueTypes(r).length?'pending':'qualified');
+  const saved=qualificationReviews.get(String(r.id))?.review_status;
+  if(saved==='invalid')return 'invalid';
+  if(membershipReviewIssue(r))return saved==='correction'?'correction':'pending';
+  return saved || (qualificationIssueTypes(r).length?'pending':'qualified');
 }
 function isQualifiedForLottery(r){return qualificationReviewsLoaded && qualificationState(r)==='qualified';}
 function membershipCheckCell(r){
@@ -7462,44 +7476,38 @@ function membershipCheckCell(r){
   const categoryLabel=isGo?'Go':isHall?'會館':memberType;
   const categoryTone=isGo?'identity-go':isHall?'identity-hall':'gray';
   const category=`<span class="tag ${categoryTone} records-member-kind" title="${escapeHtml(memberType)}">${escapeHtml(categoryLabel)}</span>`;
-  if(!qualificationReviewsLoaded)return `<div class="records-member-compact">${category}<span class="tag gray" title="資格資料未載入">?</span></div>`;
-  const member=qualificationReviews.get(String(r.id))?.member_check_status||'unchecked';
-  const roster=hallRosterChecks.get(String(r.id));
-  const detail=member==='verified'?'已確認會員':member==='not_member'?'已判定非會員':
-    (isHall&&roster?.roster_match==='not_found'?'名冊查無，待人工複核':'尚未完成會員查核');
+  if(!qualificationReviewsLoaded)return `<div class="records-member-compact">${category}<span class="tag gray" title="資格資料未載入">？</span></div>`;
+  const member=membershipCheckStatus(r);
+  const detail=member==='verified'?'已確認會員':member==='not_member'?'會員查核為否':'尚未完成會員查核';
   return `<div class="records-member-compact">
     ${category}
     <select class="records-member-decision ${member==='verified'?'is-yes':member==='not_member'?'is-no':'is-unknown'}"
       data-membership-check="${escapeHtml(String(r.id))}"
       aria-label="${escapeHtml(memberType)}：${escapeHtml(r.name)}會員查核，目前${detail}"
-      title="${escapeHtml(detail)}。Y：確認會員；N：判定非會員；?：未查核。變更須確認。">
-      <option value="unchecked" ${member==='unchecked'?'selected':''}>?</option>
-      <option value="verified" ${member==='verified'?'selected':''}>Y</option>
-      <option value="not_member" ${member==='not_member'?'selected':''}>N</option>
+      title="${detail}。是：已確認會員，否：查核未符合會員身分，？：未查核。">
+      ${membershipCheckOptions(member,true)}
     </select>
   </div>`;
 }
 async function setManualMembershipCheck(recordId,status){
   if(!qualificationReviewsLoaded){alert('資格審查資料尚未載入，請重新登入後再試');return;}
   const record=allRecords.find(r=>String(r.id)===String(recordId));if(!record)return;
-  const prior=qualificationReviews.get(String(record.id))?.member_check_status||'unchecked';
-  if(status===prior)return;
-  if(!['unchecked','verified','not_member'].includes(status))return;
+  if(status===membershipCheckStatus(record)||!MEMBER_CHECK_OPTIONS.some(([value])=>value===status))return;
   let note='';
   if(status==='not_member'){
-    const response=prompt('請填寫確認非會員的依據或查核說明（必填，不需輸入完整身分證字號）。','會員名冊查無有效會員資格');
+    const response=prompt('請填寫會員查核說明（必填，請省略完整身分證字號）。','會員名冊查無');
     if(response===null){renderRecordsWorkspace();return;}
     note=response.trim();
-    if(!note){alert('非會員必須記錄查核原因');renderRecordsWorkspace();return;}
+    if(!note){alert('請記錄會員查核原因');renderRecordsWorkspace();return;}
   }
-  if(!confirm('確定將「'+record.name+'」設定為「'+({verified:'已確認會員',not_member:'非會員',unchecked:'未查核'}[status])+'」？'+(status==='not_member'?'\\n該筆將同步列為不合格，不進入抽籤名單。':''))){
+  const extra=status==='not_member'?'\n會員欄將顯示「否」。尚未作成審查結論的案件列入待審查。':'';
+  if(!confirm('確定將「'+record.name+'」的會員查核設定為「'+MEMBER_CHECK_OPTIONS.find(([value])=>value===status)[1]+'」？'+extra)){
     renderRecordsWorkspace();return;
   }
   const {error}=await reviewDbClient().rpc('court_set_membership_check_v2',{
     p_record_id:record.id,p_status:status,p_note:note,
-    p_initial_review_status:status==='verified'&&memberIdentityType(record)==='Go會員'
-      ? (qualificationIssueTypes(record,{includeGoMembership:false}).length?'pending':'qualified')
-      : (qualificationState(record)==='qualified'?'qualified':'pending')
+    p_initial_review_status:status==='verified'&&!registrationWindowRejection(record)&&
+      !qualificationIssueTypes(record,{includeGoMembership:false}).length?'qualified':'pending'
   });
   if(error){alert('會員查核更新失敗：'+error.message);renderRecordsWorkspace();return;}
   await loadQualificationReviews();
@@ -7507,13 +7515,8 @@ async function setManualMembershipCheck(recordId,status){
 }
 function registrationReviewReasons(r){
   const types=getRecordAnomalyTypes(r);
-  const roster=hallRosterChecks.get(String(r.id));
-  const saved=qualificationReviews.get(String(r.id));
-  if(roster?.roster_match==='not_found'&&/會館會員/.test(String(r.member_type||''))){
-    types.push('會館會員名冊查無，待複核');
-  }
-  if(saved?.member_check_status==='not_member')types.push('會員資格不符');
-  if(goMembershipPending(r))types.push('Go 會員尚未查核');
+  const memberIssue=membershipReviewIssue(r);
+  if(memberIssue)types.push(memberIssue);
   return types;
 }
 function registrationReviewStatusCell(r){
@@ -7594,29 +7597,52 @@ async function renderQualificationReview(container){
   const rows=issues.filter(r=>currentFilter==='all'||(currentFilter==='open'?['pending','correction'].includes(qualificationState(r)):qualificationState(r)===currentFilter));
   const focus=window.qualificationFocusId;
   const displayed=focus?allRecords.filter(r=>String(r.id)===focus):rows;
-  const options=[['qualified','合格'],['pending','待確認'],['correction','待補正'],['invalid','不合格']];
+  const options=[['qualified','合格'],['pending','待審查'],['correction','待補正'],['invalid','不合格']];
   container.innerHTML=`<div class="panel ux-review-panel ux-review-simple admin-inner-section">
-    <p class="ux-review-help">這裡只顯示目前不能列入抽籤的申請。請先確認申請資料及原因，再選擇審查結果並儲存；改為「合格」後，該筆就能列入合格抽籤名單。</p>
-    <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待確認／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
+    <p class="ux-review-help">查無會員的案件先列為待審查。通知後可選「待補正」。補正完成並確認具會員資格後，選「合格」會一併帶入會員「是」。逾期仍未完成可選「不合格」並填寫原因。</p>
+    <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待審查／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
     <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const rejection=registrationWindowRejection(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
       <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>reason==='超過次數'?registrationLimitButton(r):`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):'此筆原有審查狀態尚未完成，請核對登記內容。'}</div></div>
       <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
-      ${rejection?`<p class="small">依登記期間判定不合格（${escapeHtml(rejection)}）。</p>`:`<div class="ux-review-edit"><div class="ux-review-field"><label for="qstate-${r.id}">處理結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select><div class="ux-review-field-help">只有「合格」可列入抽籤名單。</div></div><div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">處理說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="填寫原因或處理說明">${escapeHtml(saved.review_note||'')}</textarea></div><div class="ux-review-save"><button class="btn btn-primary" data-qsave="${r.id}">儲存</button></div></div>`}
+      ${rejection?`<p class="small">依登記期間判定不合格（${escapeHtml(rejection)}）。</p>`:`<div class="ux-review-edit">
+        <div class="ux-review-field"><label for="qmember-${r.id}">是否為會員</label><select id="qmember-${r.id}" data-qmember="${r.id}">${membershipCheckOptions(membershipCheckStatus(r))}</select></div>
+        <div class="ux-review-field"><label for="qstate-${r.id}">審查結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">處理說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="例如已通知補正、補正期限已過">${escapeHtml(saved.review_note||'')}</textarea></div>
+        <div class="ux-review-save"><button type="button" class="btn btn-primary" data-qsave="${r.id}">儲存</button></div>
+      </div>`}
       ${saved.reviewed_at?`<div class="ux-review-history">最近處理：${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</div>`:''}
     </article>`}).join('')||'<div class="ux-review-empty">目前沒有符合此篩選條件的申請。</div>'}</div></div>`;
   bindRegistrationLimitButtons(container);
   const sel=container.querySelector('#qualificationFilterV52');sel.value=currentFilter;sel.onchange=()=>{window.qualificationFocusId=null;window.qualificationFilterV52=sel.value;renderQualificationReview(container);};
   const back=container.querySelector('#exitFocusV53');if(back)back.onclick=()=>{window.qualificationFocusId=null;renderQualificationReview(container);};
   container.querySelector('#refreshQualificationV52').onclick=()=>renderQualificationReview(container);
-  container.querySelectorAll('[data-qsave]').forEach(btn=>btn.onclick=async()=>{
-    const id=btn.dataset.qsave,st=container.querySelector(`[data-qstate="${id}"]`).value,note=container.querySelector(`[data-qnote="${id}"]`).value.trim();
-    if(st==='qualified'&&allRecords.some(r=>String(r.id)===id&&goMembershipPending(r))){alert('請先完成 Go 會員查核，再將登記設為合格。');return;}
-    if(st==='invalid'&&!note){alert('不合格時請填寫原因。');return;}
-    btn.disabled=true;
-    const {error}=await reviewDbClient().rpc('save_registration_qualification_v52',{p_record_id:id,p_status:st,p_note:note});
-    if(error){alert('儲存失敗：'+error.message);btn.disabled=false;return;}
-    window.qualificationFocusId=null;
-    await renderQualificationReview(container);
+  container.querySelectorAll('[data-qsave]').forEach(btn=>{
+    const id=btn.dataset.qsave;
+    const state=container.querySelector(`[data-qstate="${id}"]`);
+    const member=container.querySelector(`[data-qmember="${id}"]`);
+    const note=container.querySelector(`[data-qnote="${id}"]`);
+    const originalMember=member.value;
+    state.onchange=()=>{
+      if(state.value!=='qualified')return;
+      member.value='verified';
+      if(note.value===note.defaultValue&&note.value.startsWith('會員查核：非會員。'))note.value='';
+    };
+    member.onchange=()=>{
+      if(member.value!=='verified'&&state.value==='qualified')state.value='pending';
+    };
+    btn.onclick=async()=>{
+      const st=state.value,memberStatus=member.value,reason=note.value.trim();
+      if(st==='invalid'&&!reason){alert('不合格時請填寫原因。');return;}
+      if(st==='qualified'&&memberStatus!=='verified'){alert('審查合格須同時確認會員為「是」。');return;}
+      if(st==='qualified'&&originalMember!=='verified'&&!confirm('請確認申請人已具會員資格。儲存後，審查結果將設為「合格」，會員欄將設為「是」。'))return;
+      btn.disabled=true;
+      const {error}=await reviewDbClient().rpc('save_registration_qualification_v53',{
+        p_record_id:id,p_status:st,p_member_status:memberStatus,p_note:reason
+      });
+      if(error){alert('儲存失敗：'+error.message);btn.disabled=false;return;}
+      window.qualificationFocusId=null;
+      await renderQualificationReview(container);
+    };
   });
 }
 async function renderImportReviewQueue(){
@@ -7976,7 +8002,7 @@ function renderRecordsTable(){
       <button id="savePendingRecordStatusBtn" class="btn btn-primary btn-compact" ${pendingRecordStatusChanges.size?'':'disabled'}>儲存${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}</button>
     </div>
   </div>` : ''}
-  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:172px;">審查狀態 <button type="button" id="anomalyHelpBtn" title="查看正常／異常分類與資格審查說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:116px;">${sortHeader('會員／查核','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
+  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:172px;">審查狀態 <button type="button" id="anomalyHelpBtn" title="查看正常／異常分類與資格審查說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:116px;">${sortHeader('會員類型／查核','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
@@ -10122,7 +10148,7 @@ async function applyPromotionSuggestion(stage){
 
   document.getElementById('previewLot').onclick=()=>{
     const {location,venue,day,time,selectedComplete,records}=getSelectedRecords();
-    const rec=records.filter(r=>!registrationWindowRejection(r)&&!goMembershipPending(r));
+    const rec=records.filter(isQualifiedForLottery);
     const n=parseInt(document.getElementById('lotWinnerCount').value,10)||0;
     const w=parseInt(document.getElementById('lotWaitlistCount').value,10)||0;
     if(!selectedComplete){alert('請先選擇完整的「場地＋球類＋星期＋時段」。');return;}
@@ -10155,7 +10181,8 @@ async function applyPromotionSuggestion(stage){
       alert('目前場次條件已變更，請重新抽籤。'); clearPendingBuiltInLottery(); return;
     }
     const currentRecords=allRecords.filter(r=>pending.sourceIds.includes(r.id));
-    if(currentRecords.some(goMembershipPending)){alert('Go 會員查核狀態已變更，請重新預覽。');clearPendingBuiltInLottery();return;}
+    await loadQualificationReviews();
+    if(currentRecords.some(r=>!isQualifiedForLottery(r))){alert('資格審查狀態異動或尚未載入，請重新預覽。');clearPendingBuiltInLottery();return;}
     if(currentRecords.length!==pending.sourceIds.length){ alert('場次資料已變更，請重新載入後抽籤。'); clearPendingBuiltInLottery(); return; }
     if(currentRecords.some(r=>r.result_published || r.lottery_locked === true || r.lottery_locked === 'true' || String(r.lottery_status||'').trim() !== '')){
       alert('其中部分資料已有結果、已鎖定或已公布，請重新載入確認。'); clearPendingBuiltInLottery(); return;
@@ -10324,7 +10351,7 @@ async function applyPromotionSuggestion(stage){
     const map={};
 
     allRecords.forEach(r=>{
-      if(registrationWindowRejection(r)||goMembershipPending(r))return;
+      if(!isQualifiedForLottery(r))return;
       if(locationFilter && recordLocation(r)!==locationFilter) return;
       if(venueFilter && r.venue_type!==venueFilter) return;
 
@@ -11145,7 +11172,7 @@ async function importGoCheckResults(file,button){
     const yes=rows.filter(row=>row.status==='verified').length;
     if(!confirm('回匯 '+checkedOn+' 的 Go APP 會員查核結果？\n\n'
       +'是 '+yes+' 筆／否 '+(rows.length-yes)+' 筆。\n'
-      +'是：確認會員身分，其他登記異常仍須審查。\n否：判定非會員，該筆審查不合格。\n'
+      +'是：確認會員身分，其他登記異常仍須審查。\n否：會員欄顯示「否」，未作成審查結論的案件列為待審查。\n'
       +'已有相反查核結果，或已處理抽籤、鎖定或公告的場次，會列出供人工確認。'))return;
     await requireGoCheckAuthorization();
     const {data,error}=await sensitiveAuthClient.rpc('court_import_go_membership_checks_v1',{
@@ -11155,7 +11182,7 @@ async function importGoCheckResults(file,button){
     const skipped=Array.isArray(data?.skipped)?data.skipped:[];
     await loadQualificationReviews();
     renderRecordsWorkspace();
-    const message='已確認會員 '+data.verified+' 筆｜判定非會員 '+data.not_member+' 筆｜已有相同查核結果 '+data.unchanged+' 筆｜略過 '+skipped.length+' 筆';
+    const message='已確認會員 '+data.verified+' 筆｜會員查核為否 '+data.not_member+' 筆｜已有相同查核結果 '+data.unchanged+' 筆｜略過 '+skipped.length+' 筆';
     if(skipped.length){
       showCourtDetailsDialog('Go 會員查核回匯結果',
         '<p>'+escapeHtml(message)+'</p><p>請查核以下登記序號。</p><ul>'+
@@ -11214,7 +11241,7 @@ async function importOfflineReviewCsv(file,button){
      }
      await Promise.all([loadHallRosterChecks(),loadQualificationReviews()]);
      renderRecordsWorkspace();
-     alert('已匯入 '+completed+' 筆會館會員名冊比對結果；名冊有資料的會館會員將自動顯示「已確認會員」，查無者仍需審查，Go 會員不受影響。');
+     alert('已匯入 '+completed+' 筆會館會員名冊比對結果；名冊比對有資料顯示會員「是」，查無顯示會員「否」並列入待審查。既有人工會員判定優先。');
    }finally{button.disabled=false;}
  }catch(error){
    console.warn('會館會員名冊比對匯入失敗',error?.message||error);
