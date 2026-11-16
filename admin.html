@@ -7300,10 +7300,12 @@ function renderRecordsPage(){
             <button id="exportQualifiedBtn" class="records-menu-item" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">匯入會館會員名冊比對 CSV</button>':''}
+            ${currentAdmin?.role==='super_admin'?'<button id="exportGoCheckMappingBtn" type="button" class="records-menu-item">匯出 Go 會員序號對照 CSV</button><button id="importGoCheckBtn" type="button" class="records-menu-item">匯入 Go 會員查核結果 CSV</button>':''}
           </div>
         </details>
       </div>
 
+      <input id="goCheckCsvInput" type="file" accept=".csv,text/csv" hidden>
       <input id="offlineReviewCsvInput" type="file" accept=".csv,text/csv" hidden>
       <div id="courtImportReviewQueue" class="records-import-review-compact"></div>
       <div id="recordsWorkspace"></div>
@@ -7378,6 +7380,19 @@ function renderRecordsPage(){
   if(offlineButton&&offlineFile){
     offlineButton.onclick=()=>{if(!secureIdentityAuthenticated){alert('請先使用「資料權限」完成二次驗證');return;}offlineFile.value='';offlineFile.click();};
     offlineFile.onchange=()=>{if(offlineFile.files[0])void importOfflineReviewCsv(offlineFile.files[0],offlineButton);};
+  }
+
+  const goExportButton=document.getElementById('exportGoCheckMappingBtn');
+  if(goExportButton)goExportButton.onclick=()=>void exportGoCheckMapping(goExportButton);
+  const goImportButton=document.getElementById('importGoCheckBtn');
+  const goInput=document.getElementById('goCheckCsvInput');
+  if(goImportButton&&goInput){
+    goImportButton.onclick=()=>{
+      if(!secureIdentityAuthenticated){alert('請先使用「資料權限」完成二次驗證');return;}
+      goInput.value='';
+      goInput.click();
+    };
+    goInput.onchange=()=>{if(goInput.files[0])void importGoCheckResults(goInput.files[0],goImportButton);};
   }
 
   document.querySelectorAll('.records-function-tab').forEach(btn=>{
@@ -11032,24 +11047,133 @@ async function exportFormRowMappingCsv(button){
   }finally{button.disabled=false;}
 }
 
+async function requireGoCheckAuthorization(){
+  if(currentAdmin?.role!=='super_admin'||!courtAuthLoginActive||!secureIdentityAuthenticated)
+    throw Error('請先使用「資料權限」完成超級管理員驗證');
+  const {data,error}=await sensitiveAuthClient.rpc('get_court_admin_identity_v1');
+  if(error||data?.role!=='super_admin'||String(data.id)!==String(currentAdmin?.id)||!secureIdentityAuthenticated)
+    throw Error('資料權限已失效，請重新驗證');
+}
+
+async function exportGoCheckMapping(button){
+  button.disabled=true;
+  try{
+    await requireGoCheckAuthorization();
+    const records=allRecords.filter(r=>memberIdentityType(r)==='Go會員');
+    if(!records.length)throw Error('目前沒有 Go 會員登記資料');
+    const rows=records.map(r=>{
+      const phone=normalizePhone(r.phone);
+      if(!r.id||!r.serial_number||!/^09\d{8}$/.test(phone))
+        throw Error('部分 Go 登記缺少可辨識的手機或序號，請先查對登記資料');
+      return [r.id,r.serial_number,phone];
+    });
+    const fields=['後台完整紀錄ID','後台登記序號','Go 綁定手機'];
+    const csv=[fields,...rows].map(r=>r.map(value=>{
+      const clean=String(value);
+      return '"'+(/^\s*[=+@-]/.test(clean)?"'"+clean:clean).replace(/"/g,'""')+'"';
+    }).join(',')).join('\r\n');
+    const url=URL.createObjectURL(new Blob(['\uFEFF',csv],{type:'text/csv;charset=utf-8;'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='Go會員序號對照_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(error){
+    alert('Go 會員序號對照匯出失敗：'+error.message);
+  }finally{
+    button.disabled=false;
+  }
+}
+
+function parseMembershipReviewCsv(csv){
+  const content=String(csv).replace(/^\uFEFF/,'');
+  const parsed=[];let row=[],cell='',quoted=false;
+  for(let i=0;i<content.length;i++){
+    const c=content[i];
+    if(quoted){if(c==='"'){if(content[i+1]==='"'){cell+='"';i++;}else quoted=false;}else cell+=c;}
+    else if(c==='"')quoted=true;
+    else if(c===','){row.push(cell);cell='';}
+    else if(c==='\n'){row.push(cell.replace(/\r$/,''));parsed.push(row);row=[];cell='';}
+    else cell+=c;
+  }
+  if(quoted)throw Error('CSV 引號格式錯誤');
+  if(cell||row.length){row.push(cell.replace(/\r$/,''));parsed.push(row);}
+  return parsed;
+}
+
+function parseGoCheckImport(csv){
+  const data=parseMembershipReviewCsv(csv).filter(row=>row.some(value=>value.trim()));
+  const header=['後台完整紀錄ID','後台登記序號','Go 會員查核結果','查核日期'];
+  if(data[0]?.length!==header.length||header.some((value,i)=>value!==String(data[0][i]).trim()))
+    throw Error('請使用離線工具 v7「匯出 Go 會員回匯 CSV」產生的檔案');
+  const entries=data.slice(1);
+  if(entries.length<1||entries.length>3000)throw Error('單一檔案須包含 1 至 3,000 筆查核結果');
+  const known=new Map(allRecords.map(r=>[String(r.id),r]));
+  const seen=new Set();
+  let checkedOn='';
+  const rows=entries.map((entry,i)=>{
+    const [id,serial,decision,date]=entry.map(value=>String(value).trim());
+    const record=known.get(id);
+    const validDate=/^\d{4}-\d{2}-\d{2}$/.test(date)&&date>='2000-01-01'
+      &&!Number.isNaN(Date.parse(date))&&new Date(date).toISOString().slice(0,10)===date;
+    if(entry.length!==header.length||!record||seen.has(id)||String(record.serial_number)!==serial
+       ||memberIdentityType(record)!=='Go會員'||!['是','否'].includes(decision)||!validDate||(checkedOn&&checkedOn!==date)){
+      throw Error('第 '+(i+2)+' 列的 Go 紀錄、序號、結果或查核日期不一致，請重新比對');
+    }
+    checkedOn=date;
+    seen.add(id);
+    const status=decision==='是'?'verified':'not_member';
+    const issue=registrationWindowRejection(record)||qualificationIssueTypes(record,{includeGoMembership:false}).length;
+    return {record_id:id,serial_number:serial,status,initial_review_status:status==='verified'&&!issue?'qualified':'pending'};
+  });
+  return {rows,checkedOn};
+}
+
+async function importGoCheckResults(file,button){
+  if(file.size>2e6){alert('CSV 檔案大小不可超過 2 MB');return;}
+  button.disabled=true;
+  try{
+    await requireGoCheckAuthorization();
+    if(!qualificationReviewsLoaded)throw Error('資格審查資料尚未載入，請重新登入後再試');
+    const {rows,checkedOn}=parseGoCheckImport(await file.text());
+    const yes=rows.filter(row=>row.status==='verified').length;
+    if(!confirm('回匯 '+checkedOn+' 的 Go APP 會員查核結果？\n\n'
+      +'是 '+yes+' 筆／否 '+(rows.length-yes)+' 筆。\n'
+      +'是：確認會員身分，其他登記異常仍須審查。\n否：判定非會員，該筆審查不合格。\n'
+      +'已有相反查核結果，或已處理抽籤、鎖定或公告的場次，會列出供人工確認。'))return;
+    await requireGoCheckAuthorization();
+    const {data,error}=await sensitiveAuthClient.rpc('court_import_go_membership_checks_v1',{
+      p_rows:rows,p_checked_on:checkedOn
+    });
+    if(error)throw error;
+    const skipped=Array.isArray(data?.skipped)?data.skipped:[];
+    await loadQualificationReviews();
+    renderRecordsWorkspace();
+    const message='已確認會員 '+data.verified+' 筆｜判定非會員 '+data.not_member+' 筆｜已有相同查核結果 '+data.unchanged+' 筆｜略過 '+skipped.length+' 筆';
+    if(skipped.length){
+      showCourtDetailsDialog('Go 會員查核回匯結果',
+        '<p>'+escapeHtml(message)+'</p><p>請查核以下登記序號。</p><ul>'+
+        skipped.map(row=>'<li>'+escapeHtml(compactRecordCode(row))+' ／ '+escapeHtml(row.reason)+'</li>').join('')+'</ul>');
+    }else{
+      alert(message);
+    }
+    if(!qualificationReviewsLoaded)alert('回匯已完成，資格資料未能重新載入。請重新登入查看結果。');
+  }catch(error){
+    alert('Go 會員查核回匯未完成：'+error.message);
+  }finally{
+    button.disabled=false;
+  }
+}
+
 async function importOfflineReviewCsv(file,button){
  if(currentAdmin?.role!=='super_admin'||!courtAuthLoginActive||!secureIdentityAuthenticated){
    alert('此功能僅限已完成資料權限驗證的超級管理員');return;
  }
  if(file.size>2e6){alert('CSV 檔案大小不可超過 2 MB');return;}
  try{
-   const content=String(await file.text()).replace(/^\uFEFF/,'');
-   const parsed=[];let row=[],cell='',quoted=false;
-   for(let i=0;i<content.length;i++){
-     const c=content[i];
-     if(quoted){if(c==='"'){if(content[i+1]==='"'){cell+='"';i++;}else quoted=false;}else cell+=c;}
-     else if(c==='"')quoted=true;
-     else if(c===','){row.push(cell);cell='';}
-     else if(c==='\n'){row.push(cell.replace(/\r$/,''));parsed.push(row);row=[];cell='';}
-     else cell+=c;
-   }
-   if(quoted)throw Error('CSV 引號格式錯誤');
-   if(cell||row.length){row.push(cell.replace(/\r$/,''));parsed.push(row);}
+   const parsed=parseMembershipReviewCsv(await file.text());
    const header=['後台完整紀錄ID','後台登記序號','名冊比對結果','比對備註'];
    if(parsed.length<2||parsed[0].length!==header.length||parsed[0].some((v,i)=>v.trim()!==header[i]))
      throw Error('檔案格式不符。請使用本機 v6「匯出會館會員比對結果（回匯後台）」產生的 CSV；舊版人工資格判定 CSV 不再接受。');
