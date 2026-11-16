@@ -5367,6 +5367,27 @@ body .ux-review-edit{align-items:end}
     #app .topbar .userbox>div:nth-child(2){display:none}
   }
 </style>
+<style id="correction-notice-style">
+  .correction-notice-panel .table-wrap{margin-top:10px}
+  .correction-notice-dialog{width:min(820px,calc(100vw - 24px));max-width:none}
+  .correction-notice-body{display:grid;gap:14px}
+  .correction-notice-body summary{cursor:pointer;font-weight:700}
+  .correction-notice-records{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:8px}
+  .correction-notice-records li{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #dfe8f1;padding-bottom:8px}
+  .correction-notice-records button{flex-shrink:0}
+  .correction-notice-tracks{display:grid;gap:12px}
+  .correction-notice-tracks fieldset{min-width:0;margin:0;padding:12px;border:1px solid #dce5ef;border-radius:10px}
+  .correction-notice-tracks legend{padding:0 6px;font-weight:700}
+  .correction-notice-body label{display:grid;gap:5px;margin-bottom:8px}
+  .correction-notice-body .correction-notice-include{display:flex;align-items:center;gap:8px}
+  .correction-notice-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 10px}
+  .correction-notice-body input:not([type=checkbox]),.correction-notice-body select,.correction-notice-body textarea{width:100%;min-width:0}
+  .correction-notice-body textarea{resize:vertical}
+  .correction-notice-buttons{display:flex;gap:8px;flex-wrap:wrap}
+  .correction-notice-preview h4{margin:0 0 10px}
+  .correction-notice-preview{border-top:1px solid #dce5ef;padding-top:14px}
+  #correctionNoticeMessage:empty{display:none}
+</style>
 </head>
 <body>
   <section id="loginPage" class="login-page">
@@ -6581,16 +6602,16 @@ function getRegistrationLimitEvidence(record, records=allRecords){
   const sameStage=sameSport.filter(r=>stageKeyFromRecord(r)===stageKeyFromRecord(record));
   const rules=getRegistrationLimitRules();
   const evidence=[];
-  if(sameStage.length>1)evidence.push({label:'同場次重複登記',rows:sameStage});
+  if(sameStage.length>1)evidence.push({label:'同場次重複登記',rows:sameStage,max:1});
   const singleMax=rules.single[record.venue_type];
   if(singleMax>0&&sameSport.length>singleMax){
-    evidence.push({label:`${record.venue_type}最多 ${singleMax} 筆`,rows:sameSport});
+    evidence.push({label:`${record.venue_type}最多 ${singleMax} 筆`,rows:sameSport,max:singleMax});
   }
   for(const group of rules.groups){
     if(!group.venues.includes(record.venue_type))continue;
     const rows=related.filter(r=>group.venues.includes(r.venue_type));
     if(rows.length>group.max){
-      evidence.push({label:`${group.venues.join('＋')}合計最多 ${group.max} 筆`,rows});
+      evidence.push({label:`${group.venues.join('＋')}合計最多 ${group.max} 筆`,rows,max:group.max});
     }
   }
   return evidence;
@@ -7324,6 +7345,7 @@ function renderRecordsPage(){
         <div class="records-function-tabs" role="tablist" aria-label="登記資料功能">
           <button class="records-function-tab ${recordsActionTab==='filter'?'active':''}" data-action-tab="filter">登記清單</button>
           <button class="records-function-tab ${recordsActionTab==='review'?'active':''}" data-action-tab="review">異常清單</button>
+          <button class="records-function-tab ${recordsActionTab==='correction'?'active':''}" data-action-tab="correction">補正通知</button>
           <button class="records-function-tab ${recordsActionTab==='publish'?'active':''}" data-action-tab="publish">結果公告</button>
         </div>
         <details class="records-export-menu">
@@ -7610,7 +7632,7 @@ async function renderQualificationReview(container){
   const options=[['qualified','合格'],['pending','待審查'],['correction','待補正'],['invalid','不合格']];
   container.innerHTML=`<div class="panel ux-review-panel ux-review-simple admin-inner-section">
     <p class="ux-review-help">查無會員的案件先列為待審查。通知後可選「待補正」。補正完成並確認具會員資格後，選「合格」會一併帶入會員「是」。逾期仍未完成可選「不合格」並填寫原因。</p>
-    <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待審查／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
+    <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待審查／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button type="button" id="openCorrectionFromReview" class="btn btn-gray">補正通知</button><button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
     <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const rejection=registrationWindowRejection(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
       <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>reason==='超過次數'?registrationLimitButton(r):`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):'此筆原有審查狀態尚未完成，請核對登記內容。'}</div></div>
       <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
@@ -7626,6 +7648,9 @@ async function renderQualificationReview(container){
   const sel=container.querySelector('#qualificationFilterV52');sel.value=currentFilter;sel.onchange=()=>{window.qualificationFocusId=null;window.qualificationFilterV52=sel.value;renderQualificationReview(container);};
   const back=container.querySelector('#exitFocusV53');if(back)back.onclick=()=>{window.qualificationFocusId=null;renderQualificationReview(container);};
   container.querySelector('#refreshQualificationV52').onclick=()=>renderQualificationReview(container);
+  container.querySelector('#openCorrectionFromReview').onclick=()=>{
+    document.querySelector('.records-function-tab[data-action-tab="correction"]')?.click();
+  };
   container.querySelectorAll('[data-qsave]').forEach(btn=>{
     const id=btn.dataset.qsave;
     const state=container.querySelector(`[data-qstate="${id}"]`);
@@ -7655,6 +7680,352 @@ async function renderQualificationReview(container){
     };
   });
 }
+const CORRECTION_NOTICE_KINDS={
+  duplicate:'重複登記',
+  membership:'查無會員資料'
+};
+const CORRECTION_NOTICE_STATUS={
+  draft:'待通知',
+  sent:'已寄出',
+  replied:'已回覆',
+  closed:'已處理'
+};
+const correctionNoticeView={filter:'active',query:'',page:1};
+
+function correctionNoticeRowsKey(rows){
+  return rows.map(r=>String(r.id)).sort().join(',');
+}
+function correctionNoticeRecordOrder(a,b){
+  return ((Date.parse(a.registered_at)||0)-(Date.parse(b.registered_at)||0))
+    || String(a.serial_number||'').localeCompare(String(b.serial_number||''));
+}
+function buildCorrectionNoticeCases(records,savedNotices){
+  const bySubject=new Map();
+  const byId=new Map();
+  for(const record of records){
+    const key=personKey(record);
+    if(!bySubject.has(key))bySubject.set(key,[]);
+    bySubject.get(key).push(record);
+    byId.set(String(record.id),record);
+  }
+  const savedBySubject=new Map();
+  for(const notice of savedNotices){
+    if(!savedBySubject.has(notice.subject_key))savedBySubject.set(notice.subject_key,new Map());
+    savedBySubject.get(notice.subject_key).set(notice.kind,notice);
+  }
+
+  const cases=[];
+  for(const [key,memberRows] of bySubject){
+    const saved=savedBySubject.get(key);
+    const openRows=[];
+    const pendingRows=[];
+    for(const row of memberRows){
+      if(row.result_published||row.lottery_locked||!['','未抽籤'].includes(String(row.lottery_status||'').trim()))continue;
+      const result=qualificationState(row);
+      if(result==='invalid')continue;
+      openRows.push(row);
+      if(result==='pending'||result==='correction')pendingRows.push(row);
+    }
+    const duplicateGroups=new Map();
+    for(const row of pendingRows){
+      for(const group of getRegistrationLimitEvidence(row,openRows)){
+        const groupKey=correctionNoticeRowsKey(group.rows)+':'+group.max;
+        if(!duplicateGroups.has(groupKey))duplicateGroups.set(groupKey,{
+          ...group,rows:[...group.rows].sort(correctionNoticeRecordOrder)
+        });
+      }
+    }
+    const membershipRows=pendingRows.filter(r=>membershipCheckStatus(r)==='not_member');
+    const tracks=[];
+    for(const [kind,currentRows] of [
+      ['duplicate',registrationLimitRows([...duplicateGroups.values()])],
+      ['membership',membershipRows]
+    ]){
+      const prior=saved?.get(kind);
+      if(!currentRows.length&&!prior)continue;
+      const storedRows=(prior?.record_ids||[]).map(id=>byId.get(String(id))).filter(r=>r&&personKey(r)===key);
+      const trackRows=[...new Map([...storedRows,...currentRows].map(r=>[String(r.id),r])).values()].sort(correctionNoticeRecordOrder);
+      if(!trackRows.length)continue;
+      tracks.push({kind,prior,rows:trackRows,currentRows});
+    }
+    if(tracks.length){
+      const rows=[...new Map(tracks.flatMap(track=>track.rows.map(row=>[String(row.id),row]))).values()].sort(correctionNoticeRecordOrder);
+      cases.push({key,name:rows[0].name||'姓名未填',rows,tracks,duplicateGroups:[...duplicateGroups.values()],
+        nameConflict:new Set(memberRows.map(r=>normalizeCourtMemberName(r.name)).filter(Boolean)).size>1});
+    }
+  }
+  return cases.sort((a,b)=>a.name.localeCompare(b.name,'zh-TW'));
+}
+
+function correctionNoticeTrackStatus(track,now){
+  if(!track.prior)return 'draft';
+  if(['sent','replied'].includes(track.prior.status)&&Date.parse(track.prior.due_at)<now)return 'overdue';
+  return track.prior.status;
+}
+function correctionNoticeTrackLabel(track,now){
+  const status=correctionNoticeTrackStatus(track,now);
+  if(status==='overdue')return track.prior.status==='replied'?'逾期待處理（已回覆）':'逾期待處理';
+  return CORRECTION_NOTICE_STATUS[status];
+}
+const correctionNoticeTimeFormat=new Intl.DateTimeFormat('zh-TW',{
+  timeZone:'Asia/Taipei',dateStyle:'short',timeStyle:'short',hourCycle:'h23'
+});
+const correctionNoticeInputFormat=new Intl.DateTimeFormat('sv-SE',{
+  timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+});
+function correctionNoticeDate(value){
+  const date=new Date(value||'');
+  return Number.isNaN(date.getTime())?'':correctionNoticeTimeFormat.format(date);
+}
+function correctionNoticeDateInput(value){
+  return value?correctionNoticeInputFormat.format(new Date(value)).replace(' ','T'):'';
+}
+function correctionNoticeDeadline(value){
+  return value?value+':00+08:00':null;
+}
+function correctionNoticeSlot(r){
+  return [locationLabel(recordLocation(r)),courtVenueLabel(r),courtUsage(r),r.day_of_week,r.time_slot].filter(Boolean).join(' ');
+}
+function correctionNoticeEmails(rows){
+  const unique=new Map();
+  for(const r of rows){
+    const email=String(secureEmailBySubmission.get(String(r.import_submission_key||''))||'').trim();
+    if(/^[^\s@<>;,:]+@[^\s@<>;,:]+\.[^\s@<>;,:]+$/.test(email))unique.set(email.toLowerCase(),email);
+  }
+  return [...unique.values()];
+}
+function buildCorrectionEmail(caseData,items){
+  const duplicate=items.find(x=>x.kind==='duplicate');
+  const membership=items.find(x=>x.kind==='membership');
+  const subject='【北投會館】116 年運動場域長期租借登記補正通知';
+  const body=[caseData.name+' 您好：','','有關您申請北投會館 116 年運動場域長期租借，請依下列期限完成補正。'];
+  if(duplicate){
+    const groups=caseData.duplicateGroups;
+    body.push('','一、重複登記','請於 '+correctionNoticeDate(duplicate.due_at)+'（臺灣時間）前回覆本信，依下列各組登記上限，告知要保留的登記序號。');
+    groups.forEach((group,index)=>{
+      body.push('第 '+(index+1)+' 組（'+group.label+'）');
+      group.rows.forEach(r=>body.push('・'+compactRecordCode(r)+'　'+correctionNoticeSlot(r)));
+    });
+    body.push('逾期未回覆者，將以各組最早登記的一筆為準，並依資格審查結果辦理抽籤。');
+  }
+  if(membership){
+    const heading=duplicate?'二、一併補正會員資格':'一、補正會員資格';
+    const track=caseData.tracks.find(t=>t.kind==='membership');
+    body.push('',heading,'目前查無您登記所列的會員資料。請於 '+correctionNoticeDate(membership.due_at)+'（臺灣時間）前完成台北捷運 GO 會員註冊，並以您登記時的手機號碼綁定會員，供本館查核。',
+      '涉及登記序號：'+track.currentRows.map(compactRecordCode).join('、'),
+      '未於期限內完成註冊，視同放棄本次抽籤資格。如已完成註冊或登記資料需更正，可回覆本信並提供登記序號。');
+  }
+  body.push('','謝謝您的配合。','','北投會館營運管理中心');
+  return {subject,body:body.join('\n')};
+}
+
+async function renderCorrectionNotices(container){
+  container.innerHTML='<div class="small" role="status">正在讀取補正通知…</div>';
+  try{
+    await loadQualificationReviews();
+    const {data,error}=await reviewDbClient().rpc('court_list_correction_notices_v1');
+    if(!container.isConnected||recordsActionTab!=='correction')return;
+    if(error)throw error;
+    if(!qualificationReviewsLoaded)throw new Error('請先完成資格資料授權');
+    const cases=buildCorrectionNoticeCases(allRecords,Array.isArray(data)?data:[]);
+    drawCorrectionNoticeList(container,cases);
+  }catch{
+    if(!container.isConnected||recordsActionTab!=='correction')return;
+    container.innerHTML='<div class="msg error">補正通知暫時無法載入，請確認登入與資料權限。 <button type="button" class="btn btn-gray btn-compact">重新載入</button></div>';
+    container.querySelector('button').onclick=()=>void renderCorrectionNotices(container);
+  }
+}
+function drawCorrectionNoticeList(container,cases){
+  const now=Date.now();
+  const statuses={active:'待處理',draft:'待通知',sent:'已寄出',replied:'已回覆',overdue:'逾期待處理',closed:'已處理',all:'全部'};
+  const query=correctionNoticeView.query.trim().toLowerCase();
+  const selectedFilter=correctionNoticeView.filter;
+  const filtered=cases.filter(caseData=>{
+    const states=caseData.tracks.map(track=>correctionNoticeTrackStatus(track,now));
+    if(selectedFilter==='active'&&states.every(state=>state==='closed'))return false;
+    if(!['active','all'].includes(selectedFilter)&&!states.includes(selectedFilter))return false;
+    return !query||[caseData.name,...caseData.rows.map(r=>compactRecordCode(r))].some(value=>String(value).toLowerCase().includes(query));
+  });
+  const pages=Math.max(1,Math.ceil(filtered.length/40));
+  correctionNoticeView.page=Math.min(correctionNoticeView.page,pages);
+  const rows=filtered.slice((correctionNoticeView.page-1)*40,correctionNoticeView.page*40);
+  container.innerHTML=`
+    <section class="panel admin-inner-section correction-notice-panel">
+      <div class="admin-section-head"><h3>補正通知</h3></div>
+      <p class="small">產生草稿後，請用公務信箱寄出，再回這裡記錄寄出或回覆。逾期案件請由承辦人確認，並到異常清單儲存審查結果。</p>
+      <form class="ux-review-toolbar" id="correctionNoticeSearch">
+        <label for="correctionNoticeFilter">通知進度</label>
+        <select id="correctionNoticeFilter">${Object.entries(statuses).map(([value,label])=>
+          `<option value="${value}" ${value===selectedFilter?'selected':''}>${label}</option>`).join('')}</select>
+        <input type="search" id="correctionNoticeQuery" placeholder="姓名或登記序號" aria-label="查詢姓名或登記序號" value="${escapeHtml(correctionNoticeView.query)}">
+        <button type="submit" class="btn btn-primary btn-compact">查詢</button>
+        <button type="button" id="reloadCorrectionNotices" class="btn btn-gray btn-compact">重新載入</button>
+        <span class="small">共 ${filtered.length} 位申請人</span>
+      </form>
+      ${rows.length?`<div class="table-wrap"><table><thead><tr><th>申請人</th><th>補正事項與進度</th><th>操作</th></tr></thead>
+        <tbody>${rows.map((caseData,i)=>`<tr><td><strong>${escapeHtml(caseData.name)}</strong><div class="small">${caseData.rows.length} 筆相關登記</div></td>
+          <td>${caseData.tracks.map(track=>`<div><strong>${CORRECTION_NOTICE_KINDS[track.kind]}</strong>　${correctionNoticeTrackLabel(track,now)}${track.prior?.due_at?`<span class="small"> · 期限 ${escapeHtml(correctionNoticeDate(track.prior.due_at))}</span>`:''}</div>`).join('')}</td>
+          <td><button type="button" class="btn btn-gray btn-compact" data-open-correction-notice="${i}">查看補正</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="flat-empty">目前沒有符合條件的補正通知。</div>'}
+      ${pages>1?`<div class="pager"><button type="button" class="btn btn-gray btn-compact" id="correctionNoticePrev" ${correctionNoticeView.page===1?'disabled':''}>上一頁</button>
+        <span class="small">第 ${correctionNoticeView.page} / ${pages} 頁</span>
+        <button type="button" class="btn btn-gray btn-compact" id="correctionNoticeNext" ${correctionNoticeView.page===pages?'disabled':''}>下一頁</button></div>`:''}
+    </section>`;
+  const search=container.querySelector('#correctionNoticeSearch');
+  const filter=container.querySelector('#correctionNoticeFilter');
+  const submit=()=>{
+    correctionNoticeView.filter=filter.value;
+    correctionNoticeView.query=container.querySelector('#correctionNoticeQuery').value;
+    correctionNoticeView.page=1;
+    drawCorrectionNoticeList(container,cases);
+  };
+  search.onsubmit=event=>{event.preventDefault();submit();};
+  filter.onchange=submit;
+  container.querySelector('#reloadCorrectionNotices').onclick=()=>void renderCorrectionNotices(container);
+  const prev=container.querySelector('#correctionNoticePrev');
+  const next=container.querySelector('#correctionNoticeNext');
+  if(prev)prev.onclick=()=>{correctionNoticeView.page--;drawCorrectionNoticeList(container,cases);};
+  if(next)next.onclick=()=>{correctionNoticeView.page++;drawCorrectionNoticeList(container,cases);};
+  container.querySelectorAll('[data-open-correction-notice]').forEach(button=>{
+    button.onclick=()=>openCorrectionNotice(rows[Number(button.dataset.openCorrectionNotice)],container);
+  });
+}
+function openCorrectionNotice(caseData,container){
+  const opener=document.activeElement;
+  const dialog=document.createElement('dialog');
+  dialog.className='modal-card court-details-dialog correction-notice-dialog';
+  dialog.setAttribute('aria-labelledby','correctionNoticeTitle');
+  const emails=caseData.nameConflict?[]:correctionNoticeEmails(caseData.rows);
+  dialog.innerHTML=`
+    <header class="court-details-head"><h3 id="correctionNoticeTitle">${escapeHtml(caseData.name)}｜補正通知</h3>
+      <form method="dialog"><button class="btn btn-gray btn-compact" autofocus>關閉</button></form></header>
+    <div class="court-details-body correction-notice-body">
+      ${caseData.nameConflict?'<p class="msg error">同一會員識別有不同姓名。請先核對登記資料及收件人。</p>':''}
+      <details open><summary>涉及的登記</summary>
+        <ul class="correction-notice-records">${caseData.rows.map(r=>`<li><div><strong>${escapeHtml(compactRecordCode(r))}</strong>　${escapeHtml(correctionNoticeSlot(r))}
+          <div class="small">登記時間 ${escapeHtml(correctionNoticeDate(r.registered_at)||'未記錄')}</div></div>
+          <button type="button" class="btn btn-gray btn-compact" data-review-correction-record="${escapeHtml(String(r.id))}">開啟審查</button></li>`).join('')}</ul>
+      </details>
+      <div class="correction-notice-tracks">${caseData.tracks.map(track=>{
+        const prior=track.prior;
+        const current=prior?.status||'draft';
+        const allowed={
+          draft:['draft','sent','closed'],
+          sent:['sent','replied','closed'],
+          replied:['replied','closed'],
+          closed:['closed']
+        }[current];
+        const draftable=Boolean(track.currentRows.length)&&!caseData.nameConflict&&current!=='closed';
+        return `<fieldset data-correction-track="${track.kind}"><legend>${CORRECTION_NOTICE_KINDS[track.kind]}</legend>
+          <label class="correction-notice-include"><input type="checkbox" data-include-correction ${draftable?'checked':'disabled'}> 納入信件草稿</label>
+          <div class="correction-notice-fields">
+            <label>補正期限（臺灣時間）<input type="datetime-local" data-correction-due value="${escapeHtml(correctionNoticeDateInput(prior?.due_at))}"></label>
+            <label>通知進度<select data-correction-status>${allowed.map(status=>`<option value="${status}" ${status===current?'selected':''}>${CORRECTION_NOTICE_STATUS[status]}</option>`).join('')}</select></label>
+          </div>
+          <label>回覆／處理紀錄<textarea data-correction-note maxlength="1500" rows="2" placeholder="例如申請人回覆欲保留的登記序號">${escapeHtml(prior?.note||'')}</textarea></label>
+          ${prior?.sent_at||prior?.replied_at||prior?.closed_at?`<div class="small">${[['寄出',prior.sent_at],['回覆',prior.replied_at],['處理',prior.closed_at]].filter(([,time])=>time).map(([label,time])=>label+' '+escapeHtml(correctionNoticeDate(time))).join('｜')}</div>`:''}
+        </fieldset>`;
+      }).join('')}</div>
+      <div class="correction-notice-buttons">
+        <button type="button" id="buildCorrectionDraft" class="btn btn-primary" ${caseData.nameConflict?'disabled':''}>產生通知草稿</button>
+        <button type="button" id="saveCorrectionTracking" class="btn btn-gray">儲存通知進度</button>
+      </div>
+      <p class="small" id="correctionNoticeMessage" role="status" aria-live="polite"></p>
+      <section class="correction-notice-preview" id="correctionNoticeDraft" hidden>
+        <h4>信件草稿</h4>
+        <label>收件 Email<select id="correctionDraftRecipient">
+          ${emails.length===1?'':`<option value="">${emails.length?'請選擇收件信箱':'請核對收件信箱'}</option>`}
+          ${emails.map(email=>`<option value="${escapeHtml(email)}">${escapeHtml(email)}</option>`).join('')}
+        </select></label>
+        <label>主旨<input id="correctionDraftSubject" readonly></label>
+        <label>內文<textarea id="correctionDraftBody" rows="12" readonly></textarea></label>
+        <div class="correction-notice-buttons"><button type="button" class="btn btn-primary btn-compact" id="copyCorrectionDraft">複製內文</button>
+          <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionSubject">複製主旨</button>
+          <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionRecipient" ${emails.length?'':'disabled'}>複製收件 Email</button></div>
+      </section>
+    </div>`;
+  document.body.appendChild(dialog);
+  dialog.addEventListener('close',()=>{
+    dialog.remove();
+    if(opener instanceof HTMLElement&&opener.isConnected)opener.focus({preventScroll:true});
+  },{once:true});
+  const find=selector=>dialog.querySelector(selector);
+  const message=find('#correctionNoticeMessage');
+  const preview=find('#correctionNoticeDraft');
+  const readItems=()=>caseData.tracks.map(track=>{
+    const field=find(`[data-correction-track="${track.kind}"]`);
+    return {
+      included:field.querySelector('[data-include-correction]').checked,
+      kind:track.kind,record_ids:track.rows.map(r=>r.id),version:track.prior?.version||0,
+      status:field.querySelector('[data-correction-status]').value,
+      due_at:correctionNoticeDeadline(field.querySelector('[data-correction-due]').value),
+      note:field.querySelector('[data-correction-note]').value.trim()
+    };
+  });
+  find('#buildCorrectionDraft').onclick=()=>{
+    const items=readItems().filter(item=>item.included);
+    if(!items.length||items.some(item=>!item.due_at)){
+      message.textContent='請勾選要通知的事項並填寫補正期限。';
+      return;
+    }
+    const draft=buildCorrectionEmail(caseData,items);
+    find('#correctionDraftSubject').value=draft.subject;
+    find('#correctionDraftBody').value=draft.body;
+    preview.hidden=false;
+    message.textContent='請核對收件人與通知內容，再複製至公務信箱。';
+    preview.scrollIntoView({block:'nearest'});
+  };
+  dialog.querySelectorAll('[data-correction-due],[data-include-correction]').forEach(field=>{
+    field.addEventListener('change',()=>{preview.hidden=true;});
+  });
+  for(const [button,field] of [
+    ['#copyCorrectionDraft','#correctionDraftBody'],
+    ['#copyCorrectionSubject','#correctionDraftSubject'],
+    ['#copyCorrectionRecipient','#correctionDraftRecipient']
+  ]){
+    find(button).onclick=async()=>{
+      const source=find(field);
+      if(!source.value){message.textContent='請先選擇要複製的收件 Email。';return;}
+      try{
+        await navigator.clipboard.writeText(source.value);
+        message.textContent='已複製。';
+      }catch{
+        source.focus();
+        source.select?.();
+        message.textContent='請自行選取文字並複製。';
+      }
+    };
+  }
+  dialog.querySelectorAll('[data-review-correction-record]').forEach(button=>{
+    button.onclick=()=>{dialog.close();openQualificationRecord(button.dataset.reviewCorrectionRecord);};
+  });
+  const save=find('#saveCorrectionTracking');
+  save.onclick=async()=>{
+    const items=readItems().filter(({kind,status,due_at,note})=>{
+      const prior=caseData.tracks.find(track=>track.kind===kind).prior;
+      return status!==(prior?.status||'draft')||note!==(prior?.note||'')||
+        correctionNoticeDateInput(due_at)!==correctionNoticeDateInput(prior?.due_at);
+    });
+    if(!items.length){message.textContent='目前沒有變更。';return;}
+    if(items.some(item=>['sent','replied'].includes(item.status)&&!item.due_at)){
+      message.textContent='記錄寄出或回覆時，請填寫補正期限。';
+      return;
+    }
+    save.disabled=true;
+    try{
+      const {error}=await reviewDbClient().rpc('court_save_correction_notices_v1',{
+        p_items:items.map(({included,...item})=>item)
+      });
+      if(error)throw error;
+      dialog.close();
+      await renderCorrectionNotices(container);
+    }catch(error){
+      message.textContent=error?.code==='40001'?'案件已由其他承辦人更新。請關閉視窗並重新載入。':'無法儲存通知進度：'+(error?.message||'請稍後重試');
+      save.disabled=false;
+    }
+  };
+  dialog.showModal();
+}
+
 async function renderImportReviewQueue(){
   const box=document.getElementById('courtImportReviewQueue');if(!box)return;
   box.innerHTML='<div class="small">正在確認待審查匯入資料…</div>';
@@ -7686,6 +8057,10 @@ async function renderImportReviewQueue(){
 function renderRecordsWorkspace(){
   const box=document.getElementById('recordsWorkspace');
   if(!box) return;
+  if(recordsActionTab==='correction'){
+    void renderCorrectionNotices(box);
+    return;
+  }
   refreshRecordAnomalyOptions(undefined,true);
   if(recordsActionTab==='review'){
     renderQualificationReview(box);
