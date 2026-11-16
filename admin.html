@@ -5940,14 +5940,21 @@ function getRecordAnomalyTypes(record,{members=allRecords,stage}={}){
   if(stageResultCount===recStage.records.length && stageResultCount>0 && stagePublished<recStage.records.length) types.push('結果待發布');
   return [...new Set(types)];
 }
+const MEMBER_NOT_FOUND_LABELS={
+  'Go會員':'查無GO會員資料',
+  '會館會員':'查無北投會館會員資料',
+  unknown:'查無會員資料'
+};
 const COURT_ANOMALY_GROUPS={
-  '__registration__':{label:'登記資料需確認',types:['同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常','會館名冊查無會員','會員查核為否','Go 會員尚未查核']},
+  '__registration__':{label:'登記資料需確認',types:['同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常',...Object.values(MEMBER_NOT_FOUND_LABELS),'Go 會員尚未查核']},
   '__lottery__':{label:'抽籤結果需確認',types:['超過名額','候補異常','結果漏匯']},
   '__publication__':{label:'公告進度需確認',types:['公布未完成','結果待發布']}
 };
 const COURT_ANOMALY_PATTERNS={
   '超過次數':{label:'重複登記／超過次數', detail:'同一會員重複登記同場次，或超出登記次數上限。'},
-  '會員查核為否':{label:'查無會員', types:['會館名冊查無會員','會員查核為否'], detail:'會館名冊查無資料，或會員查核結果為「否」。'},
+  [MEMBER_NOT_FOUND_LABELS.Go會員]:{label:MEMBER_NOT_FOUND_LABELS.Go會員, detail:'Go 會員查核結果為「否」。'},
+  [MEMBER_NOT_FOUND_LABELS.會館會員]:{label:MEMBER_NOT_FOUND_LABELS.會館會員, detail:'北投會館會員查核結果為「否」。'},
+  [MEMBER_NOT_FOUND_LABELS.unknown]:{label:MEMBER_NOT_FOUND_LABELS.unknown, detail:'會員查核結果為「否」，登記的會員類型無法辨識。'},
   'Go 會員尚未查核':{label:'Go 會員未查核', detail:'Go 會員的查核結果尚未確認。'},
   '同會員識別姓名不同':{label:'同一會員使用不同姓名', detail:'同一會館會員證號或 Go 綁定手機對應不同姓名。'},
   '不開放場次有登記':{label:'登記未開放的場次', detail:'場次已設定為不開放，仍有登記紀錄。'},
@@ -6430,7 +6437,7 @@ async function loadAllData(){
       return user ? await reviewClient.rpc('court_admin_list_logs_v1',{p_limit:200}) : {data:[],error:null};
     }catch(e){return {data:[],error:e};}
   })();
-  await Promise.all([loadSensitiveIdentifiers(),loadQualificationReviews(),loadHallRosterChecks()]);
+  await Promise.all([loadSensitiveIdentifiers(),loadQualificationReviews()]);
   if(!requestStillAuthorized()){allRecords=[];return false;}
   const logsRes=await logsPromise;
   if(!requestStillAuthorized())return false;
@@ -7346,25 +7353,6 @@ function renderRecordsPage(){
 // v52: per-registration qualification review; distinct from lottery result and anomaly events.
 let qualificationReviews=new Map();
 let qualificationReviewsLoaded=false;
-let hallRosterChecks=new Map();
-async function loadHallRosterChecks(){
-  const next=new Map();
-  try{
-    const client=reviewDbClient();
-    const {data:user,error:authError}=await client.auth.getUser();
-    if(authError||!user?.user)return;
-    const batchSize=500;
-    for(let offset=0;offset<100000;offset+=batchSize){
-      const {data,error}=await client.rpc('court_list_member_roster_checks_v1')
-        .order('record_id',{ascending:true}).range(offset,offset+batchSize-1);
-      if(error)throw error;
-      const rows=Array.isArray(data)?data:[];
-      for(const row of rows)next.set(String(row.record_id),row);
-      if(rows.length<batchSize)break;
-    }
-    hallRosterChecks=next;
-  }catch(error){console.warn('會員名冊比對結果載入失敗',error?.code||error?.message);}
-}
 const MEMBER_CHECK_OPTIONS=[['unchecked','未查核'],['verified','是'],['not_member','否']];
 function membershipCheckStatus(r){
   return qualificationReviews.get(String(r.id))?.member_check_status||'unchecked';
@@ -7377,11 +7365,7 @@ function membershipReviewIssue(r,{includeGoMembership=true}={}){
   const type=memberIdentityType(r);
   if(type==='Go會員'&&!includeGoMembership)return '';
   const member=membershipCheckStatus(r);
-  if(member==='not_member'){
-    if(type==='會館會員'&&hallRosterChecks.get(String(r.id))?.roster_match==='not_found')
-      return '會館名冊查無會員';
-    return '會員查核為否';
-  }
+  if(member==='not_member')return MEMBER_NOT_FOUND_LABELS[type]||MEMBER_NOT_FOUND_LABELS.unknown;
   if(type==='Go會員'&&member==='unchecked')return 'Go 會員尚未查核';
   return '';
 }
@@ -7408,7 +7392,7 @@ function membershipCheckCell(r){
   const category=`<span class="tag ${categoryTone} records-member-kind" title="${escapeHtml(memberType)}">${escapeHtml(categoryLabel)}</span>`;
   if(!qualificationReviewsLoaded)return `<div class="records-member-compact">${category}<span class="tag gray" title="資格資料未載入">？</span></div>`;
   const member=membershipCheckStatus(r);
-  const detail=member==='verified'?'已確認會員':member==='not_member'?'會員查核為否':'尚未完成會員查核';
+  const detail=member==='verified'?'已確認會員':member==='not_member'?membershipReviewIssue(r):'尚未完成會員查核';
   return `<div class="records-member-compact">
     ${category}
     <select class="records-member-decision ${member==='verified'?'is-yes':member==='not_member'?'is-no':'is-unknown'}"
@@ -11112,7 +11096,7 @@ async function importGoCheckResults(file,button){
     const skipped=Array.isArray(data?.skipped)?data.skipped:[];
     await loadQualificationReviews();
     renderRecordsWorkspace();
-    const message='已確認會員 '+data.verified+' 筆｜會員查核為否 '+data.not_member+' 筆｜已有相同查核結果 '+data.unchanged+' 筆｜略過 '+skipped.length+' 筆';
+    const message='已確認會員 '+data.verified+' 筆｜'+MEMBER_NOT_FOUND_LABELS.Go會員+' '+data.not_member+' 筆｜已有相同查核結果 '+data.unchanged+' 筆｜略過 '+skipped.length+' 筆';
     if(skipped.length){
       showCourtDetailsDialog('Go 會員查核回匯結果',
         '<p>'+escapeHtml(message)+'</p><p>請查核以下登記序號。</p><ul>'+
@@ -11169,7 +11153,7 @@ async function importOfflineReviewCsv(file,button){
        if(Number(data?.processed)!==Math.min(50,rows.length-offset))throw Error('回傳筆數異常，請檢查操作紀錄');
        completed+=Number(data.processed);
      }
-     await Promise.all([loadHallRosterChecks(),loadQualificationReviews()]);
+     await loadQualificationReviews();
      renderRecordsWorkspace();
      alert('已匯入 '+completed+' 筆會館會員名冊比對結果；名冊比對有資料顯示會員「是」，查無顯示會員「否」並列入待審查。既有人工會員判定優先。');
    }finally{button.disabled=false;}
