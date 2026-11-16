@@ -5372,7 +5372,7 @@ body .ux-review-edit{align-items:end}
   .correction-notice-defaults{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;margin:12px 0;padding:12px;border:1px solid #dce5ef;border-radius:10px}
   .correction-notice-defaults label{font-weight:700}
   .correction-notice-defaults input{max-width:100%}
-  .correction-notice-dialog{width:min(820px,calc(100vw - 24px));max-width:none}
+  .correction-notice-dialog{width:min(1080px,calc(100vw - 24px));max-width:none}
   .correction-notice-body{display:grid;gap:14px}
   .correction-notice-body summary{cursor:pointer;font-weight:700}
   .correction-notice-records{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:8px}
@@ -5389,7 +5389,12 @@ body .ux-review-edit{align-items:end}
   .correction-notice-buttons{display:flex;gap:8px;flex-wrap:wrap}
   .correction-notice-preview h4{margin:0 0 10px}
   .correction-notice-preview{border-top:1px solid #dce5ef;padding-top:14px}
-  #correctionNoticeMessage:empty{display:none}
+  .correction-draft-body-label{display:block;margin:0 0 5px}
+  .correction-draft-body{width:100%;box-sizing:border-box;height:clamp(300px,46vh,490px);overflow:auto;resize:vertical;
+    padding:14px;border:1px solid #cad8e6;border-radius:10px;background:#fff;line-height:1.65;margin-bottom:10px}
+  .correction-draft-body table{min-width:720px}
+  .correction-draft-body:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  #correctionNoticeMessage:empty,#correctionDraftCopyMessage:empty{display:none}
 </style>
 </head>
 <body>
@@ -7810,31 +7815,78 @@ function correctionNoticeEmails(rows){
   }
   return [...unique.values()];
 }
+const correctionNoticeRegistrationFormat=new Intl.DateTimeFormat('sv-SE',{
+  timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+});
+function correctionNoticeEmailTable(records){
+  const headers=['登記序號','會館','場地','使用目的','申請時段','登記日期','登記時間'];
+  const rows=records.map(record=>{
+    const registered=new Date(record.registered_at||'');
+    const [date,time]=Number.isNaN(registered.getTime())?['','']:correctionNoticeRegistrationFormat.format(registered).split(' ');
+    const location=recordLocation(record);
+    const slot=[record.day_of_week,record.time_slot].filter(Boolean).join(' ');
+    return [compactRecordCode(record),location==='北投'?'北投會館':location,courtVenueLabel(record),courtUsage(record),
+      slot||'未記錄',date?date.replaceAll('-','/'):'未記錄',time||'未記錄'];
+  });
+  const cellStyle='border:1px solid #a9b8cb;padding:7px 9px;vertical-align:top;text-align:left;';
+  const html='<table border="1" cellspacing="0" cellpadding="7" style="border-collapse:collapse;width:100%;margin:6px 0 14px;">'
+    +'<thead><tr>'+headers.map(label=>'<th scope="col" style="'+cellStyle+'background-color:#eef3f9;color:#172b43;">'+escapeHtml(label)+'</th>').join('')+'</tr></thead>'
+    +'<tbody>'+rows.map(row=>'<tr>'+row.map(value=>'<td style="'+cellStyle+'">'+escapeHtml(value)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+  return {html,text:[headers,...rows].map(row=>row.join(' ｜ ')).join('\n')};
+}
 function buildCorrectionEmail(caseData,items){
   const duplicate=items.find(x=>x.kind==='duplicate');
   const membership=items.find(x=>x.kind==='membership');
   const subject='【北投會館】116 年運動場域長期租借登記補正通知';
   const relatedCount=correctionNoticeDraftRows(caseData,items).length;
-  const body=[caseData.name+' 您好：','','有關您申請北投會館 116 年運動場域長期租借，本次通知涉及 '+relatedCount+' 筆登記，請依下列期限完成補正。'];
+  const text=[],html=[];
+  const paragraph=(value,heading=false)=>{
+    text.push(value);
+    html.push('<p style="margin:0 0 10px;line-height:1.65;">'+(heading?'<strong>':'')+escapeHtml(value)+(heading?'</strong>':'')+'</p>');
+  };
+  const addTable=rows=>{
+    const table=correctionNoticeEmailTable(rows);
+    text.push(table.text);
+    html.push(table.html);
+  };
+  paragraph(caseData.name+' 您好：');
+  paragraph('有關您申請北投會館 116 年運動場域長期租借，本次通知涉及 '+relatedCount+' 筆登記，請依下列期限完成補正。');
+  paragraph('下表的登記序號由本館編列，回覆時請直接使用表內序號。登記日期與時間為您送出登記的時間（臺灣時間）。');
   if(duplicate){
-    const groups=caseData.duplicateGroups;
-    body.push('','一、重複登記','請於 '+correctionNoticeDate(duplicate.due_at)+'（臺灣時間）前回覆本信，依下列各組登記上限，告知要保留的登記序號。');
-    groups.forEach((group,index)=>{
-      body.push('第 '+(index+1)+' 組（'+group.label+'，共 '+group.rows.length+' 筆）');
-      group.rows.forEach(r=>body.push('・'+compactRecordCode(r)+'　'+correctionNoticeSlot(r)));
+    paragraph('一、重複登記',true);
+    paragraph('請於 '+correctionNoticeDate(duplicate.due_at)+'（臺灣時間）前回覆本信，依下列各組登記上限，告知要保留的登記序號。');
+    caseData.duplicateGroups.forEach((group,index)=>{
+      paragraph('第 '+(index+1)+' 組（'+group.label+'，共 '+group.rows.length+' 筆）',true);
+      addTable(group.rows);
     });
-    body.push('逾期未回覆者，將以各組最早登記的一筆為準，並依資格審查結果辦理抽籤。');
+    paragraph('逾期未回覆者，將以各組最早登記的一筆為準，並依資格審查結果辦理抽籤。');
   }
   if(membership){
-    const heading=duplicate?'二、一併補正會員資格':'一、補正會員資格';
+    paragraph(duplicate?'二、一併補正會員資格':'一、補正會員資格',true);
+    paragraph('目前查無您登記所列的會員資料。請於 '+correctionNoticeDate(membership.due_at)+'（臺灣時間）前完成台北捷運 GO 會員註冊，並以您登記時的手機號碼綁定會員，供本館查核。');
     const track=caseData.tracks.find(t=>t.kind==='membership');
-    body.push('',heading,'目前查無您登記所列的會員資料。請於 '+correctionNoticeDate(membership.due_at)+'（臺灣時間）前完成台北捷運 GO 會員註冊，並以您登記時的手機號碼綁定會員，供本館查核。',
-      '相關登記（共 '+track.currentRows.length+' 筆）：',
-      ...track.currentRows.map(r=>'・'+compactRecordCode(r)+'　'+correctionNoticeSlot(r)),
-      '未於期限內完成註冊，視同放棄本次抽籤資格。如已完成註冊或登記資料需更正，可回覆本信並提供登記序號。');
+    paragraph('相關登記（共 '+track.currentRows.length+' 筆）',true);
+    addTable(track.currentRows);
+    paragraph('未於期限內完成註冊，視同放棄本次抽籤資格。如已完成註冊或登記資料需更正，可回覆本信並提供登記序號。');
   }
-  body.push('','謝謝您的配合。','','北投會館營運管理中心');
-  return {subject,body:body.join('\n')};
+  paragraph('謝謝您的配合。');
+  paragraph('北投會館營運管理中心');
+  return {subject,body:text.join('\n\n'),html:html.join('')};
+}
+async function copyCorrectionEmailBody(draft){
+  if(typeof ClipboardItem==='function'&&navigator.clipboard?.write){
+    try{
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html':new Blob([draft.html],{type:'text/html'}),
+        'text/plain':new Blob([draft.body],{type:'text/plain'})
+      })]);
+      return true;
+    }catch{
+      // Some clipboard permissions only allow plain text.
+    }
+  }
+  await navigator.clipboard.writeText(draft.body);
+  return false;
 }
 
 async function renderCorrectionNotices(container){
@@ -7972,10 +8024,12 @@ function openCorrectionNotice(caseData,container){
         <p class="small" id="correctionDraftSummary"></p>
         <label>收件 Email<select id="correctionDraftRecipient"></select></label>
         <label>主旨<input id="correctionDraftSubject" readonly></label>
-        <label>內文<textarea id="correctionDraftBody" rows="12" readonly></textarea></label>
+        <div id="correctionDraftBodyLabel" class="correction-draft-body-label">內文</div>
+        <div id="correctionDraftBody" class="correction-draft-body" role="region" aria-labelledby="correctionDraftBodyLabel" tabindex="0"></div>
         <div class="correction-notice-buttons"><button type="button" class="btn btn-primary btn-compact" id="copyCorrectionDraft">複製內文</button>
           <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionSubject">複製主旨</button>
           <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionRecipient" disabled>複製收件 Email</button></div>
+        <p class="small" id="correctionDraftCopyMessage" role="status" aria-live="polite"></p>
       </section>
       <details><summary>涉及的登記（共 ${caseData.rows.length} 筆）</summary>
         <ul class="correction-notice-records">${caseData.rows.map(r=>`<li><div><strong>${escapeHtml(compactRecordCode(r))}</strong>　${escapeHtml(correctionNoticeSlot(r))}
@@ -8016,6 +8070,9 @@ function openCorrectionNotice(caseData,container){
   const find=selector=>dialog.querySelector(selector);
   const message=find('#correctionNoticeMessage');
   const preview=find('#correctionNoticeDraft');
+  const draftBody=find('#correctionDraftBody');
+  const copyMessage=find('#correctionDraftCopyMessage');
+  let activeDraft=null;
   const readItems=()=>caseData.tracks.map(track=>{
     const field=find(`[data-correction-track="${track.kind}"]`);
     return {
@@ -8027,8 +8084,11 @@ function openCorrectionNotice(caseData,container){
     };
   });
   const refreshDraft=()=>{
+    copyMessage.textContent='';
     const items=readItems().filter(item=>item.included);
     if(!items.length||items.some(item=>!item.due_at)){
+      activeDraft=null;
+      draftBody.replaceChildren();
       preview.hidden=true;
       return;
     }
@@ -8040,31 +8100,46 @@ function openCorrectionNotice(caseData,container){
       +emails.map(email=>`<option value="${escapeHtml(email)}">${escapeHtml(email)}</option>`).join('');
     recipient.value=emails.includes(selected)?selected:emails.length===1?emails[0]:'';
     find('#copyCorrectionRecipient').disabled=!emails.length;
-    const draft=buildCorrectionEmail(caseData,items);
+    activeDraft=buildCorrectionEmail(caseData,items);
     find('#correctionDraftSummary').textContent=items.map(item=>CORRECTION_NOTICE_KINDS[item.kind]).join('、')+'，共 '+rows.length+' 筆相關登記';
-    find('#correctionDraftSubject').value=draft.subject;
-    find('#correctionDraftBody').value=draft.body;
+    find('#correctionDraftSubject').value=activeDraft.subject;
+    draftBody.innerHTML=activeDraft.html;
+    draftBody.scrollTop=0;
     preview.hidden=false;
   };
   dialog.querySelectorAll('[data-include-correction]').forEach(field=>{
     field.addEventListener('change',refreshDraft);
   });
   refreshDraft();
+  find('#copyCorrectionDraft').onclick=async()=>{
+    if(!activeDraft)return;
+    try{
+      const copiedTable=await copyCorrectionEmailBody(activeDraft);
+      copyMessage.textContent=copiedTable?'已複製內文與表格。':'已複製內文（純文字格式）。';
+    }catch{
+      draftBody.focus();
+      const selection=window.getSelection();
+      const range=document.createRange();
+      range.selectNodeContents(draftBody);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      copyMessage.textContent='已選取內文，請按 Ctrl+C 複製。';
+    }
+  };
   for(const [button,field] of [
-    ['#copyCorrectionDraft','#correctionDraftBody'],
     ['#copyCorrectionSubject','#correctionDraftSubject'],
     ['#copyCorrectionRecipient','#correctionDraftRecipient']
   ]){
     find(button).onclick=async()=>{
       const source=find(field);
-      if(!source.value){message.textContent='請先選擇要複製的收件 Email。';return;}
+      if(!source.value){copyMessage.textContent='請先選擇要複製的收件 Email。';return;}
       try{
         await navigator.clipboard.writeText(source.value);
-        message.textContent='已複製。';
+        copyMessage.textContent='已複製。';
       }catch{
         source.focus();
         source.select?.();
-        message.textContent='請自行選取文字並複製。';
+        copyMessage.textContent='請自行選取文字並複製。';
       }
     };
   }
