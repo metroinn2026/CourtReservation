@@ -6316,7 +6316,7 @@ function renderAnomalyCenter(issues){
         <div class="admin-section-head"><h3>異常檢核中心</h3></div>
         <div class="anomaly-info-row">
           <div class="small">需要確認的資料請至「登記資料 → 異常清單」處理。</div>
-          <div class="anomaly-total-line">0 項待確認</div>
+          <div class="anomaly-total-line">0 則檢核提示</div>
         </div>
         <div class="flat-empty">目前未發現需人工確認的資料異常。</div>
       </div>`;
@@ -6332,11 +6332,15 @@ function renderAnomalyCenter(issues){
   const rows=Object.entries(grouped).map(([type,list])=>{
     const total=list.reduce((s,x)=>s+(x.count||1),0);
     const examples=list.slice(0,2).map(x=>escapeHtml(type==='__registration__'?x.type+'｜'+x.detail:x.detail)).join('<br>');
-    const more=list.length>2 ? `<div class="anomaly-more">另有 ${list.length-2} 項</div>` : '';
+    const relatedCount=type==='__registration__'?`累計 ${total} 筆登記`
+      :type==='超過名額'?`超出 ${total} 個名額`
+      :type==='候補異常'?`候補紀錄 ${total} 筆`
+      :`涉及 ${total} 筆登記`;
+    const more=list.length>2 ? `<div class="anomaly-more">另有 ${list.length-2} 則提示</div>` : '';
     return `
       <div class="anomaly-flat-row">
         <div class="anomaly-flat-type">${escapeHtml(COURT_ANOMALY_GROUPS[type]?.label||type)}</div>
-        <div class="anomaly-flat-count">${list.length} 項 / ${total} 筆</div>
+        <div class="anomaly-flat-count">${list.length} 則提示<br>${relatedCount}</div>
         <div class="anomaly-flat-detail">${examples}${more}</div>
         <button class="anomaly-text-action" data-target="records" data-anomaly="${escapeHtml(type)}" title="在登記清單查看相關紀錄">查看</button>
       </div>`;
@@ -6346,8 +6350,8 @@ function renderAnomalyCenter(issues){
     <div class="panel admin-section-card dashboard-anomaly-card anomaly-center-clean" id="anomalyCenter">
       <div class="admin-section-head"><h3>異常檢核中心</h3></div>
       <div class="anomaly-info-row">
-        <div class="small">這裡是登記清單的即時檢核提示；審查進度請至「登記資料 → 待確認資料」處理。已審查資料不需重新匯入。</div>
-        <div class="anomaly-total-line">${issues.length} 項檢核提示</div>
+        <div class="small">一則提示可能涉及多筆登記或多個場次。同一筆登記可能計入多則提示。審查進度請至「登記資料 → 異常清單」。</div>
+        <div class="anomaly-total-line">${issues.length} 則檢核提示</div>
       </div>
       <div class="anomaly-flat-list">${rows}</div>
     </div>`;
@@ -6766,7 +6770,7 @@ function stats(records=allRecords){
 }
 function renderCards(s){
   const anomalyCount=buildDataAnomalies().length;
-  return `<div class="cards"><div class="stat"><div class="label">登記筆數</div><div class="num">${s.total}</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${s.people}</div></div><div class="stat"><div class="label">總登記時數</div><div class="num" style="color:var(--orange)">${s.hours}</div></div><div class="stat" id="recordAnomalySummaryCard" style="cursor:pointer" title="前往異常檢核中心"><div class="label">異常待確認</div><div class="num" style="font-size:28px;color:#9a3412">${anomalyCount}</div><div class="small">點擊查看異常檢核項目</div></div></div>`;
+  return `<div class="cards"><div class="stat"><div class="label">登記筆數</div><div class="num">${s.total}</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${s.people}</div></div><div class="stat"><div class="label">總登記時數</div><div class="num" style="color:var(--orange)">${s.hours}</div></div><div class="stat" id="recordAnomalySummaryCard" style="cursor:pointer" title="前往異常檢核中心"><div class="label">系統檢核提示</div><div class="num" style="font-size:28px;color:#9a3412">${anomalyCount} <span class="small">則</span></div><div class="small">點擊查看檢核提示</div></div></div>`;
 }
 function goToAnomalyCenter(){
   currentPage='dashboard';
@@ -6935,7 +6939,7 @@ function renderDashboard(){
         </div>
       <button type="button" class="stat dashboard-status-card anomaly" id="dashAnomalyCard">
         <div class="dashboard-card-label">系統檢核提示</div>
-        <div class="dashboard-card-num">${anomalyIssues.length}</div>
+        <div class="dashboard-card-num">${anomalyIssues.length} <span class="dashboard-card-note">則</span></div>
         </button>
     </div>
 
@@ -7250,7 +7254,7 @@ function renderRecordsPage(){
             <span>${s.total||allRecords.length} 筆登記</span>
             <span>${s.people||0} 人</span>
             <span>${s.hours||0} 小時</span>
-            ${anomalyCount? `<span class="records-summary-alert">${anomalyCount} 筆待確認</span>` : ''}
+            ${anomalyCount? `<span class="records-summary-alert">${anomalyCount} 則檢核提示</span>` : ''}
           </div>
         </div>
         <div class="records-utility-actions">
