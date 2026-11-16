@@ -2847,6 +2847,16 @@
 
 
 <style id="anomaly-center-tablelike-override-v1">
+  #anomalyCenter .anomaly-info-row{flex-wrap:wrap;}
+  #anomalyCenter .anomaly-total-actions{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:flex-end;
+    gap:8px 12px;
+    margin-inline-start:auto;
+  }
+  #anomalyCenter .anomaly-total-actions button{white-space:nowrap;}
   /* 異常檢核中心改為比照待處理場次的底色＋分隔線閱讀方式 */
   .anomaly-center-clean .anomaly-flat-list{
     margin-top:10px!important;
@@ -5950,6 +5960,7 @@ const COURT_ANOMALY_GROUPS={
   '__lottery__':{label:'抽籤結果需確認',types:['超過名額','候補異常','結果漏匯']},
   '__publication__':{label:'公告進度需確認',types:['公布未完成','結果待發布']}
 };
+const ALL_ANOMALIES_FILTER='__all_anomalies__';
 const COURT_ANOMALY_PATTERNS={
   '超過次數':{label:'重複登記／超過次數', detail:'同一會員重複登記同場次，或超出登記次數上限。'},
   [MEMBER_NOT_FOUND_LABELS.Go會員]:{label:MEMBER_NOT_FOUND_LABELS.Go會員, detail:'Go 會員查核結果為「否」。'},
@@ -6265,7 +6276,7 @@ function buildAnomalySummary(){
       affectedIds.add(id);
     }
   }
-  return {total:affectedIds.size,patterns:patterns.filter(pattern=>pattern.recordIds.size)};
+  return {total:affectedIds.size,affectedIds,patterns:patterns.filter(pattern=>pattern.recordIds.size)};
 }
 function renderAnomalyCenter(summary){
   const rows=summary.patterns.map(pattern=>`
@@ -6282,7 +6293,10 @@ function renderAnomalyCenter(summary){
       <div class="admin-section-head"><h3>異常檢核中心</h3></div>
       <div class="anomaly-info-row">
         <div class="small">各類列出目前符合檢核條件的登記，包含已審查案件。同一筆若涉及多種樣態，總數只算一次。 ${!qualificationReviewsLoaded?'會員查核資料尚未載入，統計暫不含會員異常。':''}</div>
-        <div class="anomaly-total-line">共 ${summary.total} 筆登記涉及異常</div>
+        <div class="anomaly-total-actions">
+          <div class="anomaly-total-line">共 ${summary.total} 筆登記涉及異常</div>
+          <button type="button" class="btn btn-gray btn-compact anomaly-text-action" data-anomaly="${ALL_ANOMALIES_FILTER}" ${summary.total?'':'disabled'}>查看全部異常</button>
+        </div>
       </div>
       ${rows?`<div class="anomaly-flat-list">${rows}</div>`:'<div class="flat-empty">目前未發現異常樣態。</div>'}
     </div>`;
@@ -7096,6 +7110,7 @@ function bindSortHeaders(){
 function getFilteredRecords(){
   const q=recordState.q.trim().toLowerCase();
   const anomaly=recordState.anomaly;
+  const affectedIds=anomaly===ALL_ANOMALIES_FILTER?buildAnomalySummary().affectedIds:null;
   const pattern=COURT_ANOMALY_PATTERNS[anomaly];
   const group=COURT_ANOMALY_GROUPS[anomaly];
   const filteredRecords = allRecords.filter(r=>{
@@ -7106,7 +7121,9 @@ function getFilteredRecords(){
     if(lf==='__not_drawn__' && String(lotteryStatus||'').trim())return false;
     if(lf==='__backup__' && !/^候補\d+$/.test(String(lotteryStatus||'')))return false;
     if(lf && lf!=='__not_drawn__' && lf!=='__backup__' && lotteryStatus!==lf)return false;
-    if(anomaly){
+    if(affectedIds){
+      if(!affectedIds.has(String(r.id)))return false;
+    }else if(anomaly){
       const types=registrationReviewReasons(r);
       if(anomaly==='__normal__'){
         if(types.length)return false;
@@ -7215,6 +7232,7 @@ function renderRecordsPage(){
         <select id="filterTime" title="篩選時段">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
         <select id="filterAnomaly" title="篩選異常狀態">
           <option value="" ${recordState.anomaly===''?'selected':''}>全部狀態</option>
+          <option value="${ALL_ANOMALIES_FILTER}" ${recordState.anomaly===ALL_ANOMALIES_FILTER?'selected':''}>全部異常</option>
           <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
           <optgroup label="異常樣態">
             ${Object.entries(COURT_ANOMALY_PATTERNS).map(([key,pattern])=>`<option ${recordState.anomaly===key?'selected':''} value="${escapeHtml(key)}">${escapeHtml(pattern.label)}</option>`).join('')}
