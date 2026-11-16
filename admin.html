@@ -5786,6 +5786,7 @@ let currentAdmin = null;
 let allRecords = [];
 let allLogs = [];
 let capacitySettings = {};
+let capacitySettingsLoaded = false;
 let closedSlotSettings = {};
 let capacityVersions = {};
 let systemSettings = {};
@@ -6465,7 +6466,8 @@ async function loadAllData(){
   capacitySettings={};
   closedSlotSettings={};
   capacityVersions={};
-  if(!capRes.error){
+  capacitySettingsLoaded=!capRes.error;
+  if(capacitySettingsLoaded){
     (capRes.data||[]).forEach(row=>{
       const key=settingKey(row.venue_type,row.day_of_week,row.time_slot);
       capacitySettings[key] = Number(row.winner_count||0);
@@ -6680,8 +6682,13 @@ function getStageGroups(records=allRecords){
   return Object.values(map);
 }
 function getStageCapacity(stage){
+  const day=String(stage.day||'').replace(/^週/,'周');
   const start=getStageStartTime(stage.time);
-  return Number(capacitySettings[settingKey(stage.venue,stage.day,stage.time)] ?? capacitySettings[settingKey(stage.venue,stage.day,start)] ?? capacityMap[stage.venue] ?? 0);
+  const displayTime=formatTimeSlotDisplay(start,stage.venue);
+  const canonicalTime=slotRangeKey(stage.time);
+  const value=time=>capacitySettings[settingKey(stage.venue,day,time)];
+  const displayed=slotRangeKey(displayTime)===canonicalTime?value(displayTime):undefined;
+  return Number(displayed ?? value(stage.time) ?? value(canonicalTime) ?? value(start) ?? capacityMap[stage.venue] ?? 0);
 }
 function slotRangeKey(time){
   const normalized=String(time||'').trim().replace(/\s/g,'').replace(/[－–—～~]/g,'-');
@@ -6708,12 +6715,15 @@ function getAutomationStageState(stage){
   if(published<total) return '待公告';
   return '已公告';
 }
+function countRegistrationPeople(records){
+  return new Set(records.map(personKey)).size;
+}
 function stats(records=allRecords){
   const total=records.length;
-  const people=new Set(records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
+  const people=countRegistrationPeople(records);
   const hours=records.reduce((s,r)=>s+recordHours(r),0);
   const byVenue={};
-  records.forEach(r=>{ const v=r.venue_type||'未分類'; if(!byVenue[v]) byVenue[v]={count:0,people:new Set(),hours:0}; byVenue[v].count++; byVenue[v].people.add(`${normalizePhone(r.phone)}|${r.id_last4||''}`); byVenue[v].hours+=recordHours(r); });
+  records.forEach(r=>{ const v=r.venue_type||'未分類'; if(!byVenue[v]) byVenue[v]={count:0,people:new Set(),hours:0}; byVenue[v].count++; byVenue[v].people.add(personKey(r)); byVenue[v].hours+=recordHours(r); });
   Object.keys(byVenue).forEach(v=>byVenue[v].people=byVenue[v].people.size);
   return {total,people,hours,byVenue};
 }
@@ -6765,15 +6775,43 @@ function readDashboardStageReviews(){
 function dashboardStageSignature(stage){
   return JSON.stringify(stage.records.map(r=>String(r.id)).sort());
 }
+function dashboardScheduleMetrics(records=allRecords){
+  if(!capacitySettingsLoaded)return {open:null,overQuota:null,qualifiedOverQuota:null};
+  const slotKey=(venue,day,time)=>settingKey(venue,String(day||'').replace(/^週/,'周'),slotRangeKey(time));
+  const registrationsBySlot=new Map();
+  for(const record of records){
+    if(recordLocation(record)!==DEFAULT_LOCATION)continue;
+    const key=slotKey(record.venue_type,record.day_of_week,record.time_slot);
+    if(!registrationsBySlot.has(key))registrationsBySlot.set(key,[]);
+    registrationsBySlot.get(key).push(record);
+  }
+  let open=0,overQuota=0,qualifiedOverQuota=0;
+  for(const venue of venueOrder){
+    for(const day of days){
+      for(const time of getRuleTimeSlots(venue)){
+        const stage={venue,day,time};
+        if(isStageClosed(stage))continue;
+        open++;
+        const quota=getStageCapacity(stage);
+        const registered=registrationsBySlot.get(slotKey(venue,day,time));
+        if(!(quota>0)||!registered)continue;
+        if(countRegistrationPeople(registered)>quota)overQuota++;
+        if(qualificationReviewsLoaded&&countRegistrationPeople(registered.filter(isQualifiedForLottery))>quota)
+          qualifiedOverQuota++;
+      }
+    }
+  }
+  return {open,overQuota,qualifiedOverQuota:qualificationReviewsLoaded?qualifiedOverQuota:null};
+}
 function dashboardDrawStatus(stage){
+  if(!capacitySettingsLoaded)return '名額設定尚未載入';
   if(isStageClosed(stage))return '未開放';
   const quota=getStageCapacity(stage);
   if(!(quota>0))return '請核對名額';
-  if(!qualificationReviewsLoaded)return stage.total>quota?'登記超額・待審查':'登記未超額・待審查';
-  const qualified=stage.records.filter(isQualifiedForLottery).length;
-  if(qualified>quota)return '需抽籤';
-  const unresolved=stage.records.filter(r=>['pending','correction'].includes(qualificationState(r))).length;
-  if(qualified+unresolved>quota)return '待資格確認';
+  if(!qualificationReviewsLoaded)return countRegistrationPeople(stage.records)>quota?'登記超額・待審查':'登記未超額・待審查';
+  if(countRegistrationPeople(stage.records.filter(isQualifiedForLottery))>quota)return '需抽籤';
+  const possible=stage.records.filter(r=>qualificationState(r)!=='invalid');
+  if(countRegistrationPeople(possible)>quota)return '待資格確認';
   return '無須抽籤';
 }
 function renderDashboard(){
@@ -6796,9 +6834,8 @@ function renderDashboard(){
     return {...g,total,pendingLottery,withResult,published,state};
   });
 
-  const pendingLotteryStages=stages.filter(x=>x.state==='待抽籤');
-  const pendingPublishStages=stages.filter(x=>x.state==='待公告');
-  const publishedStages=stages.filter(x=>x.state==='已公告');
+  const {open,overQuota,qualifiedOverQuota}=dashboardScheduleMetrics();
+  const registeredPeople=countRegistrationPeople(allRecords);
   const anomalySummary=buildAnomalySummary();
 
   const priority={'待抽籤':1,'待公告':2};
@@ -6874,22 +6911,26 @@ function renderDashboard(){
   document.getElementById('content').innerHTML=`
     <div class="workflow-status-strip"><div><strong>登記狀態</strong> <span class="tag ${regClass}">${escapeHtml(regState.label)}</span></div><div class="small">${escapeHtml(regState.note)}</div><button class="btn btn-gray" id="dashWorkflowSettings">設定期間與名額</button></div>
     <div class="cards dashboard-status-cards">
-      <button type="button" class="stat dashboard-status-card" id="dashPendingLottery">
-        <div class="dashboard-card-label">待抽籤場次</div>
-        <div class="dashboard-card-num">${pendingLotteryStages.length}</div>
-        </button>
-      <button type="button" class="stat dashboard-status-card" id="dashPendingPublish">
-        <div class="dashboard-card-label">待公告場次</div>
-        <div class="dashboard-card-num">${pendingPublishStages.length}</div>
-        </button>
-      <div class="stat dashboard-status-card static">
-        <div class="dashboard-card-label">已公告場次</div>
-        <div class="dashboard-card-num">${publishedStages.length}</div>
-        </div>
+      <button type="button" class="stat dashboard-status-card" id="dashOpenStages">
+        <div class="dashboard-card-label">總開放場次</div>
+        <div class="dashboard-card-num">${open??'—'} ${open===null?'':'<span class="dashboard-card-note">場</span>'}</div>
+        <div class="dashboard-card-note">${open===null?'名額設定尚未載入':'依場次設定，含無人登記'}</div>
+      </button>
+      <button type="button" class="stat dashboard-status-card" id="dashRegisteredPeople">
+        <div class="dashboard-card-label">登記人數</div>
+        <div class="dashboard-card-num">${registeredPeople} <span class="dashboard-card-note">人</span></div>
+        <div class="dashboard-card-note">依會員識別去重，共 ${allRecords.length} 筆登記</div>
+      </button>
+      <button type="button" class="stat dashboard-status-card" id="dashDrawDemand">
+        <div class="dashboard-card-label">須抽籤場次（依登記人數）</div>
+        <div class="dashboard-card-num">${overQuota??'—'} ${overQuota===null?'':'<span class="dashboard-card-note">場</span>'}</div>
+        <div class="dashboard-card-note">${overQuota===null?'名額設定尚未載入':qualifiedOverQuota===null?'資格審查尚未載入':`合格人數已超額 ${qualifiedOverQuota} 場`}</div>
+      </button>
       <button type="button" class="stat dashboard-status-card anomaly" id="dashAnomalyCard">
         <div class="dashboard-card-label">涉及異常的登記</div>
         <div class="dashboard-card-num">${anomalySummary.total} <span class="dashboard-card-note">筆</span></div>
-        </button>
+        <div class="dashboard-card-note">同一筆登記只算一次</div>
+      </button>
     </div>
 
     ${renderAnomalyCenter(anomalySummary)}
@@ -6969,11 +7010,13 @@ function renderDashboard(){
   const workflowBtn=document.getElementById('dashWorkflowSettings');
   if(workflowBtn) workflowBtn.onclick=()=>renderPage('capacity');
 
-  const pendingLotteryBtn=document.getElementById('dashPendingLottery');
-  if(pendingLotteryBtn) pendingLotteryBtn.onclick=()=>renderPage('lottery');
-
-  const pendingPublishBtn=document.getElementById('dashPendingPublish');
-  if(pendingPublishBtn) pendingPublishBtn.onclick=()=>{ recordsActionTab='publish'; recordState.q=''; recordState.location=DEFAULT_LOCATION; recordState.venue=''; recordState.day=''; recordState.time=''; recordState.anomaly=''; recordState.page=1; renderPage('records'); };
+  document.getElementById('dashOpenStages').onclick=()=>renderPage('capacity');
+  document.getElementById('dashRegisteredPeople').onclick=()=>{
+    recordsActionTab='filter';
+    Object.assign(recordState,{q:'',location:'',venue:'',usage:'',day:'',time:'',anomaly:'',lotteryFilter:'',page:1});
+    renderPage('records');
+  };
+  document.getElementById('dashDrawDemand').onclick=()=>renderPage('lottery');
 
   const anomalyCard=document.getElementById('dashAnomalyCard');
   if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
