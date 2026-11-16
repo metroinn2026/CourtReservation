@@ -6253,7 +6253,7 @@ function openCourtSharedPhoneRelations(recordId){
  showCourtDetailsDialog('關聯登記｜異常明細',body);
 }
 
-function buildAnomalySummary(){
+function buildAnomalySummary(records=allRecords){
   const stages=new Map(getStageGroups().map(stage=>[stage.key,stage]));
   const memberRecords=new Map();
   for(const record of allRecords){
@@ -6264,11 +6264,15 @@ function buildAnomalySummary(){
 
   const patterns=Object.entries(COURT_ANOMALY_PATTERNS).map(([id,pattern])=>({...pattern,id,recordIds:new Set()}));
   const affectedIds=new Set();
-  for(const record of allRecords){
+  const typesFound=new Set();
+  let hasNormal=false;
+  for(const record of records){
     const types=registrationReviewReasons(record,{
       members:memberRecords.get(courtMemberIdentityKey(record)),
       stage:stages.get(stageKeyFromRecord(record))
     });
+    if(!types.length)hasNormal=true;
+    for(const type of types)typesFound.add(type);
     for(const pattern of patterns){
       if(!matchesAnomalyPattern(record,pattern.id,types))continue;
       const id=String(record.id);
@@ -6276,7 +6280,7 @@ function buildAnomalySummary(){
       affectedIds.add(id);
     }
   }
-  return {total:affectedIds.size,affectedIds,patterns:patterns.filter(pattern=>pattern.recordIds.size)};
+  return {total:affectedIds.size,affectedIds,typesFound,hasNormal,patterns:patterns.filter(pattern=>pattern.recordIds.size)};
 }
 function renderAnomalyCenter(summary){
   const rows=summary.patterns.map(pattern=>`
@@ -7107,37 +7111,75 @@ function bindSortHeaders(){
   });
 }
 
-function getFilteredRecords(){
-  const q=recordState.q.trim().toLowerCase();
-  const anomaly=recordState.anomaly;
-  const affectedIds=anomaly===ALL_ANOMALIES_FILTER?buildAnomalySummary().affectedIds:null;
-  const pattern=COURT_ANOMALY_PATTERNS[anomaly];
-  const group=COURT_ANOMALY_GROUPS[anomaly];
-  const filteredRecords = allRecords.filter(r=>{
-    if(!matchesRegistrationSlot(r,recordState)) return false;
-    if(recordState.usage && courtUsage(r)!==recordState.usage) return false;
+function getRecordsInScope(filters){
+  const q=filters.q.trim().toLowerCase();
+  return allRecords.filter(r=>{
+    if(!matchesRegistrationSlot(r,filters)) return false;
+    if(filters.usage && courtUsage(r)!==filters.usage) return false;
     const lotteryStatus=pendingRecordStatusChanges.has(String(r.id))?pendingRecordStatusChanges.get(String(r.id)):r.lottery_status;
-    const lf=recordState.lotteryFilter||'';
+    const lf=filters.lotteryFilter||'';
     if(lf==='__not_drawn__' && String(lotteryStatus||'').trim())return false;
     if(lf==='__backup__' && !/^候補\d+$/.test(String(lotteryStatus||'')))return false;
     if(lf && lf!=='__not_drawn__' && lf!=='__backup__' && lotteryStatus!==lf)return false;
-    if(affectedIds){
-      if(!affectedIds.has(String(r.id)))return false;
-    }else if(anomaly){
-      const types=registrationReviewReasons(r);
-      if(anomaly==='__normal__'){
-        if(types.length)return false;
-      }else if(pattern){
-        if(!matchesAnomalyPattern(r,anomaly,types))return false;
-      }else if(group ? !types.some(type=>group.types.includes(type)) : !types.includes(anomaly))return false;
-    }
     if(q){
       const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${secureIdentityBySubmission.get(String(r.import_submission_key||''))||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${courtUsage(r)} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
   });
-  return sortRecords(filteredRecords);
+}
+
+function getFilteredRecords(){
+  const records=getRecordsInScope(recordState);
+  const anomaly=recordState.anomaly;
+  if(!anomaly)return sortRecords(records);
+  if(anomaly===ALL_ANOMALIES_FILTER){
+    const {affectedIds}=buildAnomalySummary(records);
+    return sortRecords(records.filter(r=>affectedIds.has(String(r.id))));
+  }
+
+  const pattern=COURT_ANOMALY_PATTERNS[anomaly];
+  const group=COURT_ANOMALY_GROUPS[anomaly];
+  return sortRecords(records.filter(r=>{
+    const types=registrationReviewReasons(r);
+    if(anomaly==='__normal__')return !types.length;
+    if(pattern)return matchesAnomalyPattern(r,anomaly,types);
+    return group ? types.some(type=>group.types.includes(type)) : types.includes(anomaly);
+  }));
+}
+
+function availableRecordAnomalyOptions(filters){
+  const {total,patterns,typesFound,hasNormal}=buildAnomalySummary(getRecordsInScope(filters));
+  const options=[['','全部狀態']];
+  if(total)options.push([ALL_ANOMALIES_FILTER,'全部異常']);
+  if(hasNormal)options.push(['__normal__','正常']);
+  for(const {id,label} of patterns)options.push([id,label]);
+  for(const [id,group] of Object.entries(COURT_ANOMALY_GROUPS)){
+    if(group.types.some(type=>typesFound.has(type)))options.push([id,group.label]);
+  }
+  return options;
+}
+
+const RECORD_SCOPE_FIELDS={
+  q:'searchQ',location:'filterLocation',venue:'filterVenue',usage:'filterUsage',day:'filterDay',time:'filterTime'
+};
+function readRecordsFilterScope(){
+  return Object.fromEntries(Object.entries(RECORD_SCOPE_FIELDS).map(([key,id])=>[key,document.getElementById(id).value]));
+}
+function refreshRecordAnomalyOptions(selected,syncApplied=false){
+  const select=document.getElementById('filterAnomaly');
+  if(!select)return;
+  const draft=readRecordsFilterScope();
+  const options=availableRecordAnomalyOptions({...draft,lotteryFilter:recordState.lotteryFilter});
+  const isAvailable=value=>options.some(([id])=>id===value);
+  const requested=selected??select.value;
+  select.innerHTML=options.map(([id,label])=>`<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`).join('');
+  select.value=isAvailable(requested)?requested:'';
+  if(syncApplied && Object.entries(draft).every(([key,value])=>value===recordState[key])
+    && !isAvailable(recordState.anomaly)){
+    recordState.anomaly='';
+    recordState.page=1;
+  }
 }
 
 function currentRecordsScopeLabel(){
@@ -7230,17 +7272,7 @@ function renderRecordsPage(){
         <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
         <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
         <select id="filterTime" title="篩選時段">${renderRuleTimeOptions(recordState.venue,recordState.time,'全部時段',true)}</select>
-        <select id="filterAnomaly" title="篩選異常狀態">
-          <option value="" ${recordState.anomaly===''?'selected':''}>全部狀態</option>
-          <option value="${ALL_ANOMALIES_FILTER}" ${recordState.anomaly===ALL_ANOMALIES_FILTER?'selected':''}>全部異常</option>
-          <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
-          <optgroup label="異常樣態">
-            ${Object.entries(COURT_ANOMALY_PATTERNS).map(([key,pattern])=>`<option ${recordState.anomaly===key?'selected':''} value="${escapeHtml(key)}">${escapeHtml(pattern.label)}</option>`).join('')}
-          </optgroup>
-          <optgroup label="檢核分類">
-            ${Object.entries(COURT_ANOMALY_GROUPS).map(([key,group])=>`<option ${recordState.anomaly===key?'selected':''} value="${key}">${group.label}</option>`).join('')}
-          </optgroup>
-        </select>
+        <select id="filterAnomaly" title="篩選異常狀態"></select>
         <button id="applyFilterBtn" type="button" class="btn btn-primary btn-compact">篩選</button>
         <button id="clearRecordFiltersBtn" type="button" class="records-clear-link">清除</button>
       </div>
@@ -7284,15 +7316,11 @@ function renderRecordsPage(){
   document.getElementById('closeCourtImportModal').onclick=closeCourtImportModal;
   document.getElementById('courtImportModal').addEventListener('click',e=>{if(e.target.id==='courtImportModal')closeCourtImportModal();});
 
+  refreshRecordAnomalyOptions(recordState.anomaly,true);
   const applyRecordFilters=()=>{
-    recordState.q=document.getElementById('searchQ').value;
-    recordState.location=document.getElementById('filterLocation').value;
-    recordState.venue=document.getElementById('filterVenue').value;
-    recordState.usage=document.getElementById('filterUsage').value;
-    recordState.day=document.getElementById('filterDay').value;
-    recordState.time=document.getElementById('filterTime').value;
-    recordState.anomaly=document.getElementById('filterAnomaly').value;
-    recordState.page=1;
+    Object.assign(recordState,readRecordsFilterScope(),{
+      anomaly:document.getElementById('filterAnomaly').value,page:1
+    });
     selectedRecordIds.clear();
     renderRecordsWorkspace();
   };
@@ -7322,11 +7350,18 @@ function renderRecordsPage(){
         const prior=usageSelect.value;
         usageSelect.innerHTML=renderCourtUsageOptions(recordVenueSelect.value,availableCourtUsages(recordVenueSelect.value).includes(prior)?prior:'');
       }
+      refreshRecordAnomalyOptions();
     };
   }
-  document.getElementById('searchQ').addEventListener('keydown',e=>{if(e.key==='Enter') applyRecordFilters();});
-  // 篩選條件先留在輸入欄位；僅按下「篩選」或在搜尋框按 Enter 才更新登記清單。
-  // 切換球類仍會調整可選用途與時段，但不會立即進行清單查詢。
+  for(const field of ['filterLocation','filterUsage','filterDay','filterTime']){
+    document.getElementById(field).addEventListener('change',()=>refreshRecordAnomalyOptions());
+  }
+  const searchField=document.getElementById('searchQ');
+  searchField.addEventListener('change',()=>refreshRecordAnomalyOptions());
+  searchField.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){refreshRecordAnomalyOptions();applyRecordFilters();}
+  });
+  // 異常選項隨欄位更新，登記清單仍在套用篩選後刷新。
 
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
   const exportReviewNoticeButton=document.getElementById('exportReviewNoticeBtn');
@@ -7608,6 +7643,7 @@ async function renderImportReviewQueue(){
 function renderRecordsWorkspace(){
   const box=document.getElementById('recordsWorkspace');
   if(!box) return;
+  refreshRecordAnomalyOptions(undefined,true);
   if(recordsActionTab==='review'){
     renderQualificationReview(box);
     return;
