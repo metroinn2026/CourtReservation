@@ -5905,33 +5905,32 @@ function renderLocationOptions(selected='', includeAll=false, allLabel='全部�
 function shouldLockLocationFilter(){ return getAdminLocations().length<=1; }
 function isSuspiciousPhone(record){return courtSharedPhoneRelations(record).length>0;}
 function suspiciousTag(record){return isSuspiciousPhone(record)?'<span class="tag gray" title="僅表示共用聯絡電話，不是資格異常">共用聯絡手機</span>':'<span class="tag gray">正常</span>';}
-function getRecordAnomalyTypes(record){
+function getRecordAnomalyTypes(record,{members=allRecords,stage}={}){
   const types=[];
-  const records=allRecords||[];
   // 聯絡手機共用不屬於資格異常，僅提示同會員識別對應不同姓名。
-  if(courtMemberNameConflict(record))types.push('同會員識別姓名不同');
+  if(courtMemberNameConflict(record,members))types.push('同會員識別姓名不同');
 
-  if(getRegistrationLimitEvidence(record,records).length)types.push('超過次數');
+  if(getRegistrationLimitEvidence(record,members).length)types.push('超過次數');
 
-  const stage=records.filter(r=>recordLocation(r)===recordLocation(record) && r.venue_type===record.venue_type && r.day_of_week===record.day_of_week && r.time_slot===record.time_slot);
-  if(stage.length){
+  const stageRecords=stage?.records||allRecords.filter(r=>stageKeyFromRecord(r)===stageKeyFromRecord(record));
+  if(stageRecords.length){
     const start=getStageStartTime(record.time_slot);
     const cap=Number(capacitySettings[settingKey(record.venue_type,record.day_of_week,start)] ?? capacityMap[record.venue_type] ?? 0);
-    const winners=stage.filter(x=>x.lottery_status==='中籤').length;
+    const winners=stageRecords.filter(x=>x.lottery_status==='中籤').length;
     if(cap>=0 && winners>cap) types.push('超過名額');
 
-    const published=stage.filter(x=>x.result_published).length;
-    const noResult=stage.filter(x=>!String(x.lottery_status||'').trim()).length;
+    const published=stageRecords.filter(x=>x.result_published).length;
+    const noResult=stageRecords.filter(x=>!String(x.lottery_status||'').trim()).length;
     if(published>0 && noResult>0) types.push('公布未完成');
 
-    const nums=stage.map(x=>String(x.lottery_status||'').match(/^候補(\d+)$/)).filter(Boolean).map(m=>Number(m[1])).sort((a,b)=>a-b);
+    const nums=stageRecords.map(x=>String(x.lottery_status||'').match(/^候補(\d+)$/)).filter(Boolean).map(m=>Number(m[1])).sort((a,b)=>a-b);
     if(nums.length){
       const dup=nums.some((n,i)=>i>0 && n===nums[i-1]);
       const gap=nums.some((n,i)=>n!==i+1);
       if(dup||gap) types.push('候補異常');
     }
   }
-  const recStage={location:recordLocation(record),venue:record.venue_type||'',day:record.day_of_week||'',time:record.time_slot||'',records:allRecords.filter(r=>stageKeyFromRecord(r)===stageKeyFromRecord(record))};
+  const recStage=stage||{location:recordLocation(record),venue:record.venue_type||'',day:record.day_of_week||'',time:record.time_slot||'',records:stageRecords};
   if(isStageClosed(recStage)) types.push('不開放場次有登記');
   const registrationTimeIssue=court116RegistrationTimeIssue(record.registered_at);
   if(registrationTimeIssue)types.push(registrationTimeIssue);
@@ -5942,10 +5941,28 @@ function getRecordAnomalyTypes(record){
   return [...new Set(types)];
 }
 const COURT_ANOMALY_GROUPS={
-  '__registration__':{label:'登記資料需確認',types:['同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常']},
+  '__registration__':{label:'登記資料需確認',types:['同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常','會館名冊查無會員','會員查核為否','Go 會員尚未查核']},
   '__lottery__':{label:'抽籤結果需確認',types:['超過名額','候補異常','結果漏匯']},
   '__publication__':{label:'公告進度需確認',types:['公布未完成','結果待發布']}
 };
+const COURT_ANOMALY_PATTERNS={
+  '超過次數':{label:'重複登記／超過次數', detail:'同一會員重複登記同場次，或超出登記次數上限。'},
+  '會員查核為否':{label:'查無會員', types:['會館名冊查無會員','會員查核為否'], detail:'會館名冊查無資料，或會員查核結果為「否」。'},
+  'Go 會員尚未查核':{label:'Go 會員未查核', detail:'Go 會員的查核結果尚未確認。'},
+  '同會員識別姓名不同':{label:'同一會員使用不同姓名', detail:'同一會館會員證號或 Go 綁定手機對應不同姓名。'},
+  '不開放場次有登記':{label:'登記未開放的場次', detail:'場次已設定為不開放，仍有登記紀錄。'},
+  '開放前登記':{label:'開放前登記', detail:'送件時間早於登記開放時間。'},
+  '截止後登記':{label:'截止後登記', detail:'送件時間已超過登記期限。'},
+  '登記時間異常':{label:'登記時間異常', detail:'登記時間缺漏或無法辨識。'},
+  '超過名額':{label:'中籤超過名額', detail:'列出超額場次的中籤紀錄。', matches:r=>r.lottery_status==='中籤'},
+  '候補異常':{label:'候補順位異常', detail:'列出順位重複或不連續場次的候補紀錄。', matches:r=>/^候補\d+$/.test(r.lottery_status||'')},
+  '結果漏匯':{label:'抽籤結果未匯完整', detail:'場次已匯入部分結果，只列出仍缺結果的登記。', matches:r=>!String(r.lottery_status||'').trim()},
+  '公布未完成':{label:'已公告場次仍缺結果', detail:'場次已公告部分結果，只列出仍缺結果的登記。', matches:r=>!String(r.lottery_status||'').trim()}
+};
+function matchesAnomalyPattern(record,id,types){
+  const pattern=COURT_ANOMALY_PATTERNS[id];
+  return (pattern.types||[id]).some(type=>types.includes(type)) && (!pattern.matches||pattern.matches(record));
+}
 function anomalyTags(record){
   const types=getRecordAnomalyTypes(record);
   if(!types.length)return '<span class="tag gray">正常</span>';
@@ -6165,16 +6182,16 @@ function courtSharedPhoneRelations(r){
 function normalizeCourtMemberName(name){
  return String(name||'').normalize('NFKC').replace(/[\s\u3000]/g,'').toLowerCase();
 }
-function courtMemberNameConflicts(r){
+function courtMemberNameConflicts(r,records=allRecords){
  const key=courtMemberIdentityKey(r);
  const name=normalizeCourtMemberName(r.name);
  if(key.startsWith('UNVERIFIED:')||!name)return [];
- return allRecords.filter(x=>{
+ return records.filter(x=>{
    const otherName=normalizeCourtMemberName(x.name);
    return otherName&&otherName!==name&&courtMemberIdentityKey(x)===key;
  });
 }
-function courtMemberNameConflict(r){return courtMemberNameConflicts(r).length>0;}
+function courtMemberNameConflict(r,records){return courtMemberNameConflicts(r,records).length>0;}
 function courtRelatedRecords(record){
  const phone=normalizePhone(record.phone);
  const direct=phone?allRecords.filter(r=>normalizePhone(r.phone)===phone):[];
@@ -6218,142 +6235,49 @@ function openCourtSharedPhoneRelations(recordId){
  showCourtDetailsDialog('關聯登記｜異常明細',body);
 }
 
-function buildDataAnomalies(){
-  const issues=[];
-  const records=allRecords||[];
-
-  // 1. 同會員識別資料不一致（不以聯絡手機推定同人）。
-  const memberGroups=new Map();
-  records.forEach(r=>{
-    const key=courtMemberIdentityKey(r);
-    if(key.startsWith('UNVERIFIED:'))return;
-    if(!memberGroups.has(key))memberGroups.set(key,[]);
-    memberGroups.get(key).push(r);
-  });
-  memberGroups.forEach(rows=>{
-    const names=new Set(rows.map(r=>normalizeCourtMemberName(r.name)).filter(Boolean));
-    if(names.size>1)issues.push({type:'同會員識別姓名不同',severity:'warn',count:rows.length,detail:'同一會員識別姓名不同，請人工核對',target:'records'});
-  });
-
-  // 2. 同一組關聯登記只計一次，使用與登記清單相同的限制規則。
-  const countedLimitIssues=new Set();
-  for(const record of records){
-    for(const issue of getRegistrationLimitEvidence(record,records)){
-      const key=JSON.stringify(issue.rows.map(r=>String(r.id)).sort());
-      if(countedLimitIssues.has(key))continue;
-      countedLimitIssues.add(key);
-      issues.push({type:'超過次數',severity:'error',count:issue.rows.length,
-        detail:`${record.name||'申請人'}｜${issue.label}｜${issue.rows.length}筆`,target:'records'});
-    }
+function buildAnomalySummary(){
+  const stages=new Map(getStageGroups().map(stage=>[stage.key,stage]));
+  const memberRecords=new Map();
+  for(const record of allRecords){
+    const member=courtMemberIdentityKey(record);
+    if(!memberRecords.has(member))memberRecords.set(member,[]);
+    memberRecords.get(member).push(record);
   }
 
-  // 3. 場次層級檢核
-  const stageGroups={};
-  records.forEach(r=>{
-    const k=`${recordLocation(r)}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
-    if(!stageGroups[k]) stageGroups[k]=[];
-    stageGroups[k].push(r);
-  });
-  Object.values(stageGroups).forEach(rows=>{
-    const r=rows[0];
-    const stageLabel=`${locationLabel(recordLocation(r))}｜${r.venue_type||'-'}｜${r.day_of_week||'-'}｜${r.time_slot||'-'}`;
-    const winners=rows.filter(x=>x.lottery_status==='中籤').length;
-    const start=getStageStartTime(r.time_slot);
-    const cap=Number(capacitySettings[settingKey(r.venue_type,r.day_of_week,start)] ?? capacityMap[r.venue_type] ?? 0);
-    if(cap>=0 && winners>cap) issues.push({
-      type:'超過名額', severity:'error', count:winners-cap,
-      detail:`${stageLabel}｜中籤${winners}/${cap}`,
-      target:'lottery'
+  const patterns=Object.entries(COURT_ANOMALY_PATTERNS).map(([id,pattern])=>({...pattern,id,recordIds:new Set()}));
+  const affectedIds=new Set();
+  for(const record of allRecords){
+    const types=registrationReviewReasons(record,{
+      members:memberRecords.get(courtMemberIdentityKey(record)),
+      stage:stages.get(stageKeyFromRecord(record))
     });
-
-    const published=rows.filter(x=>x.result_published).length;
-    const noResult=rows.filter(x=>!String(x.lottery_status||'').trim()).length;
-    if(published>0 && noResult>0) issues.push({
-      type:'公布未完成', severity:'error', count:noResult,
-      detail:`${stageLabel}｜${noResult}筆未完成`,
-      target:'records'
-    });
-
-    const nums=rows.map(x=>String(x.lottery_status||'').match(/^候補(\d+)$/)).filter(Boolean).map(m=>Number(m[1])).sort((a,b)=>a-b);
-    if(nums.length){
-      const dup=nums.some((n,i)=>i>0 && n===nums[i-1]);
-      const gap=nums.some((n,i)=>n!==i+1);
-      if(dup||gap) issues.push({
-        type:'候補異常', severity:'warn', count:nums.length,
-        detail:`${stageLabel}｜順位需確認`,
-        target:'lottery'
-      });
+    for(const pattern of patterns){
+      if(!matchesAnomalyPattern(record,pattern.id,types))continue;
+      const id=String(record.id);
+      pattern.recordIds.add(id);
+      affectedIds.add(id);
     }
-    const stageResultCount=rows.filter(x=>String(x.lottery_status||'').trim()).length;
-    if(stageResultCount>0 && stageResultCount<rows.length) issues.push({
-      type:'結果漏匯', severity:'error', count:rows.length-stageResultCount,
-      detail:`${stageLabel}｜${rows.length-stageResultCount}筆尚無結果`, target:'lottery'
-    });
-    if(stageResultCount===rows.length && stageResultCount>0 && published<rows.length) issues.push({
-      type:'結果待發布', severity:'warn', count:rows.length-published,
-      detail:`${stageLabel}｜結果已完成尚未發布`, target:'records'
-    });
-    const stageObj={location:recordLocation(r),venue:r.venue_type||'',day:r.day_of_week||'',time:r.time_slot||'',records:rows};
-    if(isStageClosed(stageObj) && rows.length) issues.push({
-      type:'不開放場次有登記', severity:'error', count:rows.length,
-      detail:`${stageLabel}｜已有${rows.length}筆登記`, target:'records'
-    });
-  });
-  for(const [type,detail] of [
-    ['開放前登記','正式開放前'],
-    ['截止後登記','登記截止後'],
-    ['登記時間異常','無法辨識登記時間']
-  ]){
-    const count=records.filter(r=>court116RegistrationTimeIssue(r.registered_at)===type).length;
-    if(count)issues.push({type,severity:'error',count,detail:`${detail}：${count} 筆待確認`,target:'records'});
   }
-  return issues;
+  return {total:affectedIds.size,patterns:patterns.filter(pattern=>pattern.recordIds.size)};
 }
-function renderAnomalyCenter(issues){
-  if(!issues.length){
-    return `
-      <div class="panel admin-section-card dashboard-anomaly-card anomaly-center-clean" id="anomalyCenter">
-        <div class="admin-section-head"><h3>異常檢核中心</h3></div>
-        <div class="anomaly-info-row">
-          <div class="small">需要確認的資料請至「登記資料 → 異常清單」處理。</div>
-          <div class="anomaly-total-line">0 則檢核提示</div>
-        </div>
-        <div class="flat-empty">目前未發現需人工確認的資料異常。</div>
-      </div>`;
-  }
-
-  const grouped={};
-  issues.forEach(x=>{
-    const key=COURT_ANOMALY_GROUPS.__registration__.types.includes(x.type)?'__registration__':x.type;
-    if(!grouped[key])grouped[key]=[];
-    grouped[key].push(x);
-  });
-
-  const rows=Object.entries(grouped).map(([type,list])=>{
-    const total=list.reduce((s,x)=>s+(x.count||1),0);
-    const examples=list.slice(0,2).map(x=>escapeHtml(type==='__registration__'?x.type+'｜'+x.detail:x.detail)).join('<br>');
-    const relatedCount=type==='__registration__'?`累計 ${total} 筆登記`
-      :type==='超過名額'?`超出 ${total} 個名額`
-      :type==='候補異常'?`候補紀錄 ${total} 筆`
-      :`涉及 ${total} 筆登記`;
-    const more=list.length>2 ? `<div class="anomaly-more">另有 ${list.length-2} 則提示</div>` : '';
-    return `
-      <div class="anomaly-flat-row">
-        <div class="anomaly-flat-type">${escapeHtml(COURT_ANOMALY_GROUPS[type]?.label||type)}</div>
-        <div class="anomaly-flat-count">${list.length} 則提示<br>${relatedCount}</div>
-        <div class="anomaly-flat-detail">${examples}${more}</div>
-        <button class="anomaly-text-action" data-target="records" data-anomaly="${escapeHtml(type)}" title="在登記清單查看相關紀錄">查看</button>
-      </div>`;
-  }).join('');
+function renderAnomalyCenter(summary){
+  const rows=summary.patterns.map(pattern=>`
+    <div class="anomaly-flat-row">
+      <div class="anomaly-flat-type">${escapeHtml(pattern.label)}</div>
+      <div class="anomaly-flat-count">${pattern.recordIds.size} 筆登記</div>
+      <div class="anomaly-flat-detail">${escapeHtml(pattern.detail)}</div>
+      <button type="button" class="anomaly-text-action" data-anomaly="${escapeHtml(pattern.id)}"
+        aria-label="${escapeHtml('查看'+pattern.label+'的登記')}">查看</button>
+    </div>`).join('');
 
   return `
     <div class="panel admin-section-card dashboard-anomaly-card anomaly-center-clean" id="anomalyCenter">
       <div class="admin-section-head"><h3>異常檢核中心</h3></div>
       <div class="anomaly-info-row">
-        <div class="small">一則提示可能涉及多筆登記或多個場次。同一筆登記可能計入多則提示。審查進度請至「登記資料 → 異常清單」。</div>
-        <div class="anomaly-total-line">${issues.length} 則檢核提示</div>
+        <div class="small">各類列出目前符合檢核條件的登記，包含已審查案件。同一筆若涉及多種樣態，總數只算一次。 ${!qualificationReviewsLoaded?'會員查核資料尚未載入，統計暫不含會員異常。':''}</div>
+        <div class="anomaly-total-line">共 ${summary.total} 筆登記涉及異常</div>
       </div>
-      <div class="anomaly-flat-list">${rows}</div>
+      ${rows?`<div class="anomaly-flat-list">${rows}</div>`:'<div class="flat-empty">目前未發現異常樣態。</div>'}
     </div>`;
 }
 
@@ -6769,8 +6693,8 @@ function stats(records=allRecords){
   return {total,people,hours,byVenue};
 }
 function renderCards(s){
-  const anomalyCount=buildDataAnomalies().length;
-  return `<div class="cards"><div class="stat"><div class="label">登記筆數</div><div class="num">${s.total}</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${s.people}</div></div><div class="stat"><div class="label">總登記時數</div><div class="num" style="color:var(--orange)">${s.hours}</div></div><div class="stat" id="recordAnomalySummaryCard" style="cursor:pointer" title="前往異常檢核中心"><div class="label">系統檢核提示</div><div class="num" style="font-size:28px;color:#9a3412">${anomalyCount} <span class="small">則</span></div><div class="small">點擊查看檢核提示</div></div></div>`;
+  const anomalyCount=buildAnomalySummary().total;
+  return `<div class="cards"><div class="stat"><div class="label">登記筆數</div><div class="num">${s.total}</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${s.people}</div></div><div class="stat"><div class="label">總登記時數</div><div class="num" style="color:var(--orange)">${s.hours}</div></div><div class="stat" id="recordAnomalySummaryCard" style="cursor:pointer" title="前往異常檢核中心"><div class="label">涉及異常的登記</div><div class="num" style="font-size:28px;color:#9a3412">${anomalyCount} <span class="small">筆</span></div><div class="small">查看異常樣態</div></div></div>`;
 }
 function goToAnomalyCenter(){
   currentPage='dashboard';
@@ -6850,7 +6774,7 @@ function renderDashboard(){
   const pendingLotteryStages=stages.filter(x=>x.state==='待抽籤');
   const pendingPublishStages=stages.filter(x=>x.state==='待公告');
   const publishedStages=stages.filter(x=>x.state==='已公告');
-  const anomalyIssues=buildDataAnomalies();
+  const anomalySummary=buildAnomalySummary();
 
   const priority={'待抽籤':1,'待公告':2};
   const stageReviews=readDashboardStageReviews();
@@ -6938,12 +6862,12 @@ function renderDashboard(){
         <div class="dashboard-card-num">${publishedStages.length}</div>
         </div>
       <button type="button" class="stat dashboard-status-card anomaly" id="dashAnomalyCard">
-        <div class="dashboard-card-label">系統檢核提示</div>
-        <div class="dashboard-card-num">${anomalyIssues.length} <span class="dashboard-card-note">則</span></div>
+        <div class="dashboard-card-label">涉及異常的登記</div>
+        <div class="dashboard-card-num">${anomalySummary.total} <span class="dashboard-card-note">筆</span></div>
         </button>
     </div>
 
-    ${renderAnomalyCenter(anomalyIssues)}
+    ${renderAnomalyCenter(anomalySummary)}
 
     <div class="panel admin-section-card dashboard-tasks-panel">
       <div class="admin-section-head"><h3>待處理場次</h3></div>
@@ -7029,12 +6953,10 @@ function renderDashboard(){
   const anomalyCard=document.getElementById('dashAnomalyCard');
   if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
 
-  // v51: 首頁異常查看統一進入待確認資料分頁。
-  document.querySelectorAll('.anomaly-text-action, .anomaly-go').forEach(b=>b.onclick=()=>{
-    const registrationIssues=b.dataset.anomaly==='__registration__';
-    recordsActionTab=registrationIssues?'filter':'review';
-    Object.assign(recordState,{q:'',location:DEFAULT_LOCATION,venue:'',usage:'',day:'',time:'',
-      anomaly:registrationIssues?'__registration__':'',lotteryFilter:'',page:1});
+  document.querySelectorAll('#anomalyCenter .anomaly-text-action').forEach(button=>button.onclick=()=>{
+    recordsActionTab='filter';
+    Object.assign(recordState,{q:'',location:'',venue:'',usage:'',day:'',time:'',
+      anomaly:button.dataset.anomaly,lotteryFilter:'',page:1});
     renderPage('records');
     document.querySelector('.records-function-tabs')?.scrollIntoView({behavior:'smooth',block:'start'});
   });
@@ -7166,6 +7088,9 @@ function bindSortHeaders(){
 
 function getFilteredRecords(){
   const q=recordState.q.trim().toLowerCase();
+  const anomaly=recordState.anomaly;
+  const pattern=COURT_ANOMALY_PATTERNS[anomaly];
+  const group=COURT_ANOMALY_GROUPS[anomaly];
   const filteredRecords = allRecords.filter(r=>{
     if(!matchesRegistrationSlot(r,recordState)) return false;
     if(recordState.usage && courtUsage(r)!==recordState.usage) return false;
@@ -7174,13 +7099,13 @@ function getFilteredRecords(){
     if(lf==='__not_drawn__' && String(lotteryStatus||'').trim())return false;
     if(lf==='__backup__' && !/^候補\d+$/.test(String(lotteryStatus||'')))return false;
     if(lf && lf!=='__not_drawn__' && lf!=='__backup__' && lotteryStatus!==lf)return false;
-    if(recordState.anomaly){
-      const anomalyTypes=getRecordAnomalyTypes(r);
-      if(recordState.anomaly==='__normal__' && anomalyTypes.length>0) return false;
-      if(recordState.anomaly!=='__normal__'){
-        const group=COURT_ANOMALY_GROUPS[recordState.anomaly];
-        if(group ? !anomalyTypes.some(t=>group.types.includes(t)) : !anomalyTypes.includes(recordState.anomaly))return false;
-      }
+    if(anomaly){
+      const types=registrationReviewReasons(r);
+      if(anomaly==='__normal__'){
+        if(types.length)return false;
+      }else if(pattern){
+        if(!matchesAnomalyPattern(r,anomaly,types))return false;
+      }else if(group ? !types.some(type=>group.types.includes(type)) : !types.includes(anomaly))return false;
     }
     if(q){
       const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${secureIdentityBySubmission.get(String(r.import_submission_key||''))||''} ${r.serial_number||''} ${recordLocation(r)} ${r.venue_type||''} ${courtUsage(r)} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
@@ -7239,10 +7164,10 @@ function renderRecordsPage(){
   if(recordsActionTab==='batch'||recordsActionTab==='import') recordsActionTab='filter';
   selectedRecordIds.clear();
   const locations=getAdminLocations();
-  if(!recordState.location) recordState.location=DEFAULT_LOCATION;
+  if(recordState.location==null) recordState.location=DEFAULT_LOCATION;
   const venues=[...new Set(allRecords.map(r=>r.venue_type).filter(Boolean))];
   const s=stats();
-  const anomalyCount=buildDataAnomalies().length;
+  const anomalyCount=buildAnomalySummary().total;
 
   document.getElementById('content').innerHTML=`
     <div class="panel records-main-panel records-main-panel-compact">
@@ -7254,7 +7179,7 @@ function renderRecordsPage(){
             <span>${s.total||allRecords.length} 筆登記</span>
             <span>${s.people||0} 人</span>
             <span>${s.hours||0} 小時</span>
-            ${anomalyCount? `<span class="records-summary-alert">${anomalyCount} 則檢核提示</span>` : ''}
+            ${anomalyCount? `<span class="records-summary-alert">涉及異常 ${anomalyCount} 筆</span>` : ''}
           </div>
         </div>
         <div class="records-utility-actions">
@@ -7276,7 +7201,7 @@ function renderRecordsPage(){
 
       <div class="records-compact-filterbar">
         <input id="searchQ" class="records-search" placeholder="搜尋姓名／手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
-        <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location || DEFAULT_LOCATION, true, '全部場地')}</select>
+        <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location, true, '全部場地')}</select>
         <select id="filterVenue" title="篩選運動場地"><option value="">全部場地</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
         <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
         <select id="filterDay"><option value="">全部星期</option>${days.map(d=>`<option ${recordState.day===d?'selected':''} value="${d}">${d}</option>`).join('')}</select>
@@ -7284,7 +7209,12 @@ function renderRecordsPage(){
         <select id="filterAnomaly" title="篩選異常狀態">
           <option value="" ${recordState.anomaly===''?'selected':''}>全部狀態</option>
           <option value="__normal__" ${recordState.anomaly==='__normal__'?'selected':''}>正常</option>
-          ${Object.entries(COURT_ANOMALY_GROUPS).map(([key,group])=>`<option ${recordState.anomaly===key?'selected':''} value="${key}">${group.label}</option>`).join('')}
+          <optgroup label="異常樣態">
+            ${Object.entries(COURT_ANOMALY_PATTERNS).map(([key,pattern])=>`<option ${recordState.anomaly===key?'selected':''} value="${escapeHtml(key)}">${escapeHtml(pattern.label)}</option>`).join('')}
+          </optgroup>
+          <optgroup label="檢核分類">
+            ${Object.entries(COURT_ANOMALY_GROUPS).map(([key,group])=>`<option ${recordState.anomaly===key?'selected':''} value="${key}">${group.label}</option>`).join('')}
+          </optgroup>
         </select>
         <button id="applyFilterBtn" type="button" class="btn btn-primary btn-compact">篩選</button>
         <button id="clearRecordFiltersBtn" type="button" class="records-clear-link">清除</button>
@@ -7331,7 +7261,7 @@ function renderRecordsPage(){
 
   const applyRecordFilters=()=>{
     recordState.q=document.getElementById('searchQ').value;
-    recordState.location=document.getElementById('filterLocation').value || DEFAULT_LOCATION;
+    recordState.location=document.getElementById('filterLocation').value;
     recordState.venue=document.getElementById('filterVenue').value;
     recordState.usage=document.getElementById('filterUsage').value;
     recordState.day=document.getElementById('filterDay').value;
@@ -7513,9 +7443,9 @@ async function setManualMembershipCheck(recordId,status){
   await loadQualificationReviews();
   renderRecordsWorkspace();
 }
-function registrationReviewReasons(r){
-  const types=getRecordAnomalyTypes(r);
-  const memberIssue=membershipReviewIssue(r);
+function registrationReviewReasons(r,context){
+  const types=getRecordAnomalyTypes(r,context);
+  const memberIssue=qualificationReviewsLoaded?membershipReviewIssue(r):'';
   if(memberIssue)types.push(memberIssue);
   return types;
 }
