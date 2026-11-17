@@ -7898,12 +7898,12 @@ const CORRECTION_EMAIL_TYPES={
   },
   combined:{
     label:'兩項合併補件',
-    tokens:['重複登記期限','會員補件期限','相關登記明細表','重複登記明細表','會員登記明細表'],
+    tokens:['合併補件期限','相關登記明細表','重複登記期限','會員補件期限','重複登記明細表','會員登記明細表'],
     body:[CORRECTION_EMAIL_GREETING,'一、會員資格補正',...CORRECTION_EMAIL_MEMBERSHIP_TEXT,
       '二、重複登記',CORRECTION_EMAIL_DUPLICATE_RULE,
-      '經查您的登記資料有重複情形。完成 GO 會員註冊後，請於 {重複登記期限}（臺灣時間）前，在回覆會員補正的同一封信中註明欲保留的登記序號。',
+      '經查您的登記資料有重複情形。回覆會員補正時，請在同一封信中註明欲保留的登記序號。',
       '如會員資格已通過查核，但逾期未告知欲保留的序號，'+CORRECTION_EMAIL_DUPLICATE_FALLBACK,
-      '{相關登記明細表}',...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
+      '{相關登記明細表}',...CORRECTION_EMAIL_SIGNATURE].join('\n\n').replace('{會員補件期限}','{合併補件期限}')
   }
 };
 function correctionEmailTemplate(kind,templates){
@@ -7924,9 +7924,11 @@ function buildCorrectionEmail(caseData,items,templates){
   const visibleSerials=serials.slice(0,4).join('、');
   const serialSummary=serials.length>4?visibleSerials+' 等 '+serials.length+' 筆':visibleSerials;
   const subject=template.subject+(serialSummary?'｜登記序號 '+serialSummary:'');
+  const combinedDue=duplicate&&membership?Math.min(Date.parse(duplicate.due_at),Date.parse(membership.due_at)):null;
   const values={
     '申請人姓名':caseData.name,
     '登記筆數':relatedRows.length,
+    '合併補件期限':correctionNoticeEmailDate(combinedDue),
     '重複登記期限':correctionNoticeEmailDate(duplicate?.due_at),
     '會員補件期限':correctionNoticeEmailDate(membership?.due_at)
   };
