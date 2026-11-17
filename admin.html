@@ -5121,14 +5121,14 @@ body .ux-review-edit{align-items:end}
 
 <style id="qualification-review-aligned-controls-v1">
 /* 異常清單：會員、審查與說明欄底端對齊 */
-#recordsWorkspace .ux-review-edit{
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit{
   display:grid!important;
   grid-template-columns:minmax(115px,165px) minmax(130px,195px) minmax(0,1fr) auto!important;
   gap:12px!important;
   align-items:end!important;
   margin-top:12px!important;
 }
-#recordsWorkspace .ux-review-edit>.ux-review-field{
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit>.ux-review-field{
   display:flex!important;
   flex-direction:column!important;
   justify-content:flex-end!important;
@@ -5137,8 +5137,8 @@ body .ux-review-edit{align-items:end}
   margin:0!important;
   padding:0!important;
 }
-#recordsWorkspace .ux-review-edit .ux-review-field>label,
-#recordsWorkspace .ux-review-edit .ux-review-field>label[for^="qstate-"]{
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit .ux-review-field>label,
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit .ux-review-field>label[for^="qstate-"]{
   display:block!important;
   font-size:14px!important;
   line-height:20px!important;
@@ -5148,12 +5148,12 @@ body .ux-review-edit{align-items:end}
   padding:0!important;
   height:20px!important;
 }
-#recordsWorkspace .ux-review-edit .ux-review-field>label[for^="qstate-"]::after{
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit .ux-review-field>label[for^="qstate-"]::after{
   content:none!important;
   display:none!important;
 }
-#recordsWorkspace .ux-review-edit .ux-review-field select,
-#recordsWorkspace .ux-review-edit .ux-review-field textarea{
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit .ux-review-field select,
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit .ux-review-field textarea{
   display:block!important;
   width:100%!important;
   box-sizing:border-box!important;
@@ -5171,26 +5171,26 @@ body .ux-review-edit{align-items:end}
   margin:0!important;
   box-shadow:none!important;
 }
-#recordsWorkspace .ux-review-edit .ux-review-field select{padding:0 12px!important}
-#recordsWorkspace .ux-review-edit .ux-review-field textarea{
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit .ux-review-field select{padding:0 12px!important}
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit .ux-review-field textarea{
   padding:10px 12px!important;
   resize:none!important;
   overflow-y:auto!important;
 }
-#recordsWorkspace .ux-review-edit .ux-review-field textarea::placeholder{
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit .ux-review-field textarea::placeholder{
   font-size:14px!important;
   color:#8b98ab!important;
   opacity:1;
 }
-#recordsWorkspace .ux-review-edit .ux-review-field-help{display:none!important}
-#recordsWorkspace .ux-review-edit>.ux-review-save{
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit .ux-review-field-help{display:none!important}
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit>.ux-review-save{
   display:flex!important;
   align-items:flex-end!important;
   align-self:end!important;
   margin:0!important;
   padding:0!important;
 }
-#recordsWorkspace .ux-review-edit>.ux-review-save .btn{
+:is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit>.ux-review-save .btn{
   box-sizing:border-box!important;
   height:42px!important;
   min-height:42px!important;
@@ -5204,12 +5204,12 @@ body .ux-review-edit{align-items:end}
   line-height:20px!important;
 }
 @media(max-width:760px){
-  #recordsWorkspace .ux-review-edit{
+  :is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit{
     grid-template-columns:minmax(0,1fr)!important;
     gap:12px!important;
   }
-  #recordsWorkspace .ux-review-edit>.ux-review-save{justify-content:flex-end!important}
-  #recordsWorkspace .ux-review-edit>.ux-review-save .btn{width:auto!important}
+  :is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit>.ux-review-save{justify-content:flex-end!important}
+  :is(#recordsWorkspace,#correctionQualificationEditor) .ux-review-edit>.ux-review-save .btn{width:auto!important}
 }
 </style>
 
@@ -7623,6 +7623,25 @@ async function loadQualificationReviews(){
     qualificationReviewsLoaded=true;
   }catch(e){console.warn('資格審查讀取失敗',e);}
 }
+const QUALIFICATION_REVIEW_OPTIONS=[['qualified','合格'],['pending','待審查'],['correction','待補正'],['invalid','不合格']];
+function renderQualificationReviewCard(r,prefix='q',saveLabel='儲存'){
+  const saved=qualificationReviews.get(String(r.id))||{};
+  const st=qualificationState(r);
+  const rejection=registrationWindowRejection(r);
+  const reasons=qualificationIssueTypes(r);
+  const reviewLabel=QUALIFICATION_REVIEW_OPTIONS.find(([value])=>value===st)?.[1]||'待審查';
+  return `<article class="ux-review-case" data-review-card="${escapeHtml(String(r.id))}">
+      <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>reason==='超過次數'?registrationLimitButton(r):`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):(st==='qualified'?'已確認合格。':st==='invalid'?'已確認不合格。':'請核對登記內容後填寫審查結果。')}</div></div>
+      <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(reviewLabel)}</span></div>
+      ${rejection?`<p class="small">依登記期間判定不合格（${escapeHtml(rejection)}）。</p>`:`<div class="ux-review-edit">
+        <div class="ux-review-field"><label for="${prefix}-member-${r.id}">是否為會員</label><select id="${prefix}-member-${r.id}" data-qmember="${r.id}">${membershipCheckOptions(membershipCheckStatus(r))}</select></div>
+        <div class="ux-review-field"><label for="${prefix}-state-${r.id}">審查結果</label><select id="${prefix}-state-${r.id}" data-qstate="${r.id}">${QUALIFICATION_REVIEW_OPTIONS.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="ux-review-field ux-review-note"><label for="${prefix}-note-${r.id}">處理說明</label><textarea id="${prefix}-note-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="例如已通知補正、補正期限已過">${escapeHtml(saved.review_note||'')}</textarea></div>
+        <div class="ux-review-save"><button type="button" class="btn btn-primary" data-qsave="${r.id}">${escapeHtml(saveLabel)}</button></div>
+      </div>`}
+      ${saved.reviewed_at?`<div class="ux-review-history">最近處理：${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</div>`:''}
+    </article>`;
+}
 async function renderQualificationReview(container){
   if(!container)return;
   if(!importDb){container.innerHTML='<div class="panel">請先完成 Supabase 授權。</div>';return;}
@@ -7653,21 +7672,11 @@ async function renderQualificationReview(container){
   const rows=issues.filter(r=>currentFilter==='all'||(currentFilter==='open'?['pending','correction'].includes(qualificationState(r)):qualificationState(r)===currentFilter));
   const focus=window.qualificationFocusId;
   const displayed=focus?allRecords.filter(r=>String(r.id)===focus):rows;
-  const options=[['qualified','合格'],['pending','待審查'],['correction','待補正'],['invalid','不合格']];
   container.innerHTML=`<div class="panel ux-review-panel ux-review-simple admin-inner-section">
     <p class="ux-review-help">查無會員的案件先列為待審查。通知後可選「待補正」。補正完成並確認具會員資格後，選「合格」會一併帶入會員「是」。逾期仍未完成可選「不合格」並填寫原因。</p>
     <div class="ux-review-toolbar"><label class="ux-review-filter-label" for="qualificationFilterV52">顯示案件</label><select id="qualificationFilterV52"><option value="open">待處理（待審查／待補正）</option><option value="correction">待補正</option><option value="invalid">審查不合格</option><option value="all">全部非合格</option></select><span class="small">待處理 ${open.length} 筆｜非合格 ${issues.length} 筆</span>${focus?'<button class="btn btn-gray" id="exitFocusV53">返回全部異常</button>':''}<button type="button" id="openCorrectionFromReview" class="btn btn-gray">補正通知</button><button id="refreshQualificationV52" class="btn btn-gray">重新載入</button></div>
-    <div class="ux-review-cases">${displayed.map(r=>{const saved=qualificationReviews.get(String(r.id))||{};const st=qualificationState(r);const rejection=registrationWindowRejection(r);const reasons=qualificationIssueTypes(r);return `<article class="ux-review-case">
-      <div class="ux-review-reasons"><strong>需要確認的原因</strong><div>${reasons.length?reasons.map(reason=>reason==='超過次數'?registrationLimitButton(r):`<span class="ux-review-issue">${escapeHtml(reason)}</span>`).join(''):'此筆原有審查狀態尚未完成，請核對登記內容。'}</div></div>
-      <div class="ux-review-case-head"><div><strong>${escapeHtml(r.name)}</strong><div class="ux-review-meta">${escapeHtml(r.venue_type)}／${escapeHtml(courtUsage(r))}　${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</div><div class="ux-review-meta">登記序號：${escapeHtml(compactRecordCode(r))}</div></div><span class="ux-review-current ${st==='invalid'?'ux-review-invalid':''}">${escapeHtml(options.find(o=>o[0]===st)?.[1]||'待審查')}</span></div>
-      ${rejection?`<p class="small">依登記期間判定不合格（${escapeHtml(rejection)}）。</p>`:`<div class="ux-review-edit">
-        <div class="ux-review-field"><label for="qmember-${r.id}">是否為會員</label><select id="qmember-${r.id}" data-qmember="${r.id}">${membershipCheckOptions(membershipCheckStatus(r))}</select></div>
-        <div class="ux-review-field"><label for="qstate-${r.id}">審查結果</label><select id="qstate-${r.id}" data-qstate="${r.id}">${options.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select></div>
-        <div class="ux-review-field ux-review-note"><label for="qnote-${r.id}">處理說明</label><textarea id="qnote-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="例如已通知補正、補正期限已過">${escapeHtml(saved.review_note||'')}</textarea></div>
-        <div class="ux-review-save"><button type="button" class="btn btn-primary" data-qsave="${r.id}">儲存</button></div>
-      </div>`}
-      ${saved.reviewed_at?`<div class="ux-review-history">最近處理：${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</div>`:''}
-    </article>`}).join('')||'<div class="ux-review-empty">目前沒有符合此篩選條件的申請。</div>'}</div></div>`;
+    <p class="small correction-list-message" data-qualification-save-status role="status"></p>
+    <div class="ux-review-cases">${displayed.map(r=>renderQualificationReviewCard(r)).join('')||'<div class="ux-review-empty">目前沒有符合此篩選條件的申請。</div>'}</div></div>`;
   bindRegistrationLimitButtons(container);
   const sel=container.querySelector('#qualificationFilterV52');sel.value=currentFilter;sel.onchange=()=>{window.qualificationFocusId=null;window.qualificationFilterV52=sel.value;renderQualificationReview(container);};
   const back=container.querySelector('#exitFocusV53');if(back)back.onclick=()=>{window.qualificationFocusId=null;renderQualificationReview(container);};
@@ -7675,6 +7684,18 @@ async function renderQualificationReview(container){
   container.querySelector('#openCorrectionFromReview').onclick=()=>{
     document.querySelector('.records-function-tab[data-action-tab="correction"]')?.click();
   };
+  bindQualificationReviewEditors(container,async closed=>{
+    window.qualificationFocusId=null;
+    await renderQualificationReview(container);
+    showQualificationSaveStatus(container,closed);
+  });
+}
+function showQualificationSaveStatus(container,closed){
+  const status=container.querySelector('[data-qualification-save-status]');
+  if(status)status.textContent=closed?'已儲存審查結果，並結案 '+closed+' 項補正事項。':'已儲存審查結果。';
+}
+function bindQualificationReviewEditors(container,afterSave,onSaving){
+  let saving=false;
   container.querySelectorAll('[data-qsave]').forEach(btn=>{
     const id=btn.dataset.qsave;
     const state=container.querySelector(`[data-qstate="${id}"]`);
@@ -7690,17 +7711,31 @@ async function renderQualificationReview(container){
       if(member.value!=='verified'&&state.value==='qualified')state.value='pending';
     };
     btn.onclick=async()=>{
+      if(saving)return;
       const st=state.value,memberStatus=member.value,reason=note.value.trim();
       if(st==='invalid'&&!reason){alert('不合格時請填寫原因。');return;}
       if(st==='qualified'&&memberStatus!=='verified'){alert('審查合格須同時確認會員為「是」。');return;}
       if(st==='qualified'&&originalMember!=='verified'&&!confirm('請確認申請人已具會員資格。儲存後，審查結果將設為「合格」，會員欄將設為「是」。'))return;
+      saving=true;
       btn.disabled=true;
-      const {error}=await reviewDbClient().rpc('save_registration_qualification_v53',{
-        p_record_id:id,p_status:st,p_member_status:memberStatus,p_note:reason
-      });
-      if(error){alert('儲存失敗：'+error.message);btn.disabled=false;return;}
-      window.qualificationFocusId=null;
-      await renderQualificationReview(container);
+      onSaving?.(true);
+      let committed=false;
+      try{
+        const closed=await saveQualificationWithNotices(id,st,memberStatus,reason);
+        committed=true;
+        await afterSave(closed,id);
+      }catch(error){
+        if(committed){
+          console.error(error);
+          alert('資格審查已儲存，畫面更新失敗。請重新載入清單。');
+        }else{
+          alert('儲存失敗：'+(error?.message||'請稍後再試'));
+        }
+      }finally{
+        saving=false;
+        btn.disabled=false;
+        onSaving?.(false);
+      }
     };
   });
 }
@@ -7828,6 +7863,28 @@ function correctionNoticeTrackUpdate(track,sharedDeadline,status,note=track.prio
     kind:track.kind,record_ids:track.rows.map(row=>row.id),version:track.prior?.version||0,
     status,due_at:correctionNoticeTrackDeadline(track,sharedDeadline),note
   };
+}
+async function saveQualificationWithNotices(id,status,memberStatus,note){
+  const client=reviewDbClient();
+  let items=[];
+  if(status==='qualified'||status==='invalid'){
+    const record=allRecords.find(row=>String(row.id)===id);
+    if(!record)throw new Error('查不到此筆登記，請重新載入清單');
+    const key=personKey(record);
+    const {data,error}=await client.rpc('court_list_correction_notices_v1');
+    if(error)throw error;
+    if(!Array.isArray(data))throw new Error('補正通知資料格式不符');
+    const memberRows=allRecords.filter(row=>personKey(row)===key);
+    const [noticeCase]=buildCorrectionNoticeCases(memberRows,data);
+    items=(noticeCase?.tracks||[])
+      .filter(track=>track.prior?.status!=='closed'&&track.rows.some(row=>String(row.id)===id))
+      .map(track=>correctionNoticeTrackUpdate(track,null,track.prior?.status||'draft'));
+  }
+  const {data,error}=await client.rpc('court_save_qualification_with_notices_v1',{
+    p_record_id:id,p_status:status,p_member_status:memberStatus,p_note:note,p_notice_items:items
+  });
+  if(error)throw error;
+  return data;
 }
 async function saveCorrectionNoticeProgress(items){
   const {error}=await reviewDbClient().rpc('court_save_correction_notices_v1',{p_items:items});
@@ -8063,7 +8120,7 @@ function downloadCorrectionOutlook(recipient,draft,message,container){
   }
 }
 
-async function renderCorrectionNotices(container){
+async function renderCorrectionNotices(container,closed){
   container.innerHTML='<div class="small" role="status">正在讀取補正通知…</div>';
   try{
     await loadQualificationReviews();
@@ -8079,6 +8136,8 @@ async function renderCorrectionNotices(container){
     correctionNoticeView.deadline=deadline.data||null;
     const cases=buildCorrectionNoticeCases(allRecords,Array.isArray(notices.data)?notices.data:[]);
     drawCorrectionNoticeList(container,cases,templates);
+    if(closed!==undefined)showQualificationSaveStatus(container,closed);
+    return {cases,templates};
   }catch{
     if(!container.isConnected||recordsActionTab!=='correction')return;
     container.innerHTML='<div class="msg error">補正通知暫時無法載入，請確認登入與資料權限。 <button type="button" class="btn btn-gray btn-compact">重新載入</button></div>';
@@ -8121,6 +8180,7 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
         <button type="button" id="reloadCorrectionNotices" class="btn btn-gray btn-compact">重新載入</button>
         <span class="small">共 ${filtered.length} 位申請人</span>
       </form>
+      <p class="small correction-list-message" data-qualification-save-status role="status"></p>
       ${rows.length?'<p class="small">開啟 Outlook 後，可在內文按 Ctrl+A，再按 Ctrl+V 貼上表格版。</p>':''}
       ${rows.length?`<div class="table-wrap"><table><thead><tr><th>申請人</th><th>登記序號</th><th>補正事項與進度</th><th>操作</th></tr></thead>
         <tbody>${rows.map(({caseData,tracks,emails},i)=>`<tr data-correction-list-row="${i}">
@@ -8196,7 +8256,6 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
   if(prev)prev.onclick=()=>{correctionNoticeView.page--;drawCorrectionNoticeList(container,cases,templates);};
   if(next)next.onclick=()=>{correctionNoticeView.page++;drawCorrectionNoticeList(container,cases,templates);};
   const deadlineUnsaved=()=>deadlineButton.disabled||deadlineInput.value!==correctionNoticeDateInput(correctionNoticeView.deadline);
-  let openingNotice=false;
   let savingProgress=false;
   container.querySelectorAll('[data-correction-list-row]').forEach(row=>{
     const {caseData,tracks,emails}=rows[Number(row.dataset.correctionListRow)];
@@ -8227,28 +8286,9 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
       void openCorrectionOutlook(email,buildCorrectionEmail(caseData,items,templates),message);
     };
     const details=row.querySelector('[data-open-correction-notice]');
-    details.onclick=async()=>{
-      if(openingNotice||savingProgress)return;
-      if(tracks.length&&(deadlineUnsaved()||tracks.some(track=>!correctionNoticeTrackDeadline(track,correctionNoticeView.deadline)))){
-        message.textContent='請先儲存清單上方的統一回覆期限。';
-        return;
-      }
-      if(!tracks.length){
-        openCorrectionNotice(caseData,container,{},details);
-        return;
-      }
-      openingNotice=true;
-      details.disabled=true;
-      try{
-        const loaded=await loadCorrectionEmailTemplates();
-        if(details.isConnected&&!savingProgress)openCorrectionNotice(caseData,container,loaded,details);
-      }catch(error){
-        console.error(error);
-        if(details.isConnected)message.textContent='無法載入補件通知文字，請稍後重試。';
-      }finally{
-        openingNotice=false;
-        details.disabled=false;
-      }
+    details.onclick=()=>{
+      if(savingProgress)return;
+      openCorrectionNotice(caseData,container,templates,details);
     };
 
     row.querySelectorAll('[data-correction-list-status]').forEach(select=>{
@@ -8307,7 +8347,7 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
     });
   });
 }
-function openCorrectionNotice(caseData,container,templates,opener){
+function openCorrectionNotice(caseData,container,templates,opener,reviewRefresh){
   const dialog=document.createElement('dialog');
   dialog.className='modal-card court-details-dialog correction-notice-dialog';
   dialog.setAttribute('aria-labelledby','correctionNoticeTitle');
@@ -8318,6 +8358,15 @@ function openCorrectionNotice(caseData,container,templates,opener){
       <form method="dialog"><button class="btn btn-gray btn-compact" autofocus>關閉</button></form></header>
     <div class="court-details-body correction-notice-body">
       ${caseData.nameConflict?'<p class="msg error">同一會員識別有不同姓名。請先核對登記資料及收件人。</p>':''}
+      <section class="ux-review-panel ux-review-simple" aria-labelledby="correctionQualificationTitle">
+        <h4 id="correctionQualificationTitle">資格審查</h4>
+        <label for="correctionQualificationRecord">登記序號
+          <select id="correctionQualificationRecord">${caseData.rows.map(record=>
+            `<option value="${escapeHtml(String(record.id))}">${escapeHtml(compactRecordCode(record))}｜${escapeHtml(record.name||'未填姓名')}｜${escapeHtml(correctionNoticeSlot(record))}</option>`).join('')}</select>
+        </label>
+        <p class="small correction-list-message" data-qualification-save-status role="status"></p>
+        <div id="correctionQualificationEditor"></div>
+      </section>
       <section class="correction-notice-preview" id="correctionNoticeDraft" hidden>
         <h4>信件草稿</h4>
         <p class="small" id="correctionDraftSummary"></p>
@@ -8392,7 +8441,7 @@ function openCorrectionNotice(caseData,container,templates,opener){
   const refreshDraft=()=>{
     copyMessage.textContent='';
     const items=readItems().filter(item=>item.included);
-    if(!items.length||items.some(item=>!item.due_at)){
+    if(!templates||!items.length||items.some(item=>!item.due_at)){
       activeDraft=null;
       updateOutlookActions();
       draftBody.replaceChildren();
@@ -8456,11 +8505,72 @@ function openCorrectionNotice(caseData,container,templates,opener){
       }
     };
   }
-  dialog.querySelectorAll('[data-review-correction-record]').forEach(button=>{
-    button.onclick=()=>{dialog.close();openQualificationRecord(button.dataset.reviewCorrectionRecord);};
-  });
+  const recordSelect=find('#correctionQualificationRecord');
+  const qualificationEditor=find('#correctionQualificationEditor');
+  let correctionSaving=false;
   const save=find('#saveCorrectionTracking');
+  const setCorrectionSaving=busy=>{
+    correctionSaving=busy;
+    recordSelect.disabled=busy;
+    save.disabled=busy;
+    const reviewSave=qualificationEditor.querySelector('[data-qsave]');
+    if(reviewSave)reviewSave.disabled=busy;
+  };
+  const showReview=()=>{
+    const record=caseData.rows.find(row=>String(row.id)===recordSelect.value);
+    if(!record)return;
+    qualificationEditor.innerHTML=renderQualificationReviewCard(record,'correction-q','儲存審查結果');
+    bindRegistrationLimitButtons(qualificationEditor);
+    bindQualificationReviewEditors(qualificationEditor,async(closed,id)=>{
+      if(!container.isConnected||recordsActionTab!=='correction')return;
+      const trackingEdits=new Map(dialog.isConnected?readItems().flatMap(item=>{
+        const prior=caseData.tracks.find(track=>track.kind===item.kind).prior;
+        const noteChanged=item.note!==(prior?.note||'');
+        const statusChanged=item.status!==(prior?.status||'draft');
+        return noteChanged||statusChanged?[[item.kind,{note:noteChanged?item.note:undefined,status:statusChanged?item.status:undefined}]]:[];
+      }):[]);
+      const refreshed=await renderCorrectionNotices(container,closed);
+      if(!dialog.isConnected)return;
+      if(!refreshed){
+        showQualificationSaveStatus(dialog,closed);
+        message.textContent='請關閉視窗並重新載入清單。';
+        qualificationEditor.querySelector('[data-qsave]')?.remove();
+        return;
+      }
+      const updated=refreshed.cases.find(next=>next.key===caseData.key);
+      dialog.close();
+      if(updated&&(trackingEdits.size||updated.tracks.some(track=>track.prior?.status!=='closed'))){
+        const button=container.querySelector(`[data-correction-related-record="${CSS.escape(id)}"]`);
+        const newOpener=button?.closest('tr')?.querySelector('[data-open-correction-notice]')||opener;
+        openCorrectionNotice(updated,container,refreshed.templates||templates,newOpener,{closed,id,trackingEdits});
+      }
+    },setCorrectionSaving);
+  };
+  const openRecord=caseData.rows.find(record=>['pending','correction'].includes(qualificationState(record))
+    &&String(record.id)!==reviewRefresh?.id);
+  recordSelect.value=String((openRecord||caseData.rows.find(record=>String(record.id)===reviewRefresh?.id)||caseData.rows[0]).id);
+  recordSelect.onchange=showReview;
+  showReview();
+  if(reviewRefresh){
+    showQualificationSaveStatus(dialog,reviewRefresh.closed);
+    for(const [kind,edit] of reviewRefresh.trackingEdits){
+      const field=find(`[data-correction-track="${kind}"]`);
+      if(!field)continue;
+      if(edit.note!==undefined)field.querySelector('[data-correction-note]').value=edit.note;
+      const status=field.querySelector('[data-correction-status]');
+      if([...status.options].some(option=>option.value===edit.status))status.value=edit.status;
+    }
+  }
+  dialog.querySelectorAll('[data-review-correction-record]').forEach(button=>{
+    button.onclick=()=>{
+      if(correctionSaving)return;
+      recordSelect.value=button.dataset.reviewCorrectionRecord;
+      showReview();
+      recordSelect.focus();
+    };
+  });
   save.onclick=async()=>{
+    if(correctionSaving)return;
     const items=readItems().filter(({kind,status,note})=>{
       const prior=caseData.tracks.find(track=>track.kind===kind).prior;
       return status!==(prior?.status||'draft')||note!==(prior?.note||'');
@@ -8470,14 +8580,15 @@ function openCorrectionNotice(caseData,container,templates,opener){
       message.textContent='請先到清單上方儲存統一回覆期限。';
       return;
     }
-    save.disabled=true;
+    setCorrectionSaving(true);
     try{
       await saveCorrectionNoticeProgress(items.map(({included,...item})=>item));
       dialog.close();
       await renderCorrectionNotices(container);
     }catch(error){
       message.textContent=error?.code==='40001'?'案件已由其他承辦人更新。請關閉視窗並重新載入。':'無法儲存通知進度：'+(error?.message||'請稍後重試');
-      save.disabled=false;
+    }finally{
+      setCorrectionSaving(false);
     }
   };
   dialog.showModal();
