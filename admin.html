@@ -5397,6 +5397,7 @@ body .ux-review-edit{align-items:end}
   .correction-notice-buttons{display:flex;gap:8px;flex-wrap:wrap}
   .correction-list-track,.correction-list-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
   .correction-list-track+.correction-list-track{margin-top:8px}
+  .correction-list-serials{display:flex;flex-wrap:wrap;gap:4px 8px;min-width:100px;max-width:16rem}
   .correction-list-track select,.correction-list-actions select{width:auto;max-width:100%}
   .correction-list-actions select{width:min(100%,16rem)}
   .correction-list-message{margin:6px 0 0}
@@ -6270,10 +6271,11 @@ function courtSharedPhoneCell(r){
  if(count<2||getRegistrationLimitEvidence(r).length)return '';
  return `<button type="button" class="court-phone-relations" data-shared-phone-id="${escapeHtml(String(r.id))}" title="查看相關登記及異常，筆數包含目前登記">關聯 ${count} 筆</button>`;
 }
-function openCourtSharedPhoneRelations(recordId){
+function openCourtSharedPhoneRelations(recordId,additionalRows=[]){
  const record=allRecords.find(r=>String(r.id)===String(recordId));
  if(!record)return;
- const rows=courtRelatedRecords(record).sort((a,b)=>
+ const related=new Map([...additionalRows,...courtRelatedRecords(record)].map(row=>[String(row.id),row]));
+ const rows=[...related.values()].sort((a,b)=>
    (new Date(a.registered_at||0)-new Date(b.registered_at||0)) ||
    compactRecordCode(a).localeCompare(compactRecordCode(b)));
  const stateLabel={qualified:'合格',pending:'待確認',correction:'待補正',invalid:'不合格'};
@@ -7849,13 +7851,13 @@ const correctionNoticeRegistrationFormat=new Intl.DateTimeFormat('sv-SE',{
   timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
 });
 function correctionNoticeEmailTable(records){
-  const headers=['登記序號','會館','場地','使用目的','申請時段','登記日期','登記時間'];
+  const headers=['登記序號','姓名','會館','場地','使用目的','申請時段','登記日期','登記時間'];
   const rows=records.map(record=>{
     const registered=new Date(record.registered_at||'');
     const [date,time]=Number.isNaN(registered.getTime())?['','']:correctionNoticeRegistrationFormat.format(registered).split(' ');
     const location=recordLocation(record);
     const slot=[record.day_of_week,record.time_slot].filter(Boolean).join(' ');
-    return [compactRecordCode(record),location==='北投'?'北投會館':location,courtVenueLabel(record),courtUsage(record),
+    return [compactRecordCode(record),maskPublicName(record.name,'O')||'未記錄',location==='北投'?'北投會館':location,courtVenueLabel(record),courtUsage(record),
       slot||'未記錄',date?date.replaceAll('-','/'):'未記錄',time||'未記錄'];
   });
   const cellStyle='border:1px solid #a9b8cb;padding:7px 9px;vertical-align:top;text-align:left;';
@@ -7961,11 +7963,11 @@ function buildCorrectionEmail(caseData,items,templates){
   }
   return {subject,body:text.join('\n\n'),html:html.join(''),serial:serials[0]||''};
 }
-function correctionOutlookComposeLink(recipient,draft){
+function correctionOutlookComposeLink(recipient,draft,includeBody){
   const address=encodeURIComponent(recipient).replace('%40','@');
   const subject=encodeURIComponent(draft.subject.replace(/[\r\n]+/g,' '));
-  const body=encodeURIComponent(draft.body.replace(/\r\n|\r|\n/g,'\r\n'));
-  return 'mailto:'+address+'?subject='+subject+'&body='+body;
+  const body=includeBody?'&body='+encodeURIComponent(draft.body.replace(/\r\n|\r|\n/g,'\r\n')):'';
+  return 'mailto:'+address+'?subject='+subject+body;
 }
 function correctionOutlookDraftFile(recipient,draft){
   if(!recipient||/[\r\n]/.test(recipient))throw new Error('缺少有效的收件信箱');
@@ -8022,6 +8024,24 @@ async function copyCorrectionEmailBody(draft){
   }
   await navigator.clipboard.writeText(draft.body);
   return false;
+}
+
+async function openCorrectionOutlook(recipient,draft,message,button){
+  if(!recipient||!draft||button.dataset.openingOutlook)return;
+  button.dataset.openingOutlook='true';
+  try{
+    const copiedTable=await copyCorrectionEmailBody(draft).catch(()=>false);
+    if(!button.isConnected)return;
+    window.location.href=correctionOutlookComposeLink(recipient,draft,!copiedTable);
+    message.textContent=copiedTable
+      ?'已複製內文與表格，請在 Outlook 內文按 Ctrl+V 貼上。'
+      :'已帶入純文字，表格版可使用「下載 Outlook 草稿」。';
+  }catch(error){
+    console.error(error);
+    message.textContent='無法開啟郵件視窗，請使用「下載 Outlook 草稿」。';
+  }finally{
+    delete button.dataset.openingOutlook;
+  }
 }
 
 async function renderCorrectionNotices(container){
@@ -8082,9 +8102,14 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
         <button type="button" id="reloadCorrectionNotices" class="btn btn-gray btn-compact">重新載入</button>
         <span class="small">共 ${filtered.length} 位申請人</span>
       </form>
-      ${rows.length?`<div class="table-wrap"><table><thead><tr><th>申請人</th><th>補正事項與進度</th><th>操作</th></tr></thead>
+      ${rows.length?`<div class="small">開啟 Outlook 後，在內文按 Ctrl+V 貼上含表格的信件。</div>
+      <div class="table-wrap"><table><thead><tr><th>申請人</th><th>登記序號</th><th>補正事項與進度</th><th>操作</th></tr></thead>
         <tbody>${rows.map(({caseData,tracks,emails},i)=>`<tr data-correction-list-row="${i}">
           <td><strong>${escapeHtml(caseData.name)}</strong><div class="small">${caseData.rows.length} 筆相關登記</div></td>
+          <td><div class="correction-list-serials">${caseData.rows.map(record=>{
+            const code=compactRecordCode(record);
+            return code==='—'?'':`<button type="button" class="court-phone-relations" data-correction-related-record="${escapeHtml(String(record.id))}" aria-label="查看 ${escapeHtml(code)} 的關聯登記">${escapeHtml(code)}</button>`;
+          }).join('')||'—'}</div></td>
           <td>${caseData.tracks.map(track=>{
             const current=track.prior?.status||'draft';
             return `<div class="correction-list-track"><strong>${CORRECTION_NOTICE_KINDS[track.kind]}</strong>
@@ -8159,6 +8184,9 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
     const message=row.querySelector('[data-correction-list-message]');
     const outlook=row.querySelector('[data-correction-list-outlook]');
     const recipient=row.querySelector('[data-correction-list-recipient]');
+    row.querySelectorAll('[data-correction-related-record]').forEach(button=>{
+      button.onclick=()=>openCourtSharedPhoneRelations(button.dataset.correctionRelatedRecord,caseData.rows);
+    });
     if(recipient){
       recipient.onchange=()=>{
         outlook.disabled=!templates||!recipient.value;
@@ -8177,13 +8205,8 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
         message.textContent='請先儲存清單上方的統一回覆期限。';
         return;
       }
-      try{
-        window.location.href=correctionOutlookComposeLink(email,buildCorrectionEmail(caseData,items,templates));
-        message.textContent='請在 Outlook 確認信件後寄出，再更新通知進度。';
-      }catch(error){
-        console.error(error);
-        message.textContent='無法開啟郵件視窗，請從「查看補正」使用信件草稿。';
-      }
+      const draft=buildCorrectionEmail(caseData,items,templates);
+      void openCorrectionOutlook(email,draft,message,outlook);
     };
     const details=row.querySelector('[data-open-correction-notice]');
     details.onclick=async()=>{
@@ -8289,7 +8312,7 @@ function openCorrectionNotice(caseData,container,templates,opener){
           <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionSubject">複製主旨</button>
           <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionRecipient" disabled>複製收件 Email</button>
         </div>
-        <p class="small">直接開啟會帶入純文字。下載草稿可保留表格格式。</p>
+        <p class="small">直接開啟後，在 Outlook 內文按 Ctrl+V 貼上表格。也可下載已填好內文的草稿。</p>
         <p class="small" id="correctionDraftCopyMessage" role="status" aria-live="polite"></p>
         <div id="correctionDraftBodyLabel" class="correction-draft-body-label">內文</div>
         <div id="correctionDraftBody" class="correction-draft-body" role="region" aria-labelledby="correctionDraftBodyLabel" tabindex="0"></div>
@@ -8381,16 +8404,7 @@ function openCorrectionNotice(caseData,container,templates,opener){
     copyMessage.textContent='';
     updateOutlookActions();
   });
-  openOutlook.onclick=()=>{
-    if(!activeDraft||!recipient.value)return;
-    try{
-      window.location.href=correctionOutlookComposeLink(recipient.value,activeDraft);
-      copyMessage.textContent='請在 Outlook 確認信件後寄出。若未開啟，請確認預設郵件程式。';
-    }catch(error){
-      console.error(error);
-      copyMessage.textContent='無法開啟郵件撰寫視窗。請下載 Outlook 草稿或使用複製功能。';
-    }
-  };
+  openOutlook.onclick=()=>void openCorrectionOutlook(recipient.value,activeDraft,copyMessage,openOutlook);
   downloadOutlook.onclick=()=>{
     if(!activeDraft||!recipient.value)return;
     try{
@@ -9669,13 +9683,12 @@ function maskPhoneForNotice(phone){
 }
 
 // SP88 公開抽籤：單一場次一份 Excel；序號與後台顯示一致（英數6碼），原始完整序號留在資料庫。
-function maskLotteryPublicName(value){
+function maskPublicName(value,mask='○'){
   const s=String(value||'').trim().replace(/\s+/g,'');
   if(!s) return '';
   const chars=Array.from(s);
-  if(chars.length===1) return chars[0]+'○';
-  if(chars.length===2) return chars[0]+'○';
-  return chars[0]+'○'.repeat(chars.length-2)+chars[chars.length-1];
+  if(chars.length<=2) return chars[0]+mask;
+  return chars[0]+mask.repeat(chars.length-2)+chars[chars.length-1];
 }
 function getLotteryPhoneLast3(record){
   // Go 會員為會員綁定手機；會館會員為登記聯絡手機。匯入時均存為 record.phone。
@@ -9716,7 +9729,7 @@ async function exportPendingLotteryWorkbook(stages){
     const rows=[];
     for(const r of [...eligible].sort((a,b)=>String(a.serial_number||'').localeCompare(String(b.serial_number||'')))){
       const serial=compactRecordCode(r);
-      const name=maskLotteryPublicName(r.name);
+      const name=maskPublicName(r.name);
       const last3=getLotteryPhoneLast3(r);
       if(!/^[A-Z0-9]{6}$/.test(serial)||!name||!last3){errors.push(`${stage.venue} ${stage.day} ${stage.time}：序號 ${serial||'(空白)'} 缺少姓名、合法手機或序號`);continue;}
       if((ownersByCode.get(serial)?.size||0)>1){errors.push(`${stage.venue} ${stage.day} ${stage.time}：6碼序號 ${serial} 對應多筆不同原始登記序號，為避免對錯人請先處理`);continue;}
@@ -9769,7 +9782,7 @@ function buildReviewNoticeGroups(records){
       continue;
     }
     const serial=compactRecordCode(record);
-    const name=maskLotteryPublicName(record.name);
+    const name=maskPublicName(record.name);
     const last3=getLotteryPhoneLast3(record);
     if(!venue||!days.includes(day)||!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(time)||!usage||usage==='待確認'||!name||!last3||!/^[A-Z0-9]{6}$/.test(serial)){
       group.incomplete++;
