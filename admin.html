@@ -5396,7 +5396,13 @@ body .ux-review-edit{align-items:end}
   .unified-review-detail[hidden],[data-unified-draft-content][hidden]{display:none!important}
   .unified-review-detail>td{padding:12px 16px!important;background:#f8fafc}
   .unified-review-fields{display:grid;gap:10px}
-  .unified-case-statuses{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(170px,100%),1fr));gap:12px;margin-top:12px;}
+  .unified-case-statuses{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(min(13em,100%),1fr));
+    align-items:start;
+    gap:12px;
+    margin-top:12px;
+  }
   .unified-case-statuses>div,.unified-case-statuses label,.unified-case-note{min-width:0;}
   .unified-case-note{display:grid;gap:6px;margin:12px 0;}
   .unified-case-note textarea{width:100%;resize:vertical;}
