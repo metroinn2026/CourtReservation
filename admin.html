@@ -5392,7 +5392,9 @@ body .ux-review-edit{align-items:end}
   .unified-review-deadline{margin:0 0 10px}
   .unified-review-deadline summary,.unified-notice-section summary{cursor:pointer;font-weight:650}
   .unified-review-deadline summary span{margin-left:10px;font-weight:400}
+  #recordsWorkspace .unified-review-table-wrap{overflow:auto!important;-webkit-overflow-scrolling:touch}
   .unified-review-table td{vertical-align:top}
+  .unified-review-mobile-label{display:none}
   .unified-review-detail[hidden],[data-unified-draft-content][hidden]{display:none!important}
   .unified-review-detail>td{padding:12px 16px!important;background:#f8fafc}
   .unified-review-fields{display:grid;gap:10px}
@@ -5424,6 +5426,28 @@ body .ux-review-edit{align-items:end}
     padding:14px;border:1px solid #cad8e6;border-radius:10px;background:#fff;line-height:1.65;margin-bottom:10px}
   .correction-draft-body table{min-width:720px}
   .correction-draft-body:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  @media(max-width:860px){
+    #recordsWorkspace .unified-review-panel>.unified-review-table-wrap{overflow:visible!important}
+    .unified-review-table,.unified-review-table>tbody{display:block;width:100%;min-width:0}
+    .unified-review-table>thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+    .unified-review-table [data-unified-review-row]{
+      display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;
+      padding:12px;background:#f8fafc;border-top:1px solid #dce5ef;
+    }
+    .unified-review-table [data-unified-review-row]:first-child{border-top:0}
+    .unified-review-table [data-unified-review-row]>td:is(:first-child,:nth-child(4),:last-child){grid-column:1/-1}
+    .unified-review-table>tbody>.unified-review-detail:not([hidden]){display:block}
+    #recordsWorkspace .unified-review-table>tbody>tr>td{
+      display:block;min-width:0;padding:0!important;border:0!important;white-space:normal;overflow-wrap:anywhere;
+    }
+    #recordsWorkspace .unified-review-table>tbody>.unified-review-detail>td{padding:12px!important}
+    #recordsWorkspace .unified-review-table tr:hover>td{background:transparent!important}
+    .unified-review-mobile-label{display:block;color:#64748b;font-weight:700;margin-bottom:3px}
+    .unified-review-table .correction-list-serials{min-width:0}
+    .unified-review-fields,.unified-case-statuses,.unified-review-fields .correction-notice-fields{grid-template-columns:minmax(0,1fr)}
+    .unified-review-fields select,.unified-review-fields input:not([type="checkbox"]){min-width:0;width:100%;max-width:100%}
+    .unified-review-fields button{white-space:normal}
+  }
 </style>
 </head>
 <body>
@@ -8156,7 +8180,7 @@ async function renderUnifiedReviewList(container,feedback){
     container.innerHTML=`<div class="panel admin-inner-section">
       <p class="small" role="status">${warning} 以下顯示系統偵測的異常原因。</p>
       <button type="button" class="btn btn-gray btn-compact" id="reloadUnifiedReadOnly">重新載入</button>
-      <div class="table-wrap"><table><thead><tr><th>申請人</th><th>登記序號</th><th>異常原因</th></tr></thead>
+      <div class="table-wrap unified-review-table-wrap"><table><thead><tr><th>申請人</th><th>登記序號</th><th>異常原因</th></tr></thead>
       <tbody>${readOnly.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(compactRecordCode(r))}</td><td>${escapeHtml(qualificationIssueTypes(r).join('、'))}</td></tr>`).join('')||'<tr><td colspan="3">目前沒有系統偵測到的異常案件。</td></tr>'}</tbody></table></div>
     </div>`;
     container.querySelector('#reloadUnifiedReadOnly').onclick=()=>void renderUnifiedReviewList(container);
@@ -8203,9 +8227,9 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
       </form>
     </details>
     <p class="small correction-list-message" id="unifiedReviewStatus" role="status"></p>
-    ${rows.length?`<div class="table-wrap"><table class="unified-review-table"><thead><tr>
-      <th>申請人／登記序號</th><th>異常原因</th><th>資格審查</th><th>補正通知</th><th>操作</th>
-    </tr></thead><tbody>${rows.map((item,index)=>renderUnifiedReviewRow(item,index,now,templates)).join('')}</tbody></table></div>`:
+    ${rows.length?`<div class="table-wrap unified-review-table-wrap"><table class="unified-review-table" role="table"><thead role="rowgroup"><tr role="row">
+      <th role="columnheader" scope="col">申請人／登記序號</th><th role="columnheader" scope="col">異常原因</th><th role="columnheader" scope="col">資格審查</th><th role="columnheader" scope="col">補正通知</th><th role="columnheader" scope="col">操作</th>
+    </tr></thead><tbody role="rowgroup">${rows.map((item,index)=>renderUnifiedReviewRow(item,index,now,templates)).join('')}</tbody></table></div>`:
       '<div class="flat-empty">目前沒有符合條件的案件。</div>'}
     ${pages>1?`<div class="pager">
       <button type="button" class="btn btn-gray btn-compact" id="unifiedReviewPrev" ${view.page===1?'disabled':''}>上一頁</button>
@@ -8344,22 +8368,22 @@ function renderUnifiedReviewRow(item,index,now,templates){
   for(const row of item.rows){const state=qualificationState(row);stats[state]=(stats[state]||0)+1;}
   const review=QUALIFICATION_REVIEW_OPTIONS.map(([key,label])=>stats[key]
     ? `<span class="tag review-${key}">${label}${item.rows.length>1?' '+stats[key]+' 筆':''}</span>`:'').join(' ');
-  return `<tr data-unified-review-row="${index}">
-    <td><strong>${escapeHtml(item.name)}</strong>
+  return `<tr role="row" data-unified-review-row="${index}">
+    <td role="cell"><strong>${escapeHtml(item.name)}</strong>
       <div class="correction-list-serials">${item.rows.map(record=>{
         const code=compactRecordCode(record);
         return code==='—'?'':`<button type="button" class="court-phone-relations" data-correction-related-record="${escapeHtml(String(record.id))}" aria-label="查看 ${escapeHtml(code)} 的關聯登記">${escapeHtml(code)}</button>`;
       }).join('')||'—'}</div></td>
-    <td>${reasons.length?escapeHtml(reasons.join('、')):'—'}</td>
-    <td><div class="unified-review-badges">${review}</div></td>
-    <td>${item.tracks.map(track=>`<div class="unified-review-notice-status">
+    <td role="cell"><span class="unified-review-mobile-label" aria-hidden="true">異常原因</span>${reasons.length?escapeHtml(reasons.join('、')):'—'}</td>
+    <td role="cell"><span class="unified-review-mobile-label" aria-hidden="true">資格審查</span><div class="unified-review-badges">${review}</div></td>
+    <td role="cell"><span class="unified-review-mobile-label" aria-hidden="true">補正通知</span>${item.tracks.map(track=>`<div class="unified-review-notice-status">
       <span>${CORRECTION_NOTICE_KINDS[track.kind]}</span><span class="tag gray">${escapeHtml(correctionNoticeTrackLabel(track,now))}</span>
       </div>`).join('')||'—'}</td>
-    <td><div class="correction-list-actions">
+    <td role="cell"><div class="correction-list-actions">
       <button type="button" class="btn btn-primary btn-compact" data-unified-review-expand aria-expanded="false" aria-controls="unifiedReviewDetail-${index}">展開處理</button>
       ${mailUnavailable?`<span class="small">${escapeHtml(mailUnavailable)}</span>`:'<button type="button" class="btn btn-gray btn-compact" data-unified-outlook>開啟 Outlook</button>'}
       </div><p class="small correction-list-message" data-unified-row-status role="status"></p></td>
-  </tr><tr class="unified-review-detail" id="unifiedReviewDetail-${index}" hidden><td colspan="5" data-unified-detail-content></td></tr>`;
+  </tr><tr role="row" class="unified-review-detail" id="unifiedReviewDetail-${index}" hidden><td role="cell" colspan="5" data-unified-detail-content></td></tr>`;
 }
 function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
   const view=correctionNoticeView;
