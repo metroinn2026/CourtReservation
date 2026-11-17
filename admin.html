@@ -7872,10 +7872,10 @@ const CORRECTION_EMAIL_DUPLICATE_TEXT=[
   '經查您的登記資料有重複情形，請於 {重複登記期限}（臺灣時間）前回覆本信，註明欲保留的登記序號。逾期未回覆，本館將依登記時間及各場地登記上限，保留最早送出的第一筆，其餘重複登記不具抽籤資格。'
 ];
 const CORRECTION_EMAIL_MEMBERSHIP_TEXT=[
-  '依登記規定，申請人須具備台北捷運 Go App 會員或北投會館有效會員資格，並於申請時擇一填寫會員類別。',
-  '目前查無您登記所填的會員資料。請於 {會員補件期限}（臺灣時間）前完成補正，並回覆本信註明表內登記序號，供本館查核。',
-  '登記為台北捷運 Go App 會員者，請確認會員綁定手機與登記手機一致。尚未完成註冊者，請以登記手機完成註冊及綁定。',
-  '登記為北投會館會員者，請於回覆時說明會員資格或登記資料需更正之處，供本館核對。',
+  '依登記規定，申請人須具備台北捷運 GO 會員或北投會館有效會員資格，並於申請時擇一填寫會員類別。',
+  '目前查無您登記時填寫的會員資料。請使用您原始登記的聯絡手機號碼註冊台北捷運 GO 會員。完成註冊後，請於 {會員補件期限}（臺灣時間）前回覆本信，告知已完成註冊並註明表內登記序號，供本館查核，以保留抽籤資格。',
+  'Android 下載\nhttps://play.google.com/store/apps/details?id=tw.com.trtc.is.android05&hl=zh_TW',
+  'iOS 下載\nhttps://apps.apple.com/tw/app/%E5%8F%B0%E5%8C%97%E6%8D%B7%E9%81%8Bgo/id997212021',
   '逾期未完成補正，視同放棄本次抽籤資格。'
 ];
 const CORRECTION_EMAIL_SIGNATURE=[
@@ -7929,8 +7929,12 @@ function buildCorrectionEmail(caseData,items,templates){
   const text=[],html=[];
   const paragraph=(value,heading=false)=>{
     text.push(value);
+    const lines=value.split(/\r?\n/).map(line=>{
+      const escaped=escapeHtml(line);
+      return /^https:\/\/[^\s<>"']+$/.test(line)?`<a href="${escaped}">${escaped}</a>`:escaped;
+    });
     html.push('<p style="margin:0 0 10px;line-height:1.65;">'+(heading?'<strong>':'')
-      +escapeHtml(value).replace(/\n/g,'<br>')+(heading?'</strong>':'')+'</p>');
+      +lines.join('<br>')+(heading?'</strong>':'')+'</p>');
   };
   const addTable=(rows,reasonsByRecord)=>{
     const table=correctionNoticeEmailTable(rows,reasonsByRecord);
