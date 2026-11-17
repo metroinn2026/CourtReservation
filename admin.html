@@ -7869,14 +7869,23 @@ const correctionNoticeRegistrationFormat=new Intl.DateTimeFormat('sv-SE',{
   timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
 });
 function correctionNoticeEmailTable(records,reasonsByRecord){
-  const headers=['登記序號','姓名','會館','場地','使用目的','申請時段','登記日期','登記時間'];
+  const headers=['登記序號','姓名','手機末三碼','會館','場地','使用目的','申請時段','登記日期','登記時間'];
   if(reasonsByRecord)headers.push('補正事項');
   const rows=records.map(record=>{
     const registered=new Date(record.registered_at||'');
     const [date,time]=Number.isNaN(registered.getTime())?['','']:correctionNoticeRegistrationFormat.format(registered).split(' ');
     const location=recordLocation(record);
     const slot=[record.day_of_week,record.time_slot].filter(Boolean).join(' ');
-    const cells=[compactRecordCode(record),maskPublicName(record.name,'O')||'未記錄',location==='北投'?'北投會館':location,courtVenueLabel(record),courtUsage(record),
+    const memberType=memberIdentityType(record);
+    let phoneLast3='';
+    if(memberType==='Go會員'){
+      const goLast4=String(record.member_identifier_last4??'').trim();
+      phoneLast3=/^\d{4}$/.test(goLast4)?goLast4.slice(-3):getLotteryPhoneLast3(record);
+    }else if(memberType==='會館會員'){
+      phoneLast3=getLotteryPhoneLast3(record);
+    }
+    const cells=[compactRecordCode(record),maskPublicName(record.name,'O')||'未記錄',phoneLast3||'未記錄',
+      location==='北投'?'北投會館':location,courtVenueLabel(record),courtUsage(record),
       slot||'未記錄',date?date.replaceAll('-','/'):'未記錄',time||'未記錄'];
     if(reasonsByRecord)cells.push(reasonsByRecord.get(String(record.id)).join('、'));
     return cells;
