@@ -11168,14 +11168,11 @@ function renderLotteryResult(result,title,locked){
 function renderSettingsPage(){
   const frontFields={
     rules_content:{label:'登記辦法',fieldLabel:'前台登記辦法',editor:'rules'},
-    register_notice:{label:'前台提醒',fieldLabel:'前台提醒文字',editor:'short'}
-  };
-  const lotteryFields={
+    register_notice:{label:'前台提醒',fieldLabel:'前台提醒文字',editor:'short'},
     winner_template:{label:'中籤通知',fieldLabel:'中籤通知模板',editor:'template'},
     waitlist_template:{label:'備取通知',fieldLabel:'備取通知模板',editor:'template'},
     loser_template:{label:'未中籤通知',fieldLabel:'未中籤通知模板',editor:'template'}
   };
-  const backFields={...CORRECTION_EMAIL_TYPES,...lotteryFields};
   const panel=document.getElementById('content');
   panel.innerHTML=`
     <div class="panel compact-page-card settings-compact-card">
@@ -11263,8 +11260,8 @@ function renderSettingsPage(){
         <textarea id="settingsNoticeBody" class="settings-editor settings-editor-template" rows="16" required aria-describedby="settingsNoticeBodyHelp">${escapeHtml(values.body)}</textarea>
       `;
     }else{
-      const field=frontFields[key]??lotteryFields[key];
-      const tokens=area==='back'
+      const field=frontFields[key];
+      const tokens=field.editor==='template'
         ? '<details class="settings-token-help"><summary>可用代碼</summary><div>{name}、{phone}、{venue}、{day}、{time}、{status}、{serial_number}</div></details>'
         : '';
       editor.innerHTML=`
@@ -11281,7 +11278,7 @@ function renderSettingsPage(){
       button.classList.toggle('active',active);
       button.setAttribute('aria-pressed',String(active));
     }
-    const fields=area==='front'?frontFields:backFields;
+    const fields=area==='front'?frontFields:CORRECTION_EMAIL_TYPES;
     typeBar.innerHTML=Object.entries(fields).map(([key,field])=>{
       const active=key===currentKey();
       return `<button type="button" class="admin-tab${active?' active':''}" data-settings-type="${key}" aria-pressed="${active}">${field.label}</button>`;
