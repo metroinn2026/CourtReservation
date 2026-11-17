@@ -7937,7 +7937,48 @@ function buildCorrectionEmail(caseData,items,templates){
       }
     }
   }
-  return {subject,body:text.join('\n\n'),html:html.join('')};
+  return {subject,body:text.join('\n\n'),html:html.join(''),serial:serials[0]||''};
+}
+function correctionOutlookDraftFile(recipient,draft){
+  if(!recipient||/[\r\n]/.test(recipient))throw new Error('缺少有效的收件信箱');
+  const encoder=new TextEncoder();
+  const encodeBase64=bytes=>{
+    let binary='';
+    for(let offset=0;offset<bytes.length;offset+=8192){
+      binary+=String.fromCharCode(...bytes.subarray(offset,offset+8192));
+    }
+    return btoa(binary);
+  };
+  // Fold the subject at Unicode character boundaries so Outlook decodes each MIME word.
+  const subjectWords=[];
+  let word='';
+  let byteCount=0;
+  for(const character of draft.subject.replace(/[\r\n]+/g,' ')){
+    const size=encoder.encode(character).length;
+    if(byteCount+size>42){
+      subjectWords.push(word);
+      word='';
+      byteCount=0;
+    }
+    word+=character;
+    byteCount+=size;
+  }
+  if(word)subjectWords.push(word);
+  const subject=subjectWords.map(part=>'=?UTF-8?B?'+encodeBase64(encoder.encode(part))+'?=').join('\r\n ');
+  const html='<!doctype html><html lang="zh-TW"><head><meta charset="UTF-8"></head><body>'+draft.html+'</body></html>';
+  const body=encodeBase64(encoder.encode(html)).match(/.{1,76}/g).join('\r\n');
+  return [
+    'X-Unsent: 1',
+    'To: '+recipient,
+    'Subject: '+subject,
+    'Date: '+new Date().toUTCString().replace(/GMT$/,'+0000'),
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    body,
+    ''
+  ].join('\r\n');
 }
 async function copyCorrectionEmailBody(draft){
   if(typeof ClipboardItem==='function'&&navigator.clipboard?.write){
@@ -8106,12 +8147,15 @@ function openCorrectionNotice(caseData,container,templates,opener){
         <p class="small" id="correctionDraftSummary"></p>
         <label>收件 Email<select id="correctionDraftRecipient"></select></label>
         <label>主旨<input id="correctionDraftSubject" readonly></label>
+        <div class="correction-notice-buttons">
+          <button type="button" class="btn btn-primary btn-compact" id="downloadCorrectionOutlook" disabled>下載 Outlook 草稿</button>
+          <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionDraft">複製內文</button>
+          <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionSubject">複製主旨</button>
+          <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionRecipient" disabled>複製收件 Email</button>
+        </div>
+        <p class="small" id="correctionDraftCopyMessage" role="status" aria-live="polite"></p>
         <div id="correctionDraftBodyLabel" class="correction-draft-body-label">內文</div>
         <div id="correctionDraftBody" class="correction-draft-body" role="region" aria-labelledby="correctionDraftBodyLabel" tabindex="0"></div>
-        <div class="correction-notice-buttons"><button type="button" class="btn btn-primary btn-compact" id="copyCorrectionDraft">複製內文</button>
-          <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionSubject">複製主旨</button>
-          <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionRecipient" disabled>複製收件 Email</button></div>
-        <p class="small" id="correctionDraftCopyMessage" role="status" aria-live="polite"></p>
       </section>
       <details><summary>涉及的登記（共 ${caseData.rows.length} 筆）</summary>
         <ul class="correction-notice-records">${caseData.rows.map(r=>`<li><div><strong>${escapeHtml(compactRecordCode(r))}</strong>　${escapeHtml(correctionNoticeSlot(r))}
@@ -8154,6 +8198,8 @@ function openCorrectionNotice(caseData,container,templates,opener){
   const preview=find('#correctionNoticeDraft');
   const draftBody=find('#correctionDraftBody');
   const copyMessage=find('#correctionDraftCopyMessage');
+  const recipient=find('#correctionDraftRecipient');
+  const downloadOutlook=find('#downloadCorrectionOutlook');
   let activeDraft=null;
   const readItems=()=>caseData.tracks.map(track=>{
     const field=find(`[data-correction-track="${track.kind}"]`);
@@ -8170,19 +8216,20 @@ function openCorrectionNotice(caseData,container,templates,opener){
     const items=readItems().filter(item=>item.included);
     if(!items.length||items.some(item=>!item.due_at)){
       activeDraft=null;
+      downloadOutlook.disabled=true;
       draftBody.replaceChildren();
       preview.hidden=true;
       return;
     }
     const rows=correctionNoticeDraftRows(caseData,items);
     const emails=correctionNoticeEmails(rows);
-    const recipient=find('#correctionDraftRecipient');
     const selected=recipient.value;
     recipient.innerHTML=(emails.length===1?'':`<option value="">${emails.length?'請選擇收件信箱':'請核對收件信箱'}</option>`)
       +emails.map(email=>`<option value="${escapeHtml(email)}">${escapeHtml(email)}</option>`).join('');
     recipient.value=emails.includes(selected)?selected:emails.length===1?emails[0]:'';
     find('#copyCorrectionRecipient').disabled=!emails.length;
     activeDraft=buildCorrectionEmail(caseData,items,templates);
+    downloadOutlook.disabled=!recipient.value;
     find('#correctionDraftSummary').textContent=items.map(item=>CORRECTION_NOTICE_KINDS[item.kind]).join('、')+'，共 '+rows.length+' 筆相關登記';
     find('#correctionDraftSubject').value=activeDraft.subject;
     draftBody.innerHTML=activeDraft.html;
@@ -8193,6 +8240,28 @@ function openCorrectionNotice(caseData,container,templates,opener){
     field.addEventListener('change',refreshDraft);
   });
   refreshDraft();
+  recipient.addEventListener('change',()=>{
+    copyMessage.textContent='';
+    downloadOutlook.disabled=!activeDraft||!recipient.value;
+  });
+  downloadOutlook.onclick=()=>{
+    if(!activeDraft||!recipient.value)return;
+    try{
+      const eml=correctionOutlookDraftFile(recipient.value,activeDraft);
+      const link=document.createElement('a');
+      const url=URL.createObjectURL(new Blob([eml],{type:'message/rfc822'}));
+      link.href=url;
+      link.download='補正通知'+(activeDraft.serial?'_'+activeDraft.serial:'')+'.eml';
+      dialog.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      copyMessage.textContent='請用 Outlook 開啟下載的 .eml，確認寄件帳號與內容後寄出。';
+    }catch(error){
+      console.error(error);
+      copyMessage.textContent='無法下載草稿。請重試，或使用複製功能貼到 Outlook。';
+    }
+  };
   find('#copyCorrectionDraft').onclick=async()=>{
     if(!activeDraft)return;
     try{
