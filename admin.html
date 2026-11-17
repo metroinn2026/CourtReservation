@@ -5426,8 +5426,8 @@ body .ux-review-edit{align-items:end}
     padding:14px;border:1px solid #cad8e6;border-radius:10px;background:#fff;line-height:1.65;margin-bottom:10px}
   .correction-draft-body table{min-width:720px}
   .correction-draft-body:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-  @media(max-width:860px){
-    #recordsWorkspace .unified-review-panel>.unified-review-table-wrap{overflow:visible!important}
+  /* Chrome 的電腦版網站模式可能使用較寬的排版視窗，觸控裝置仍採用直向版面。 */
+  @media(max-width:1024px),(hover:none) and (pointer:coarse){
     .unified-review-table,.unified-review-table>tbody{display:block;width:100%;min-width:0}
     .unified-review-table>thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
     .unified-review-table [data-unified-review-row]{
@@ -5445,6 +5445,7 @@ body .ux-review-edit{align-items:end}
     .unified-review-mobile-label{display:block;color:#64748b;font-weight:700;margin-bottom:3px}
     .unified-review-table .correction-list-serials{min-width:0}
     .unified-review-fields,.unified-case-statuses,.unified-review-fields .correction-notice-fields{grid-template-columns:minmax(0,1fr)}
+    .unified-review-fields>*,.unified-review-fields .correction-notice-fields>*,.unified-case-statuses>label{min-width:0}
     .unified-review-fields select,.unified-review-fields input:not([type="checkbox"]){min-width:0;width:100%;max-width:100%}
     .unified-review-fields button{white-space:normal}
   }
