@@ -5395,6 +5395,12 @@ body .ux-review-edit{align-items:end}
   .correction-notice-body input:not([type=checkbox]),.correction-notice-body select,.correction-notice-body textarea{width:100%;min-width:0}
   .correction-notice-body textarea{resize:vertical}
   .correction-notice-buttons{display:flex;gap:8px;flex-wrap:wrap}
+  .correction-list-track,.correction-list-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+  .correction-list-track+.correction-list-track{margin-top:8px}
+  .correction-list-track select,.correction-list-actions select{width:auto;max-width:100%}
+  .correction-list-actions select{width:min(100%,16rem)}
+  .correction-list-message{margin:6px 0 0}
+  .correction-list-message:empty{display:none}
   .correction-notice-preview h4{margin:0 0 10px}
   .correction-notice-preview{border-top:1px solid #dce5ef;padding-top:14px}
   .correction-draft-body-label{display:block;margin:0 0 5px}
@@ -7706,6 +7712,12 @@ const CORRECTION_NOTICE_STATUS={
   replied:'已回覆',
   closed:'已處理'
 };
+const CORRECTION_NOTICE_TRANSITIONS={
+  draft:['draft','sent','closed'],
+  sent:['sent','replied','closed'],
+  replied:['replied','closed'],
+  closed:['closed']
+};
 const correctionNoticeView={filter:'active',query:'',page:1,deadline:null};
 
 function correctionNoticeRowsKey(rows){
@@ -7808,6 +7820,16 @@ function correctionNoticeDraftableTracks(caseData){
 function correctionNoticeTrackDeadline(track,sharedDeadline){
   if(track.prior?.sent_at||track.prior?.status==='closed')return track.prior?.due_at||null;
   return sharedDeadline||track.prior?.due_at||null;
+}
+function correctionNoticeTrackUpdate(track,sharedDeadline,status,note=track.prior?.note||''){
+  return {
+    kind:track.kind,record_ids:track.rows.map(row=>row.id),version:track.prior?.version||0,
+    status,due_at:correctionNoticeTrackDeadline(track,sharedDeadline),note
+  };
+}
+async function saveCorrectionNoticeProgress(items){
+  const {error}=await reviewDbClient().rpc('court_save_correction_notices_v1',{p_items:items});
+  if(error)throw error;
 }
 function correctionNoticeDraftRows(caseData,items){
   const kinds=new Set(items.map(item=>item.kind));
@@ -8007,23 +8029,24 @@ async function renderCorrectionNotices(container){
   try{
     await loadQualificationReviews();
     const client=reviewDbClient();
-    const [notices,deadline]=await Promise.all([
+    const [notices,deadline,templates]=await Promise.all([
       client.rpc('court_list_correction_notices_v1'),
-      client.rpc('court_correction_notice_deadline_v1')
+      client.rpc('court_correction_notice_deadline_v1'),
+      loadCorrectionEmailTemplates().catch(error=>{console.error(error);return null;})
     ]);
     if(!container.isConnected||recordsActionTab!=='correction')return;
     if(notices.error||deadline.error)throw notices.error||deadline.error;
     if(!qualificationReviewsLoaded)throw new Error('請先完成資格資料授權');
     correctionNoticeView.deadline=deadline.data||null;
     const cases=buildCorrectionNoticeCases(allRecords,Array.isArray(notices.data)?notices.data:[]);
-    drawCorrectionNoticeList(container,cases);
+    drawCorrectionNoticeList(container,cases,templates);
   }catch{
     if(!container.isConnected||recordsActionTab!=='correction')return;
     container.innerHTML='<div class="msg error">補正通知暫時無法載入，請確認登入與資料權限。 <button type="button" class="btn btn-gray btn-compact">重新載入</button></div>';
     container.querySelector('button').onclick=()=>void renderCorrectionNotices(container);
   }
 }
-function drawCorrectionNoticeList(container,cases){
+function drawCorrectionNoticeList(container,cases,templates,savedTrack){
   const now=Date.now();
   const statuses={active:'待處理',draft:'待通知',sent:'已寄出',replied:'已回覆',overdue:'逾期待處理',closed:'已處理',all:'全部'};
   const query=correctionNoticeView.query.trim().toLowerCase();
@@ -8036,7 +8059,11 @@ function drawCorrectionNoticeList(container,cases){
   });
   const pages=Math.max(1,Math.ceil(filtered.length/40));
   correctionNoticeView.page=Math.min(correctionNoticeView.page,pages);
-  const rows=filtered.slice((correctionNoticeView.page-1)*40,correctionNoticeView.page*40);
+  const rows=filtered.slice((correctionNoticeView.page-1)*40,correctionNoticeView.page*40).map(caseData=>{
+    const tracks=correctionNoticeDraftableTracks(caseData);
+    const emails=correctionNoticeEmails(correctionNoticeDraftRows(caseData,tracks));
+    return {caseData,tracks,emails};
+  });
   container.innerHTML=`
     <section class="panel admin-inner-section correction-notice-panel">
       <div class="admin-section-head"><h3>補正通知</h3></div>
@@ -8056,9 +8083,27 @@ function drawCorrectionNoticeList(container,cases){
         <span class="small">共 ${filtered.length} 位申請人</span>
       </form>
       ${rows.length?`<div class="table-wrap"><table><thead><tr><th>申請人</th><th>補正事項與進度</th><th>操作</th></tr></thead>
-        <tbody>${rows.map((caseData,i)=>`<tr><td><strong>${escapeHtml(caseData.name)}</strong><div class="small">${caseData.rows.length} 筆相關登記</div></td>
-          <td>${caseData.tracks.map(track=>`<div><strong>${CORRECTION_NOTICE_KINDS[track.kind]}</strong>　${correctionNoticeTrackLabel(track,now)}${track.prior?.due_at?`<span class="small"> · 期限 ${escapeHtml(correctionNoticeDate(track.prior.due_at))}</span>`:''}</div>`).join('')}</td>
-          <td><button type="button" class="btn btn-gray btn-compact" data-open-correction-notice="${i}">${correctionNoticeDraftableTracks(caseData).length?'開啟信件草稿':'查看補正'}</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="flat-empty">目前沒有符合條件的補正通知。</div>'}
+        <tbody>${rows.map(({caseData,tracks,emails},i)=>`<tr data-correction-list-row="${i}">
+          <td><strong>${escapeHtml(caseData.name)}</strong><div class="small">${caseData.rows.length} 筆相關登記</div></td>
+          <td>${caseData.tracks.map(track=>{
+            const current=track.prior?.status||'draft';
+            return `<div class="correction-list-track"><strong>${CORRECTION_NOTICE_KINDS[track.kind]}</strong>
+              <select data-correction-list-status="${track.kind}" aria-label="${escapeHtml(caseData.name)} ${CORRECTION_NOTICE_KINDS[track.kind]}通知進度" ${current==='closed'?'disabled':''}>
+                ${CORRECTION_NOTICE_TRANSITIONS[current].map(status=>`<option value="${status}" ${status===current?'selected':''}>${CORRECTION_NOTICE_STATUS[status]}</option>`).join('')}
+              </select>
+              ${correctionNoticeTrackStatus(track,now)==='overdue'?'<span class="small">逾期</span>':''}
+              ${track.prior?.due_at?`<span class="small">期限 ${escapeHtml(correctionNoticeDate(track.prior.due_at))}</span>`:''}
+            </div>`;
+          }).join('')}</td>
+          <td><div class="correction-list-actions">
+            ${tracks.length?`${emails.length>1?`<select data-correction-list-recipient aria-label="${escapeHtml(caseData.name)} 收件信箱">
+              <option value="">選擇收件信箱</option>${emails.map(email=>`<option value="${escapeHtml(email)}">${escapeHtml(email)}</option>`).join('')}
+            </select>`:''}
+            <button type="button" class="btn btn-primary btn-compact" data-correction-list-outlook ${emails.length===1&&templates?'':'disabled'}>開啟 Outlook</button>`:''}
+            <button type="button" class="btn btn-gray btn-compact" data-open-correction-notice>查看補正</button>
+          </div>
+          <p class="small correction-list-message" data-correction-list-message role="status">${tracks.length&&!emails.length?'無可用的收件信箱':tracks.length&&!templates?'信件模板讀取失敗，請重新載入。':''}</p>
+          </td></tr>`).join('')}</tbody></table></div>`:'<div class="flat-empty">目前沒有符合條件的補正通知。</div>'}
       ${pages>1?`<div class="pager"><button type="button" class="btn btn-gray btn-compact" id="correctionNoticePrev" ${correctionNoticeView.page===1?'disabled':''}>上一頁</button>
         <span class="small">第 ${correctionNoticeView.page} / ${pages} 頁</span>
         <button type="button" class="btn btn-gray btn-compact" id="correctionNoticeNext" ${correctionNoticeView.page===pages?'disabled':''}>下一頁</button></div>`:''}
@@ -8092,49 +8137,133 @@ function drawCorrectionNoticeList(container,cases){
   };
   const search=container.querySelector('#correctionNoticeSearch');
   const filter=container.querySelector('#correctionNoticeFilter');
+  const searchInput=container.querySelector('#correctionNoticeQuery');
   const submit=()=>{
     correctionNoticeView.filter=filter.value;
-    correctionNoticeView.query=container.querySelector('#correctionNoticeQuery').value;
+    correctionNoticeView.query=searchInput.value;
     correctionNoticeView.page=1;
-    drawCorrectionNoticeList(container,cases);
+    drawCorrectionNoticeList(container,cases,templates);
   };
   search.onsubmit=event=>{event.preventDefault();submit();};
   filter.onchange=submit;
   container.querySelector('#reloadCorrectionNotices').onclick=()=>void renderCorrectionNotices(container);
   const prev=container.querySelector('#correctionNoticePrev');
   const next=container.querySelector('#correctionNoticeNext');
-  if(prev)prev.onclick=()=>{correctionNoticeView.page--;drawCorrectionNoticeList(container,cases);};
-  if(next)next.onclick=()=>{correctionNoticeView.page++;drawCorrectionNoticeList(container,cases);};
+  if(prev)prev.onclick=()=>{correctionNoticeView.page--;drawCorrectionNoticeList(container,cases,templates);};
+  if(next)next.onclick=()=>{correctionNoticeView.page++;drawCorrectionNoticeList(container,cases,templates);};
+  const deadlineUnsaved=()=>deadlineButton.disabled||deadlineInput.value!==correctionNoticeDateInput(correctionNoticeView.deadline);
   let openingNotice=false;
-  container.querySelectorAll('[data-open-correction-notice]').forEach(button=>{
-    button.onclick=async()=>{
-      if(openingNotice)return;
-      const caseData=rows[Number(button.dataset.openCorrectionNotice)];
-      const tracks=correctionNoticeDraftableTracks(caseData);
-      if(tracks.length&&(deadlineButton.disabled
-        ||deadlineInput.value!==correctionNoticeDateInput(correctionNoticeView.deadline)
-        ||tracks.some(track=>!correctionNoticeTrackDeadline(track,correctionNoticeView.deadline)))){
-        deadlineMessage.textContent='請先儲存清單上方的統一回覆期限。';
-        deadlineInput.focus();
+  let savingProgress=false;
+  container.querySelectorAll('[data-correction-list-row]').forEach(row=>{
+    const {caseData,tracks,emails}=rows[Number(row.dataset.correctionListRow)];
+    const message=row.querySelector('[data-correction-list-message]');
+    const outlook=row.querySelector('[data-correction-list-outlook]');
+    const recipient=row.querySelector('[data-correction-list-recipient]');
+    if(recipient){
+      recipient.onchange=()=>{
+        outlook.disabled=!templates||!recipient.value;
+        if(templates)message.textContent='';
+      };
+      if(savedTrack?.caseKey===caseData.key&&emails.includes(savedTrack.email)){
+        recipient.value=savedTrack.email;
+        recipient.onchange();
+      }
+    }
+    if(outlook)outlook.onclick=()=>{
+      const email=recipient?recipient.value:emails[0];
+      if(!templates||!email)return;
+      const items=tracks.map(track=>({kind:track.kind,due_at:correctionNoticeTrackDeadline(track,correctionNoticeView.deadline)}));
+      if(deadlineUnsaved()||items.some(item=>!item.due_at)){
+        message.textContent='請先儲存清單上方的統一回覆期限。';
+        return;
+      }
+      try{
+        window.location.href=correctionOutlookComposeLink(email,buildCorrectionEmail(caseData,items,templates));
+        message.textContent='請在 Outlook 確認信件後寄出，再更新通知進度。';
+      }catch(error){
+        console.error(error);
+        message.textContent='無法開啟郵件視窗，請從「查看補正」使用信件草稿。';
+      }
+    };
+    const details=row.querySelector('[data-open-correction-notice]');
+    details.onclick=async()=>{
+      if(openingNotice||savingProgress)return;
+      if(tracks.length&&(deadlineUnsaved()||tracks.some(track=>!correctionNoticeTrackDeadline(track,correctionNoticeView.deadline)))){
+        message.textContent='請先儲存清單上方的統一回覆期限。';
         return;
       }
       if(!tracks.length){
-        openCorrectionNotice(caseData,container,{},button);
+        openCorrectionNotice(caseData,container,{},details);
         return;
       }
       openingNotice=true;
-      button.disabled=true;
+      details.disabled=true;
       try{
-        const templates=await loadCorrectionEmailTemplates();
-        if(button.isConnected)openCorrectionNotice(caseData,container,templates,button);
+        const loaded=await loadCorrectionEmailTemplates();
+        if(details.isConnected&&!savingProgress)openCorrectionNotice(caseData,container,loaded,details);
       }catch(error){
         console.error(error);
-        if(button.isConnected)alert('無法載入補件通知文字，請稍後重試。');
+        if(details.isConnected)message.textContent='無法載入補件通知文字，請稍後重試。';
       }finally{
         openingNotice=false;
-        button.disabled=false;
+        details.disabled=false;
       }
     };
+
+    row.querySelectorAll('[data-correction-list-status]').forEach(select=>{
+      if(savedTrack?.caseKey===caseData.key&&savedTrack.kind===select.dataset.correctionListStatus){
+        message.textContent=message.textContent?'進度已儲存。'+message.textContent:'進度已儲存。';
+        if(!select.disabled)select.focus({preventScroll:true});
+      }
+      select.onchange=async()=>{
+        const track=caseData.tracks.find(item=>item.kind===select.dataset.correctionListStatus);
+        const previous=track.prior?.status||'draft';
+        if(savingProgress||select.value===previous){select.value=previous;return;}
+        if(deadlineButton.disabled){
+          select.value=previous;
+          message.textContent='統一回覆期限儲存中，請稍後再更新進度。';
+          return;
+        }
+        const item=correctionNoticeTrackUpdate(track,correctionNoticeView.deadline,select.value);
+        if(['sent','replied'].includes(item.status)&&(!item.due_at||(!track.prior?.sent_at&&deadlineUnsaved()))){
+          select.value=previous;
+          message.textContent='請先儲存清單上方的統一回覆期限。';
+          return;
+        }
+        const deadlineDraft=deadlineInput.value;
+        const searchDraft=searchInput.value;
+        savingProgress=true;
+        const controls=[...container.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled)')];
+        controls.forEach(control=>{control.disabled=true;});
+        message.textContent='正在儲存進度…';
+        let saved=false;
+        try{
+          await saveCorrectionNoticeProgress([item]);
+          saved=true;
+          if(!row.isConnected||recordsActionTab!=='correction')return;
+          const {data,error}=await reviewDbClient().rpc('court_list_correction_notices_v1');
+          if(error)throw error;
+          if(!row.isConnected||recordsActionTab!=='correction')return;
+          if(!Array.isArray(data))throw new Error('補正通知資料格式不符');
+          const updatedCases=buildCorrectionNoticeCases(allRecords,data);
+          drawCorrectionNoticeList(container,updatedCases,templates,{caseKey:caseData.key,kind:track.kind,email:recipient?.value});
+          container.querySelector('#correctionNoticeSharedDeadline').value=deadlineDraft;
+          container.querySelector('#correctionNoticeQuery').value=searchDraft;
+        }catch(error){
+          if(!row.isConnected)return;
+          if(saved){
+            message.textContent='進度已儲存，清單更新失敗。請重新載入。';
+          }else{
+            select.value=previous;
+            message.textContent=error?.code==='40001'?'案件已由其他承辦人更新。請重新載入後核對。':'無法儲存通知進度：'+(error?.message||'請稍後重試');
+          }
+        }finally{
+          savingProgress=false;
+          controls.forEach(control=>{control.disabled=false;});
+          if(saved&&row.isConnected)select.disabled=true;
+        }
+      };
+    });
   });
 }
 function openCorrectionNotice(caseData,container,templates,opener){
@@ -8173,12 +8302,7 @@ function openCorrectionNotice(caseData,container,templates,opener){
       <div class="correction-notice-tracks">${caseData.tracks.map(track=>{
         const prior=track.prior;
         const current=prior?.status||'draft';
-        const allowed={
-          draft:['draft','sent','closed'],
-          sent:['sent','replied','closed'],
-          replied:['replied','closed'],
-          closed:['closed']
-        }[current];
+        const allowed=CORRECTION_NOTICE_TRANSITIONS[current];
         const draftable=draftableTracks.includes(track);
         const due=correctionNoticeTrackDeadline(track,sharedDeadline);
         return `<fieldset data-correction-track="${track.kind}"><legend>${CORRECTION_NOTICE_KINDS[track.kind]}</legend>
@@ -8219,10 +8343,9 @@ function openCorrectionNotice(caseData,container,templates,opener){
     const field=find(`[data-correction-track="${track.kind}"]`);
     return {
       included:field.querySelector('[data-include-correction]').checked,
-      kind:track.kind,record_ids:track.rows.map(r=>r.id),version:track.prior?.version||0,
-      status:field.querySelector('[data-correction-status]').value,
-      due_at:correctionNoticeTrackDeadline(track,sharedDeadline),
-      note:field.querySelector('[data-correction-note]').value.trim()
+      ...correctionNoticeTrackUpdate(track,sharedDeadline,
+        field.querySelector('[data-correction-status]').value,
+        field.querySelector('[data-correction-note]').value.trim())
     };
   });
   const refreshDraft=()=>{
@@ -8334,10 +8457,7 @@ function openCorrectionNotice(caseData,container,templates,opener){
     }
     save.disabled=true;
     try{
-      const {error}=await reviewDbClient().rpc('court_save_correction_notices_v1',{
-        p_items:items.map(({included,...item})=>item)
-      });
-      if(error)throw error;
+      await saveCorrectionNoticeProgress(items.map(({included,...item})=>item));
       dialog.close();
       await renderCorrectionNotices(container);
     }catch(error){
