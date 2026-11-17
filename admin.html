@@ -7711,9 +7711,6 @@ function resetUnifiedReviewSelection(){
   Object.assign(correctionNoticeView,{page:1,focusId:null,expandedKey:null,recordId:null});
 }
 
-function correctionNoticeRowsKey(rows){
-  return rows.map(r=>String(r.id)).sort().join(',');
-}
 function correctionNoticeRecordOrder(a,b){
   return ((Date.parse(a.registered_at)||0)-(Date.parse(b.registered_at)||0))
     || String(a.serial_number||'').localeCompare(String(b.serial_number||''));
@@ -7745,19 +7742,11 @@ function buildCorrectionNoticeCases(records,savedNotices){
       openRows.push(row);
       if(result==='pending'||result==='correction')pendingRows.push(row);
     }
-    const duplicateGroups=new Map();
-    for(const row of pendingRows){
-      for(const group of getRegistrationLimitEvidence(row,openRows)){
-        const groupKey=correctionNoticeRowsKey(group.rows)+':'+group.max;
-        if(!duplicateGroups.has(groupKey))duplicateGroups.set(groupKey,{
-          ...group,rows:[...group.rows].sort(correctionNoticeRecordOrder)
-        });
-      }
-    }
     const membershipRows=pendingRows.filter(r=>membershipCheckStatus(r)==='not_member');
+    const duplicateRows=registrationLimitRows(pendingRows.flatMap(row=>getRegistrationLimitEvidence(row,openRows)));
     const tracks=[];
     for(const [kind,currentRows] of [
-      ['duplicate',registrationLimitRows([...duplicateGroups.values()])],
+      ['duplicate',duplicateRows],
       ['membership',membershipRows]
     ]){
       const prior=saved?.get(kind);
@@ -7769,7 +7758,7 @@ function buildCorrectionNoticeCases(records,savedNotices){
     }
     if(tracks.length){
       const rows=[...new Map(tracks.flatMap(track=>track.rows.map(row=>[String(row.id),row]))).values()].sort(correctionNoticeRecordOrder);
-      cases.push({key,name:rows[0].name||'姓名未填',rows,tracks,duplicateGroups:[...duplicateGroups.values()],
+      cases.push({key,name:rows[0].name||'姓名未填',rows,tracks,
         nameConflict:new Set(memberRows.map(r=>normalizeCourtMemberName(r.name)).filter(Boolean)).size>1});
     }
   }
@@ -7792,9 +7781,19 @@ const correctionNoticeTimeFormat=new Intl.DateTimeFormat('zh-TW',{
 const correctionNoticeInputFormat=new Intl.DateTimeFormat('sv-SE',{
   timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'
 });
+const correctionNoticeEmailDateFormat=new Intl.DateTimeFormat('zh-TW',{
+  timeZone:'Asia/Taipei',year:'numeric',month:'numeric',day:'numeric',weekday:'short',
+  hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+});
 function correctionNoticeDate(value){
   const date=new Date(value||'');
   return Number.isNaN(date.getTime())?'':correctionNoticeTimeFormat.format(date);
+}
+function correctionNoticeEmailDate(value){
+  const date=new Date(value||'');
+  if(Number.isNaN(date.getTime()))return '';
+  const parts=Object.fromEntries(correctionNoticeEmailDateFormat.formatToParts(date).map(part=>[part.type,part.value]));
+  return `${parts.year}/${parts.month}/${parts.day}（${parts.weekday.replace(/^週/,'')}） ${parts.hour}:${parts.minute}`;
 }
 function correctionNoticeDateInput(value){
   return value?correctionNoticeInputFormat.format(new Date(value)).replace(' ','T'):'';
@@ -7847,15 +7846,18 @@ function correctionNoticeEmails(rows){
 const correctionNoticeRegistrationFormat=new Intl.DateTimeFormat('sv-SE',{
   timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
 });
-function correctionNoticeEmailTable(records){
+function correctionNoticeEmailTable(records,reasonsByRecord){
   const headers=['登記序號','姓名','會館','場地','使用目的','申請時段','登記日期','登記時間'];
+  if(reasonsByRecord)headers.push('補正事項');
   const rows=records.map(record=>{
     const registered=new Date(record.registered_at||'');
     const [date,time]=Number.isNaN(registered.getTime())?['','']:correctionNoticeRegistrationFormat.format(registered).split(' ');
     const location=recordLocation(record);
     const slot=[record.day_of_week,record.time_slot].filter(Boolean).join(' ');
-    return [compactRecordCode(record),maskPublicName(record.name,'O')||'未記錄',location==='北投'?'北投會館':location,courtVenueLabel(record),courtUsage(record),
+    const cells=[compactRecordCode(record),maskPublicName(record.name,'O')||'未記錄',location==='北投'?'北投會館':location,courtVenueLabel(record),courtUsage(record),
       slot||'未記錄',date?date.replaceAll('-','/'):'未記錄',time||'未記錄'];
+    if(reasonsByRecord)cells.push(reasonsByRecord.get(String(record.id)).join('、'));
+    return cells;
   });
   const cellStyle='border:1px solid #a9b8cb;padding:7px 9px;vertical-align:top;text-align:left;';
   const html='<table border="1" cellspacing="0" cellpadding="7" style="border-collapse:collapse;width:100%;margin:6px 0 14px;">'
@@ -7864,42 +7866,39 @@ function correctionNoticeEmailTable(records){
   return {html,text:[headers,...rows].map(row=>row.join(' ｜ ')).join('\n')};
 }
 const CORRECTION_EMAIL_SUBJECT='【北投會館】116 年運動場域長期租借登記補正通知';
-const CORRECTION_EMAIL_INTRO=[
-  '{申請人姓名} 您好：',
-  '有關您申請北投會館 116 年運動場域長期租借，本次通知涉及 {登記筆數} 筆登記，說明如下。'
-];
+const CORRECTION_EMAIL_GREETING='{申請人姓名} 您好：';
 const CORRECTION_EMAIL_DUPLICATE_TEXT=[
-  '依登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段，每時段 2 小時，並須擇一填寫使用用途。桌球場每週不限登記時段，每時段 2 小時，B1、B2 可依開放時段複選。',
-  '本次登記資料核對時，同一會員於同一日、同一時段，無論登記何種球類或場地，僅得登記 1 筆。',
-  '經查有重複登記情形，本館將依送出時間保留最早送出的第一筆，其餘重複登記不列入本次抽籤。保留的登記仍須通過資格審查。',
-  '相關登記如下。如您認為登記資料有誤，請於 {重複登記期限}（臺灣時間）前回覆本信，並註明表內登記序號。表中的登記日期及時間為您送出登記的時間。',
-  '{重複登記明細表}'
+  '依本館 116 年運動場域長期租借登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段。',
+  '經查您的登記資料有重複情形，請於 {重複登記期限}（臺灣時間）前回覆本信，註明欲保留的登記序號。逾期未回覆，本館將依登記時間及各場地登記上限，保留最早送出的第一筆，其餘重複登記不具抽籤資格。'
 ];
 const CORRECTION_EMAIL_MEMBERSHIP_TEXT=[
   '依登記規定，申請人須具備台北捷運 Go App 會員或北投會館有效會員資格，並於申請時擇一填寫會員類別。',
   '目前查無您登記所填的會員資料。請於 {會員補件期限}（臺灣時間）前完成補正，並回覆本信註明表內登記序號，供本館查核。',
   '登記為台北捷運 Go App 會員者，請確認會員綁定手機與登記手機一致。尚未完成註冊者，請以登記手機完成註冊及綁定。',
   '登記為北投會館會員者，請於回覆時說明會員資格或登記資料需更正之處，供本館核對。',
-  '{會員登記明細表}',
   '逾期未完成補正，視同放棄本次抽籤資格。'
 ];
-const CORRECTION_EMAIL_SIGNATURE=['謝謝您的配合。','北投會館營運管理中心'];
+const CORRECTION_EMAIL_SIGNATURE=[
+  '回覆時間以回覆郵件所載寄出時間為準。',
+  '如有疑問，請洽北投會館營運管理中心林先生，電話 02-28930105#8317。',
+  '北投會館營運管理中心'
+];
 const CORRECTION_EMAIL_TYPES={
   duplicate:{
     label:'重複登記補件',
     tokens:['重複登記期限','重複登記明細表'],
-    body:[...CORRECTION_EMAIL_INTRO,'一、重複登記',...CORRECTION_EMAIL_DUPLICATE_TEXT,...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
+    body:[CORRECTION_EMAIL_GREETING,...CORRECTION_EMAIL_DUPLICATE_TEXT,'{重複登記明細表}',...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
   },
   membership:{
     label:'會員資格補件',
     tokens:['會員補件期限','會員登記明細表'],
-    body:[...CORRECTION_EMAIL_INTRO,'一、補正會員資格',...CORRECTION_EMAIL_MEMBERSHIP_TEXT,...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
+    body:[CORRECTION_EMAIL_GREETING,...CORRECTION_EMAIL_MEMBERSHIP_TEXT,'{會員登記明細表}',...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
   },
   combined:{
     label:'兩項合併補件',
-    tokens:['重複登記期限','重複登記明細表','會員補件期限','會員登記明細表'],
-    body:[...CORRECTION_EMAIL_INTRO,'一、重複登記',...CORRECTION_EMAIL_DUPLICATE_TEXT,
-      '二、一併補正會員資格',...CORRECTION_EMAIL_MEMBERSHIP_TEXT,...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
+    tokens:['重複登記期限','會員補件期限','相關登記明細表','重複登記明細表','會員登記明細表'],
+    body:[CORRECTION_EMAIL_GREETING,'一、重複登記',...CORRECTION_EMAIL_DUPLICATE_TEXT,
+      '二、會員資格補正',...CORRECTION_EMAIL_MEMBERSHIP_TEXT,'{相關登記明細表}',...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
   }
 };
 function correctionEmailTemplate(kind,templates){
@@ -7923,8 +7922,8 @@ function buildCorrectionEmail(caseData,items,templates){
   const values={
     '申請人姓名':caseData.name,
     '登記筆數':relatedRows.length,
-    '重複登記期限':correctionNoticeDate(duplicate?.due_at),
-    '會員補件期限':correctionNoticeDate(membership?.due_at)
+    '重複登記期限':correctionNoticeEmailDate(duplicate?.due_at),
+    '會員補件期限':correctionNoticeEmailDate(membership?.due_at)
   };
 
   const text=[],html=[];
@@ -7933,26 +7932,24 @@ function buildCorrectionEmail(caseData,items,templates){
     html.push('<p style="margin:0 0 10px;line-height:1.65;">'+(heading?'<strong>':'')
       +escapeHtml(value).replace(/\n/g,'<br>')+(heading?'</strong>':'')+'</p>');
   };
-  const addTable=rows=>{
-    const table=correctionNoticeEmailTable(rows);
+  const addTable=(rows,reasonsByRecord)=>{
+    const table=correctionNoticeEmailTable(rows,reasonsByRecord);
     text.push(table.text);
     html.push(table.html);
   };
-  const sections=template.body.split(/(\{重複登記明細表\}|\{會員登記明細表\})/);
+  const sections=template.body.split(/(\{重複登記明細表\}|\{會員登記明細表\}|\{相關登記明細表\})/);
   for(const section of sections){
-    if(section==='{重複登記明細表}'){
-      if(duplicate){
-        caseData.duplicateGroups.forEach((group,index)=>{
-          paragraph('第 '+(index+1)+' 組（'+group.label+'，共 '+group.rows.length+' 筆）',true);
-          addTable(group.rows);
-        });
+    if(section==='{重複登記明細表}'||section==='{會員登記明細表}'){
+      const item=section==='{重複登記明細表}'?duplicate:membership;
+      if(item)addTable(correctionNoticeDraftRows(caseData,[item]));
+    }else if(section==='{相關登記明細表}'){
+      const reasonsByRecord=new Map(relatedRows.map(row=>[String(row.id),[]]));
+      for(const item of items){
+        for(const row of correctionNoticeDraftRows(caseData,[item])){
+          reasonsByRecord.get(String(row.id)).push(CORRECTION_NOTICE_KINDS[item.kind]);
+        }
       }
-    }else if(section==='{會員登記明細表}'){
-      if(membership){
-        const rows=caseData.tracks.find(track=>track.kind==='membership').currentRows;
-        paragraph('相關登記（共 '+rows.length+' 筆）',true);
-        addTable(rows);
-      }
+      addTable(relatedRows,reasonsByRecord);
     }else{
       for(const line of section.trim().split(/\r?\n[ \t]*\r?\n/)){
         if(line.trim()){
@@ -8076,7 +8073,7 @@ function buildUnifiedReviewCases(records,savedNotices){
     const key=personKey(row);
     let item=cases.get(key);
     if(!item){
-      item={key,name:row.name||'姓名未填',rows:[],tracks:[],duplicateGroups:[],nameConflict:false};
+      item={key,name:row.name||'姓名未填',rows:[],tracks:[],nameConflict:false};
       cases.set(key,item);
     }
     if(!item.rows.some(record=>String(record.id)===id))item.rows.push(row);
