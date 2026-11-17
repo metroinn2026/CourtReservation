@@ -5849,6 +5849,7 @@ let closedSlotSettings = {};
 let capacityVersions = {};
 let systemSettings = {};
 let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', usage:'', day:'', time:'', anomaly:'', lotteryFilter:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
+let recordsFromAnomalyShortcut = false;
 let recordsActionTab = 'filter';
 let selectedRecordIds = new Set();
 let pendingRecordStatusChanges = new Map();
@@ -6791,9 +6792,7 @@ function renderCards(s){
   return `<div class="cards"><div class="stat"><div class="label">登記筆數</div><div class="num">${s.total}</div></div><div class="stat"><div class="label">登記人數</div><div class="num" style="color:var(--green)">${s.people}</div></div><div class="stat"><div class="label">總登記時數</div><div class="num" style="color:var(--orange)">${s.hours}</div></div><div class="stat" id="recordAnomalySummaryCard" style="cursor:pointer" title="前往異常檢核中心"><div class="label">涉及異常的登記</div><div class="num" style="font-size:28px;color:#9a3412">${anomalyCount} <span class="small">筆</span></div><div class="small">查看異常樣態</div></div></div>`;
 }
 function goToAnomalyCenter(){
-  currentPage='dashboard';
-  setActiveNav('dashboard');
-  renderDashboard();
+  renderPage('dashboard');
   setTimeout(()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'}),50);
 }
 function countSuspiciousPhones(){
@@ -6808,6 +6807,7 @@ function setActiveNav(page){
 }
 function renderPage(page){
   if(page==='accounts' && currentAdmin.role!=='super_admin'){ alert('此功能限超級管理員使用'); return; }
+  if(page!=='records' && recordsFromAnomalyShortcut) clearRecordFilters();
   currentPage=page; setActiveNav(page);
   if(page==='dashboard') renderDashboard();
   if(page==='records') renderRecordsPage();
@@ -7081,6 +7081,7 @@ function renderDashboard(){
   if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
 
   document.querySelectorAll('#anomalyCenter .anomaly-text-action').forEach(button=>button.onclick=()=>{
+    recordsFromAnomalyShortcut=true;
     recordsActionTab='filter';
     Object.assign(recordState,{q:'',location:'',venue:'',usage:'',day:'',time:'',
       anomaly:button.dataset.anomaly,lotteryFilter:'',page:1});
@@ -7328,6 +7329,13 @@ function renderCourtUsageOptions(venue, selected=''){
   return '<option value="">全部使用項目</option>'+availableCourtUsages(venue).map(u=>
     `<option value="${escapeHtml(u)}" ${u===selected?'selected':''}>${escapeHtml(u)}</option>`).join('');
 }
+function clearRecordFilters(){
+  recordsFromAnomalyShortcut=false;
+  Object.assign(recordState,{q:'',location:DEFAULT_LOCATION,venue:'',usage:'',day:'',time:'',
+    anomaly:'',lotteryFilter:'',page:1});
+  resetUnifiedReviewSelection();
+  selectedRecordIds.clear();
+}
 function renderRecordsPage(){
   if(recordsActionTab==='batch'||recordsActionTab==='import') recordsActionTab='filter';
   selectedRecordIds.clear();
@@ -7430,16 +7438,7 @@ function renderRecordsPage(){
 
   document.getElementById('applyFilterBtn').onclick=applyRecordFilters;
   document.getElementById('clearRecordFiltersBtn').onclick=()=>{
-    recordState.q='';
-    recordState.location=DEFAULT_LOCATION;
-    recordState.venue='';
-    recordState.usage='';
-    recordState.day='';
-    recordState.time='';
-    recordState.anomaly='';
-    recordState.page=1;
-    if(recordsActionTab==='review')resetUnifiedReviewSelection();
-    selectedRecordIds.clear();
+    clearRecordFilters();
     renderPage('records');
   };
 
@@ -7497,6 +7496,11 @@ function renderRecordsPage(){
     btn.onclick=()=>{
       closeCourtImportModal();
       recordsActionTab=btn.dataset.actionTab;
+      if(recordsFromAnomalyShortcut){
+        clearRecordFilters();
+        renderPage('records');
+        return;
+      }
       if(recordsActionTab==='review'&&correctionNoticeView.focusId)resetUnifiedReviewSelection();
       selectedRecordIds.clear();
       document.querySelectorAll('.records-function-tab').forEach(x=>x.classList.toggle('active',x===btn));
@@ -12622,6 +12626,10 @@ function initAdminNavigation(){
     button.onclick=()=>{
       const wasOpen=app.classList.contains('mobile-nav-open');
       setOpen(false,wasOpen);
+      if(button.dataset.page==='records'){
+        clearRecordFilters();
+        recordsActionTab='filter';
+      }
       renderPage(button.dataset.page);
       if(wasOpen)window.scrollTo(0,0);
     };
