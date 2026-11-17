@@ -7837,8 +7837,12 @@ function correctionNoticeEmailTable(records){
 function buildCorrectionEmail(caseData,items){
   const duplicate=items.find(x=>x.kind==='duplicate');
   const membership=items.find(x=>x.kind==='membership');
-  const subject='【北投會館】116 年運動場域長期租借登記補正通知';
-  const relatedCount=correctionNoticeDraftRows(caseData,items).length;
+  const relatedRows=correctionNoticeDraftRows(caseData,items);
+  const relatedCount=relatedRows.length;
+  const serials=[...new Set(relatedRows.map(compactRecordCode).filter(code=>code!=='—'))];
+  const visibleSerials=serials.slice(0,4).join('、');
+  const serialSummary=serials.length>4?visibleSerials+' 等 '+serials.length+' 筆':visibleSerials;
+  const subject='【北投會館】116 年運動場域長期租借登記補正通知'+(serialSummary?'｜登記序號 '+serialSummary:'');
   const text=[],html=[];
   const paragraph=(value,heading=false)=>{
     text.push(value);
