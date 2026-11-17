@@ -6314,7 +6314,7 @@ function openCourtSharedPhoneRelations(recordId,additionalRows=[]){
  showCourtDetailsDialog('關聯登記｜異常明細',body);
 }
 
-function buildAnomalySummary(records=allRecords){
+function buildAnomalySummary(records=allRecords,{pendingOnly=false}={}){
   const stages=new Map(getStageGroups().map(stage=>[stage.key,stage]));
   const memberRecords=new Map();
   for(const record of allRecords){
@@ -6328,10 +6328,16 @@ function buildAnomalySummary(records=allRecords){
   const typesFound=new Set();
   let hasNormal=false;
   for(const record of records){
-    const types=registrationReviewReasons(record,{
+    let types=registrationReviewReasons(record,{
       members:memberRecords.get(courtMemberIdentityKey(record)),
       stage:stages.get(stageKeyFromRecord(record))
     });
+    if(pendingOnly&&types.some(type=>COURT_ANOMALY_GROUPS.__registration__.types.includes(type))){
+      const state=qualificationState(record);
+      if(state==='qualified'||state==='invalid'){
+        types=types.filter(type=>!COURT_ANOMALY_GROUPS.__registration__.types.includes(type));
+      }
+    }
     if(!types.length)hasNormal=true;
     for(const type of types)typesFound.add(type);
     for(const pattern of patterns){
@@ -6344,7 +6350,7 @@ function buildAnomalySummary(records=allRecords){
   return {total:affectedIds.size,affectedIds,typesFound,hasNormal,patterns:patterns.filter(pattern=>pattern.recordIds.size)};
 }
 function renderAnomalyCenter(summary){
-  const rows=summary.patterns.map(pattern=>`
+  const rows=summary?.patterns.map(pattern=>`
     <div class="anomaly-flat-row">
       <div class="anomaly-flat-type">${escapeHtml(pattern.label)}</div>
       <div class="anomaly-flat-count">${pattern.recordIds.size} 筆登記</div>
@@ -6353,17 +6359,20 @@ function renderAnomalyCenter(summary){
         aria-label="${escapeHtml('查看'+pattern.label+'的登記')}">查看</button>
     </div>`).join('');
 
+  const contents=summary?`
+      <div class="anomaly-info-row">
+        <div class="small">資格類異常只列待審查及待補正的登記。同一筆若涉及多種異常，總數只算一次。</div>
+        <div class="anomaly-total-actions">
+          <div class="anomaly-total-line">共 ${summary.total} 筆待處理異常</div>
+          <button type="button" class="btn btn-gray btn-compact anomaly-text-action" data-anomaly="${ALL_ANOMALIES_FILTER}" ${summary.total?'':'disabled'}>查看全部待處理異常</button>
+        </div>
+      </div>
+      ${rows?`<div class="anomaly-flat-list">${rows}</div>`:'<div class="flat-empty">目前沒有待處理的異常登記。</div>'}`
+      :'<div class="flat-empty">資格審查資料尚未載入，暫無法顯示待處理筆數。</div>';
   return `
     <div class="panel admin-section-card dashboard-anomaly-card anomaly-center-clean" id="anomalyCenter">
       <div class="admin-section-head"><h3>異常檢核中心</h3></div>
-      <div class="anomaly-info-row">
-        <div class="small">各類列出目前符合檢核條件的登記，包含已審查案件。同一筆若涉及多種樣態，總數只算一次。 ${!qualificationReviewsLoaded?'會員查核資料尚未載入，統計暫不含會員異常。':''}</div>
-        <div class="anomaly-total-actions">
-          <div class="anomaly-total-line">共 ${summary.total} 筆登記涉及異常</div>
-          <button type="button" class="btn btn-gray btn-compact anomaly-text-action" data-anomaly="${ALL_ANOMALIES_FILTER}" ${summary.total?'':'disabled'}>查看全部異常</button>
-        </div>
-      </div>
-      ${rows?`<div class="anomaly-flat-list">${rows}</div>`:'<div class="flat-empty">目前未發現異常樣態。</div>'}
+      ${contents}
     </div>`;
 }
 
@@ -6895,7 +6904,7 @@ function renderDashboard(){
 
   const {open,overQuota,qualifiedOverQuota}=dashboardScheduleMetrics();
   const registeredPeople=countRegistrationPeople(allRecords);
-  const anomalySummary=buildAnomalySummary();
+  const anomalySummary=qualificationReviewsLoaded?buildAnomalySummary(allRecords,{pendingOnly:true}):null;
 
   const priority={'待抽籤':1,'待公告':2};
   const stageReviews=readDashboardStageReviews();
@@ -6986,9 +6995,9 @@ function renderDashboard(){
         <div class="dashboard-card-note">${overQuota===null?'名額設定尚未載入':qualifiedOverQuota===null?'資格審查尚未載入':`合格人數已超額 ${qualifiedOverQuota} 場`}</div>
       </button>
       <button type="button" class="stat dashboard-status-card anomaly" id="dashAnomalyCard">
-        <div class="dashboard-card-label">涉及異常的登記</div>
-        <div class="dashboard-card-num">${anomalySummary.total} <span class="dashboard-card-note">筆</span></div>
-        <div class="dashboard-card-note">同一筆登記只算一次</div>
+        <div class="dashboard-card-label">待處理異常登記</div>
+        <div class="dashboard-card-num">${anomalySummary?`${anomalySummary.total} <span class="dashboard-card-note">筆</span>`:'—'}</div>
+        <div class="dashboard-card-note">${anomalySummary?'同一筆登記只算一次':'資格審查尚未載入'}</div>
       </button>
     </div>
 
@@ -7235,11 +7244,13 @@ function getRecordsInScope(filters){
 function getFilteredRecords(){
   const records=getRecordsInScope(recordState);
   const anomaly=recordState.anomaly;
-  if(!anomaly)return sortRecords(records);
-  if(anomaly===ALL_ANOMALIES_FILTER){
-    const {affectedIds}=buildAnomalySummary(records);
-    return sortRecords(records.filter(r=>affectedIds.has(String(r.id))));
+  if(recordsFromAnomalyShortcut||anomaly===ALL_ANOMALIES_FILTER){
+    const summary=buildAnomalySummary(records,{pendingOnly:recordsFromAnomalyShortcut});
+    const recordIds=!anomaly||anomaly===ALL_ANOMALIES_FILTER?summary.affectedIds
+      :summary.patterns.find(pattern=>pattern.id===anomaly)?.recordIds;
+    return sortRecords(records.filter(r=>recordIds?.has(String(r.id))));
   }
+  if(!anomaly)return sortRecords(records);
 
   const pattern=COURT_ANOMALY_PATTERNS[anomaly];
   const group=COURT_ANOMALY_GROUPS[anomaly];
@@ -7252,7 +7263,14 @@ function getFilteredRecords(){
 }
 
 function availableRecordAnomalyOptions(filters){
-  const {total,patterns,typesFound,hasNormal}=buildAnomalySummary(getRecordsInScope(filters));
+  const {total,patterns,typesFound,hasNormal}=buildAnomalySummary(getRecordsInScope(filters),{pendingOnly:recordsFromAnomalyShortcut});
+  if(recordsFromAnomalyShortcut){
+    const options=[[ALL_ANOMALIES_FILTER,'全部待處理異常'],...patterns.map(({id,label})=>[id,label])];
+    const selected=recordState.anomaly;
+    const selectedPattern=COURT_ANOMALY_PATTERNS[selected];
+    if(selectedPattern&&!patterns.some(pattern=>pattern.id===selected))options.push([selected,selectedPattern.label]);
+    return options;
+  }
   const options=[['','全部狀態']];
   if(total)options.push([ALL_ANOMALIES_FILTER,'全部異常']);
   if(hasNormal)options.push(['__normal__','正常']);
@@ -7287,6 +7305,10 @@ function refreshRecordAnomalyOptions(selected,syncApplied=false){
 
 function currentRecordsScopeLabel(){
   const parts=[];
+  if(recordsFromAnomalyShortcut){
+    const pattern=COURT_ANOMALY_PATTERNS[recordState.anomaly];
+    parts.push(pattern?'待處理 '+pattern.label:'待處理異常');
+  }
   if(recordState.location) parts.push(locationLabel(recordState.location));
   if(recordState.venue) parts.push(courtVenueLabel({venue_type:recordState.venue}));
   if(recordState.usage) parts.push(recordState.usage);
@@ -8437,6 +8459,7 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
         await actions.refresh({
           key:item.key,savedId:['qualified','invalid'].includes(result)?recordId:null,message:success
         });
+        if(currentPage==='dashboard'&&courtAuthLoginActive&&!adminSigningOut)renderDashboard();
       }catch(error){
         message.textContent=committed?'資料已儲存，請重新載入清單。':error?.code==='40001'
           ?'案件已由其他承辦人更新。請重新載入後核對。'
