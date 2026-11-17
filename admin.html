@@ -8036,10 +8036,10 @@ async function openCorrectionOutlook(recipient,draft,message){
     window.location.href=correctionOutlookComposeLink(recipient,draft);
     message.textContent=copiedTable
       ?'已複製表格版。在 Outlook 內文按 Ctrl+A，再按 Ctrl+V 即可替換。'
-      :'已帶入純文字內文。若要表格版，請使用「下載表格草稿」。';
+      :'已帶入純文字內文。可從「查看補正」下載表格草稿。';
   }catch(error){
     console.error(error);
-    message.textContent='無法開啟郵件視窗，請使用「下載表格草稿」。';
+    message.textContent='無法開啟郵件視窗。可從「查看補正」下載表格草稿。';
   }finally{
     correctionOutlookOpening=false;
   }
@@ -8143,8 +8143,7 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
             ${tracks.length?`${emails.length>1?`<select data-correction-list-recipient aria-label="${escapeHtml(caseData.name)} 收件信箱">
               <option value="">選擇收件信箱</option>${emails.map(email=>`<option value="${escapeHtml(email)}">${escapeHtml(email)}</option>`).join('')}
             </select>`:''}
-            <button type="button" class="btn btn-primary btn-compact" data-correction-list-outlook ${emails.length===1&&templates?'':'disabled'}>開啟 Outlook</button>
-            <button type="button" class="btn btn-gray btn-compact" data-correction-list-download ${emails.length===1&&templates?'':'disabled'}>下載表格草稿</button>`:''}
+            <button type="button" class="btn btn-primary btn-compact" data-correction-list-outlook ${emails.length===1&&templates?'':'disabled'}>開啟 Outlook</button>`:''}
             <button type="button" class="btn btn-gray btn-compact" data-open-correction-notice>查看補正</button>
           </div>
           <p class="small correction-list-message" data-correction-list-message role="status">${tracks.length&&!emails.length?'無可用的收件信箱':tracks.length&&!templates?'信件模板讀取失敗，請重新載入。':''}</p>
@@ -8203,16 +8202,13 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
     const {caseData,tracks,emails}=rows[Number(row.dataset.correctionListRow)];
     const message=row.querySelector('[data-correction-list-message]');
     const outlook=row.querySelector('[data-correction-list-outlook]');
-    const download=row.querySelector('[data-correction-list-download]');
     const recipient=row.querySelector('[data-correction-list-recipient]');
     row.querySelectorAll('[data-correction-related-record]').forEach(button=>{
       button.onclick=()=>openCourtSharedPhoneRelations(button.dataset.correctionRelatedRecord,caseData.rows);
     });
     if(recipient){
       recipient.onchange=()=>{
-        const disabled=!templates||!recipient.value;
-        outlook.disabled=disabled;
-        download.disabled=disabled;
+        outlook.disabled=!templates||!recipient.value;
         if(templates)message.textContent='';
       };
       if(savedTrack?.caseKey===caseData.key&&emails.includes(savedTrack.email)){
@@ -8220,20 +8216,16 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
         recipient.onchange();
       }
     }
-    if(outlook){
-      const prepareDraft=action=>{
-        const email=recipient?recipient.value:emails[0];
-        if(!templates||!email)return;
-        const items=tracks.map(track=>({kind:track.kind,due_at:correctionNoticeTrackDeadline(track,correctionNoticeView.deadline)}));
-        if(deadlineUnsaved()||items.some(item=>!item.due_at)){
-          message.textContent='請先儲存清單上方的統一回覆期限。';
-          return;
-        }
-        action(email,buildCorrectionEmail(caseData,items,templates),message,document.body);
-      };
-      outlook.onclick=()=>prepareDraft(openCorrectionOutlook);
-      download.onclick=()=>prepareDraft(downloadCorrectionOutlook);
-    }
+    if(outlook)outlook.onclick=()=>{
+      const email=recipient?recipient.value:emails[0];
+      if(!templates||!email)return;
+      const items=tracks.map(track=>({kind:track.kind,due_at:correctionNoticeTrackDeadline(track,correctionNoticeView.deadline)}));
+      if(deadlineUnsaved()||items.some(item=>!item.due_at)){
+        message.textContent='請先儲存清單上方的統一回覆期限。';
+        return;
+      }
+      void openCorrectionOutlook(email,buildCorrectionEmail(caseData,items,templates),message);
+    };
     const details=row.querySelector('[data-open-correction-notice]');
     details.onclick=async()=>{
       if(openingNotice||savingProgress)return;
