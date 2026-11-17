@@ -7963,11 +7963,11 @@ function buildCorrectionEmail(caseData,items,templates){
   }
   return {subject,body:text.join('\n\n'),html:html.join(''),serial:serials[0]||''};
 }
-function correctionOutlookComposeLink(recipient,draft,includeBody){
+function correctionOutlookComposeLink(recipient,draft){
   const address=encodeURIComponent(recipient).replace('%40','@');
   const subject=encodeURIComponent(draft.subject.replace(/[\r\n]+/g,' '));
-  const body=includeBody?'&body='+encodeURIComponent(draft.body.replace(/\r\n|\r|\n/g,'\r\n')):'';
-  return 'mailto:'+address+'?subject='+subject+body;
+  const body=encodeURIComponent(draft.body.replace(/\r\n|\r|\n/g,'\r\n'));
+  return 'mailto:'+address+'?subject='+subject+'&body='+body;
 }
 function correctionOutlookDraftFile(recipient,draft){
   if(!recipient||/[\r\n]/.test(recipient))throw new Error('缺少有效的收件信箱');
@@ -8026,21 +8026,32 @@ async function copyCorrectionEmailBody(draft){
   return false;
 }
 
-async function openCorrectionOutlook(recipient,draft,message,button){
-  if(!recipient||!draft||button.dataset.openingOutlook)return;
-  button.dataset.openingOutlook='true';
+function openCorrectionOutlook(recipient,draft,message){
+  if(!recipient||!draft)return;
   try{
-    const copiedTable=await copyCorrectionEmailBody(draft).catch(()=>false);
-    if(!button.isConnected)return;
-    window.location.href=correctionOutlookComposeLink(recipient,draft,!copiedTable);
-    message.textContent=copiedTable
-      ?'已複製內文與表格，請在 Outlook 內文按 Ctrl+V 貼上。'
-      :'已帶入純文字，表格版可使用「下載 Outlook 草稿」。';
+    window.location.href=correctionOutlookComposeLink(recipient,draft);
+    message.textContent='已帶入收件人、主旨和內文，請在 Outlook 確認後寄出。';
   }catch(error){
     console.error(error);
-    message.textContent='無法開啟郵件視窗，請使用「下載 Outlook 草稿」。';
-  }finally{
-    delete button.dataset.openingOutlook;
+    message.textContent='無法開啟郵件視窗，請使用「下載表格草稿」。';
+  }
+}
+function downloadCorrectionOutlook(recipient,draft,message,container){
+  if(!recipient||!draft)return;
+  try{
+    const eml=correctionOutlookDraftFile(recipient,draft);
+    const link=document.createElement('a');
+    const url=URL.createObjectURL(new Blob([eml],{type:'message/rfc822'}));
+    link.href=url;
+    link.download='補正通知'+(draft.serial?'_'+draft.serial:'')+'.eml';
+    container.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    message.textContent='用 Outlook 開啟下載的 .eml，確認信件後寄出。';
+  }catch(error){
+    console.error(error);
+    message.textContent='無法下載表格草稿，請重試。';
   }
 }
 
@@ -8102,8 +8113,7 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
         <button type="button" id="reloadCorrectionNotices" class="btn btn-gray btn-compact">重新載入</button>
         <span class="small">共 ${filtered.length} 位申請人</span>
       </form>
-      ${rows.length?`<div class="small">開啟 Outlook 後，在內文按 Ctrl+V 貼上含表格的信件。</div>
-      <div class="table-wrap"><table><thead><tr><th>申請人</th><th>登記序號</th><th>補正事項與進度</th><th>操作</th></tr></thead>
+      ${rows.length?`<div class="table-wrap"><table><thead><tr><th>申請人</th><th>登記序號</th><th>補正事項與進度</th><th>操作</th></tr></thead>
         <tbody>${rows.map(({caseData,tracks,emails},i)=>`<tr data-correction-list-row="${i}">
           <td><strong>${escapeHtml(caseData.name)}</strong><div class="small">${caseData.rows.length} 筆相關登記</div></td>
           <td><div class="correction-list-serials">${caseData.rows.map(record=>{
@@ -8124,7 +8134,8 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
             ${tracks.length?`${emails.length>1?`<select data-correction-list-recipient aria-label="${escapeHtml(caseData.name)} 收件信箱">
               <option value="">選擇收件信箱</option>${emails.map(email=>`<option value="${escapeHtml(email)}">${escapeHtml(email)}</option>`).join('')}
             </select>`:''}
-            <button type="button" class="btn btn-primary btn-compact" data-correction-list-outlook ${emails.length===1&&templates?'':'disabled'}>開啟 Outlook</button>`:''}
+            <button type="button" class="btn btn-primary btn-compact" data-correction-list-outlook ${emails.length===1&&templates?'':'disabled'}>開啟 Outlook</button>
+            <button type="button" class="btn btn-gray btn-compact" data-correction-list-download ${emails.length===1&&templates?'':'disabled'}>下載表格草稿</button>`:''}
             <button type="button" class="btn btn-gray btn-compact" data-open-correction-notice>查看補正</button>
           </div>
           <p class="small correction-list-message" data-correction-list-message role="status">${tracks.length&&!emails.length?'無可用的收件信箱':tracks.length&&!templates?'信件模板讀取失敗，請重新載入。':''}</p>
@@ -8183,13 +8194,16 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
     const {caseData,tracks,emails}=rows[Number(row.dataset.correctionListRow)];
     const message=row.querySelector('[data-correction-list-message]');
     const outlook=row.querySelector('[data-correction-list-outlook]');
+    const download=row.querySelector('[data-correction-list-download]');
     const recipient=row.querySelector('[data-correction-list-recipient]');
     row.querySelectorAll('[data-correction-related-record]').forEach(button=>{
       button.onclick=()=>openCourtSharedPhoneRelations(button.dataset.correctionRelatedRecord,caseData.rows);
     });
     if(recipient){
       recipient.onchange=()=>{
-        outlook.disabled=!templates||!recipient.value;
+        const disabled=!templates||!recipient.value;
+        outlook.disabled=disabled;
+        download.disabled=disabled;
         if(templates)message.textContent='';
       };
       if(savedTrack?.caseKey===caseData.key&&emails.includes(savedTrack.email)){
@@ -8197,17 +8211,20 @@ function drawCorrectionNoticeList(container,cases,templates,savedTrack){
         recipient.onchange();
       }
     }
-    if(outlook)outlook.onclick=()=>{
-      const email=recipient?recipient.value:emails[0];
-      if(!templates||!email)return;
-      const items=tracks.map(track=>({kind:track.kind,due_at:correctionNoticeTrackDeadline(track,correctionNoticeView.deadline)}));
-      if(deadlineUnsaved()||items.some(item=>!item.due_at)){
-        message.textContent='請先儲存清單上方的統一回覆期限。';
-        return;
-      }
-      const draft=buildCorrectionEmail(caseData,items,templates);
-      void openCorrectionOutlook(email,draft,message,outlook);
-    };
+    if(outlook){
+      const prepareDraft=action=>{
+        const email=recipient?recipient.value:emails[0];
+        if(!templates||!email)return;
+        const items=tracks.map(track=>({kind:track.kind,due_at:correctionNoticeTrackDeadline(track,correctionNoticeView.deadline)}));
+        if(deadlineUnsaved()||items.some(item=>!item.due_at)){
+          message.textContent='請先儲存清單上方的統一回覆期限。';
+          return;
+        }
+        action(email,buildCorrectionEmail(caseData,items,templates),message,document.body);
+      };
+      outlook.onclick=()=>prepareDraft(openCorrectionOutlook);
+      download.onclick=()=>prepareDraft(downloadCorrectionOutlook);
+    }
     const details=row.querySelector('[data-open-correction-notice]');
     details.onclick=async()=>{
       if(openingNotice||savingProgress)return;
@@ -8307,12 +8324,12 @@ function openCorrectionNotice(caseData,container,templates,opener){
         <label>主旨<input id="correctionDraftSubject" readonly></label>
         <div class="correction-notice-buttons">
           <button type="button" class="btn btn-primary btn-compact" id="openCorrectionOutlook" disabled>直接開啟 Outlook</button>
-          <button type="button" class="btn btn-gray btn-compact" id="downloadCorrectionOutlook" disabled>下載 Outlook 草稿</button>
+          <button type="button" class="btn btn-gray btn-compact" id="downloadCorrectionOutlook" disabled>下載表格草稿</button>
           <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionDraft">複製內文</button>
           <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionSubject">複製主旨</button>
           <button type="button" class="btn btn-gray btn-compact" id="copyCorrectionRecipient" disabled>複製收件 Email</button>
         </div>
-        <p class="small">直接開啟後，在 Outlook 內文按 Ctrl+V 貼上表格。也可下載已填好內文的草稿。</p>
+        <p class="small">直接開啟會帶入純文字內文。下載表格草稿可保留格式。</p>
         <p class="small" id="correctionDraftCopyMessage" role="status" aria-live="polite"></p>
         <div id="correctionDraftBodyLabel" class="correction-draft-body-label">內文</div>
         <div id="correctionDraftBody" class="correction-draft-body" role="region" aria-labelledby="correctionDraftBodyLabel" tabindex="0"></div>
@@ -8404,25 +8421,8 @@ function openCorrectionNotice(caseData,container,templates,opener){
     copyMessage.textContent='';
     updateOutlookActions();
   });
-  openOutlook.onclick=()=>void openCorrectionOutlook(recipient.value,activeDraft,copyMessage,openOutlook);
-  downloadOutlook.onclick=()=>{
-    if(!activeDraft||!recipient.value)return;
-    try{
-      const eml=correctionOutlookDraftFile(recipient.value,activeDraft);
-      const link=document.createElement('a');
-      const url=URL.createObjectURL(new Blob([eml],{type:'message/rfc822'}));
-      link.href=url;
-      link.download='補正通知'+(activeDraft.serial?'_'+activeDraft.serial:'')+'.eml';
-      dialog.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-      copyMessage.textContent='請用 Outlook 開啟下載的 .eml，確認寄件帳號與內容後寄出。';
-    }catch(error){
-      console.error(error);
-      copyMessage.textContent='無法下載草稿。請重試，或使用複製功能貼到 Outlook。';
-    }
-  };
+  openOutlook.onclick=()=>openCorrectionOutlook(recipient.value,activeDraft,copyMessage);
+  downloadOutlook.onclick=()=>downloadCorrectionOutlook(recipient.value,activeDraft,copyMessage,dialog);
   find('#copyCorrectionDraft').onclick=async()=>{
     if(!activeDraft)return;
     try{
