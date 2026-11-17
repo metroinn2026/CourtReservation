@@ -1109,7 +1109,15 @@
 
 
 <style id="settings-editor-layout-fix">
-  /* 文字設定：編輯區改為真正可閱讀的多行文字框 */
+  /* 文字設定 */
+  #settingsNoticeSubject{display:block;width:100%;box-sizing:border-box;}
+  #settingsNoticeSubjectHelp{margin-top:6px;}
+  .settings-correction-tokens{margin:0 0 8px;}
+  .settings-correction-tokens code{display:inline-block;margin:4px 2px;}
+  .settings-save-actions{align-items:center;gap:12px;}
+  .settings-save-actions [hidden]{display:none!important;}
+  .settings-text-error{color:#9f221d;}
+
   #settingsTabContent{
     margin:0 20px!important;
     padding:16px 0 0!important;
@@ -7834,47 +7842,101 @@ function correctionNoticeEmailTable(records){
     +'<tbody>'+rows.map(row=>'<tr>'+row.map(value=>'<td style="'+cellStyle+'">'+escapeHtml(value)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
   return {html,text:[headers,...rows].map(row=>row.join(' ｜ ')).join('\n')};
 }
-function buildCorrectionEmail(caseData,items){
-  const duplicate=items.find(x=>x.kind==='duplicate');
-  const membership=items.find(x=>x.kind==='membership');
+const CORRECTION_EMAIL_SUBJECT='【北投會館】116 年運動場域長期租借登記補正通知';
+const CORRECTION_EMAIL_INTRO=[
+  '{申請人姓名} 您好：',
+  '有關您申請北投會館 116 年運動場域長期租借，本次通知涉及 {登記筆數} 筆登記，請依下列期限完成補正。',
+  '下表的登記序號由本館編列，回覆時請直接使用表內序號。登記日期與時間為您送出登記的時間（臺灣時間）。'
+];
+const CORRECTION_EMAIL_DUPLICATE_TEXT=[
+  '請於 {重複登記期限}（臺灣時間）前回覆本信，依下列各組登記上限，告知要保留的登記序號。',
+  '{重複登記明細表}',
+  '逾期未回覆者，將以各組最早登記的一筆為準，並依資格審查結果辦理抽籤。'
+];
+const CORRECTION_EMAIL_MEMBERSHIP_TEXT=[
+  '目前查無您登記所列的會員資料。請於 {會員補件期限}（臺灣時間）前完成台北捷運 GO 會員註冊，並以您登記時的手機號碼綁定會員，供本館查核。',
+  '{會員登記明細表}',
+  '未於期限內完成註冊，視同放棄本次抽籤資格。如已完成註冊或登記資料需更正，可回覆本信並提供登記序號。'
+];
+const CORRECTION_EMAIL_SIGNATURE=['謝謝您的配合。','北投會館營運管理中心'];
+const CORRECTION_EMAIL_TYPES={
+  duplicate:{
+    label:'重複登記補件',
+    tokens:['重複登記期限','重複登記明細表'],
+    body:[...CORRECTION_EMAIL_INTRO,'一、重複登記',...CORRECTION_EMAIL_DUPLICATE_TEXT,...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
+  },
+  membership:{
+    label:'會員資格補件',
+    tokens:['會員補件期限','會員登記明細表'],
+    body:[...CORRECTION_EMAIL_INTRO,'一、補正會員資格',...CORRECTION_EMAIL_MEMBERSHIP_TEXT,...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
+  },
+  combined:{
+    label:'兩項合併補件',
+    tokens:['重複登記期限','重複登記明細表','會員補件期限','會員登記明細表'],
+    body:[...CORRECTION_EMAIL_INTRO,'一、重複登記',...CORRECTION_EMAIL_DUPLICATE_TEXT,
+      '二、一併補正會員資格',...CORRECTION_EMAIL_MEMBERSHIP_TEXT,...CORRECTION_EMAIL_SIGNATURE].join('\n\n')
+  }
+};
+function correctionEmailTemplate(kind,templates){
+  return templates[kind]??{subject:CORRECTION_EMAIL_SUBJECT,body:CORRECTION_EMAIL_TYPES[kind].body};
+}
+async function loadCorrectionEmailTemplates(){
+  const {data,error}=await reviewDbClient().rpc('court_correction_email_templates_v1');
+  if(error)throw error;
+  return data??{};
+}
+function buildCorrectionEmail(caseData,items,templates){
+  const duplicate=items.find(item=>item.kind==='duplicate');
+  const membership=items.find(item=>item.kind==='membership');
+  const kind=duplicate&&membership?'combined':duplicate?'duplicate':'membership';
+  const template=correctionEmailTemplate(kind,templates);
   const relatedRows=correctionNoticeDraftRows(caseData,items);
-  const relatedCount=relatedRows.length;
   const serials=[...new Set(relatedRows.map(compactRecordCode).filter(code=>code!=='—'))];
   const visibleSerials=serials.slice(0,4).join('、');
   const serialSummary=serials.length>4?visibleSerials+' 等 '+serials.length+' 筆':visibleSerials;
-  const subject='【北投會館】116 年運動場域長期租借登記補正通知'+(serialSummary?'｜登記序號 '+serialSummary:'');
+  const subject=template.subject+(serialSummary?'｜登記序號 '+serialSummary:'');
+  const values={
+    '申請人姓名':caseData.name,
+    '登記筆數':relatedRows.length,
+    '重複登記期限':correctionNoticeDate(duplicate?.due_at),
+    '會員補件期限':correctionNoticeDate(membership?.due_at)
+  };
+
   const text=[],html=[];
   const paragraph=(value,heading=false)=>{
     text.push(value);
-    html.push('<p style="margin:0 0 10px;line-height:1.65;">'+(heading?'<strong>':'')+escapeHtml(value)+(heading?'</strong>':'')+'</p>');
+    html.push('<p style="margin:0 0 10px;line-height:1.65;">'+(heading?'<strong>':'')
+      +escapeHtml(value).replace(/\n/g,'<br>')+(heading?'</strong>':'')+'</p>');
   };
   const addTable=rows=>{
     const table=correctionNoticeEmailTable(rows);
     text.push(table.text);
     html.push(table.html);
   };
-  paragraph(caseData.name+' 您好：');
-  paragraph('有關您申請北投會館 116 年運動場域長期租借，本次通知涉及 '+relatedCount+' 筆登記，請依下列期限完成補正。');
-  paragraph('下表的登記序號由本館編列，回覆時請直接使用表內序號。登記日期與時間為您送出登記的時間（臺灣時間）。');
-  if(duplicate){
-    paragraph('一、重複登記',true);
-    paragraph('請於 '+correctionNoticeDate(duplicate.due_at)+'（臺灣時間）前回覆本信，依下列各組登記上限，告知要保留的登記序號。');
-    caseData.duplicateGroups.forEach((group,index)=>{
-      paragraph('第 '+(index+1)+' 組（'+group.label+'，共 '+group.rows.length+' 筆）',true);
-      addTable(group.rows);
-    });
-    paragraph('逾期未回覆者，將以各組最早登記的一筆為準，並依資格審查結果辦理抽籤。');
+  const sections=template.body.split(/(\{重複登記明細表\}|\{會員登記明細表\})/);
+  for(const section of sections){
+    if(section==='{重複登記明細表}'){
+      if(duplicate){
+        caseData.duplicateGroups.forEach((group,index)=>{
+          paragraph('第 '+(index+1)+' 組（'+group.label+'，共 '+group.rows.length+' 筆）',true);
+          addTable(group.rows);
+        });
+      }
+    }else if(section==='{會員登記明細表}'){
+      if(membership){
+        const rows=caseData.tracks.find(track=>track.kind==='membership').currentRows;
+        paragraph('相關登記（共 '+rows.length+' 筆）',true);
+        addTable(rows);
+      }
+    }else{
+      for(const line of section.trim().split(/\r?\n[ \t]*\r?\n/)){
+        if(line.trim()){
+          const value=line.trim().replace(/\{([^{}]+)\}/g,(token,name)=>Object.hasOwn(values,name)?values[name]:token);
+          paragraph(value,/^[一二]、/.test(line));
+        }
+      }
+    }
   }
-  if(membership){
-    paragraph(duplicate?'二、一併補正會員資格':'一、補正會員資格',true);
-    paragraph('目前查無您登記所列的會員資料。請於 '+correctionNoticeDate(membership.due_at)+'（臺灣時間）前完成台北捷運 GO 會員註冊，並以您登記時的手機號碼綁定會員，供本館查核。');
-    const track=caseData.tracks.find(t=>t.kind==='membership');
-    paragraph('相關登記（共 '+track.currentRows.length+' 筆）',true);
-    addTable(track.currentRows);
-    paragraph('未於期限內完成註冊，視同放棄本次抽籤資格。如已完成註冊或登記資料需更正，可回覆本信並提供登記序號。');
-  }
-  paragraph('謝謝您的配合。');
-  paragraph('北投會館營運管理中心');
   return {subject,body:text.join('\n\n'),html:html.join('')};
 }
 async function copyCorrectionEmailBody(draft){
@@ -7996,8 +8058,10 @@ function drawCorrectionNoticeList(container,cases){
   const next=container.querySelector('#correctionNoticeNext');
   if(prev)prev.onclick=()=>{correctionNoticeView.page--;drawCorrectionNoticeList(container,cases);};
   if(next)next.onclick=()=>{correctionNoticeView.page++;drawCorrectionNoticeList(container,cases);};
+  let openingNotice=false;
   container.querySelectorAll('[data-open-correction-notice]').forEach(button=>{
-    button.onclick=()=>{
+    button.onclick=async()=>{
+      if(openingNotice)return;
       const caseData=rows[Number(button.dataset.openCorrectionNotice)];
       const tracks=correctionNoticeDraftableTracks(caseData);
       if(tracks.length&&(deadlineButton.disabled
@@ -8007,12 +8071,26 @@ function drawCorrectionNoticeList(container,cases){
         deadlineInput.focus();
         return;
       }
-      openCorrectionNotice(caseData,container);
+      if(!tracks.length){
+        openCorrectionNotice(caseData,container,{},button);
+        return;
+      }
+      openingNotice=true;
+      button.disabled=true;
+      try{
+        const templates=await loadCorrectionEmailTemplates();
+        if(button.isConnected)openCorrectionNotice(caseData,container,templates,button);
+      }catch(error){
+        console.error(error);
+        if(button.isConnected)alert('無法載入補件通知文字，請稍後重試。');
+      }finally{
+        openingNotice=false;
+        button.disabled=false;
+      }
     };
   });
 }
-function openCorrectionNotice(caseData,container){
-  const opener=document.activeElement;
+function openCorrectionNotice(caseData,container,templates,opener){
   const dialog=document.createElement('dialog');
   dialog.className='modal-card court-details-dialog correction-notice-dialog';
   dialog.setAttribute('aria-labelledby','correctionNoticeTitle');
@@ -8104,7 +8182,7 @@ function openCorrectionNotice(caseData,container){
       +emails.map(email=>`<option value="${escapeHtml(email)}">${escapeHtml(email)}</option>`).join('');
     recipient.value=emails.includes(selected)?selected:emails.length===1?emails[0]:'';
     find('#copyCorrectionRecipient').disabled=!emails.length;
-    activeDraft=buildCorrectionEmail(caseData,items);
+    activeDraft=buildCorrectionEmail(caseData,items,templates);
     find('#correctionDraftSummary').textContent=items.map(item=>CORRECTION_NOTICE_KINDS[item.kind]).join('、')+'，共 '+rows.length+' 筆相關登記';
     find('#correctionDraftSubject').value=activeDraft.subject;
     draftBody.innerHTML=activeDraft.html;
@@ -11088,196 +11166,194 @@ function renderLotteryResult(result,title,locked){
 
 
 function renderSettingsPage(){
-
-  document.getElementById('content').innerHTML=`
+  const frontFields={
+    rules_content:{label:'登記辦法',fieldLabel:'前台登記辦法',editor:'rules'},
+    register_notice:{label:'前台提醒',fieldLabel:'前台提醒文字',editor:'short'}
+  };
+  const lotteryFields={
+    winner_template:{label:'中籤通知',fieldLabel:'中籤通知模板',editor:'template'},
+    waitlist_template:{label:'備取通知',fieldLabel:'備取通知模板',editor:'template'},
+    loser_template:{label:'未中籤通知',fieldLabel:'未中籤通知模板',editor:'template'}
+  };
+  const backFields={...CORRECTION_EMAIL_TYPES,...lotteryFields};
+  const panel=document.getElementById('content');
+  panel.innerHTML=`
     <div class="panel compact-page-card settings-compact-card">
       <div class="admin-section-head"><h3>文字設定</h3></div>
-
-      <div class="admin-tabs" role="tablist" aria-label="文字設定分類">
-        <button id="tabRules" class="admin-tab active" role="tab">登記辦法</button>
-        <button id="tabNotice" class="admin-tab" role="tab">前台提醒</button>
-        <button id="tabWinner" class="admin-tab" role="tab">中籤通知</button>
-        <button id="tabWaitlist" class="admin-tab" role="tab">備取通知</button>
-        <button id="tabLoser" class="admin-tab" role="tab">未中籤通知</button>
+      <div class="admin-tabs" role="group" aria-label="文字設定區域">
+        <button type="button" data-settings-group="front" class="admin-tab active" aria-pressed="true">前台文字</button>
+        <button type="button" data-settings-group="back" class="admin-tab" aria-pressed="false">後台文字</button>
       </div>
-
-      <div id="settingsTabContent"></div>
-
-      <div class="settings-save-actions">
-        <button id="saveTextSettingsBtn" class="btn btn-primary">儲存文字設定</button>
-      </div>
+      <div class="admin-tabs" id="settingsTextTypes" role="group" aria-label="文字類型"></div>
+      <form id="settingsTextForm">
+        <div id="settingsTabContent"></div>
+        <div class="settings-save-actions">
+          <span id="settingsTextStatus" class="small" role="status"></span>
+          <button id="saveTextSettingsBtn" type="submit" class="btn btn-primary">儲存文字設定</button>
+        </div>
+      </form>
     </div>
   `;
+  const card=panel.firstElementChild;
+  const groups=[...card.querySelectorAll('[data-settings-group]')];
+  const typeBar=card.querySelector('#settingsTextTypes');
+  const editor=card.querySelector('#settingsTabContent');
+  const form=card.querySelector('#settingsTextForm');
+  const status=card.querySelector('#settingsTextStatus');
+  const saveButton=card.querySelector('#saveTextSettingsBtn');
 
-  const tabContent=document.getElementById('settingsTabContent');
+  const selected={front:'rules_content',back:'duplicate'};
+  const drafts=new Map();
+  let area='front';
+  let templates=null;
+  let loading=false;
+  let loadFailed=false;
+  let saving=false;
+  const currentKey=()=>selected[area];
+  const isCorrection=key=>Object.hasOwn(CORRECTION_EMAIL_TYPES,key);
 
-  function switchTab(type){
+  function showStatus(message,error=false){
+    status.textContent=message;
+    status.classList.toggle('settings-text-error',error);
+  }
 
-    document.querySelectorAll('#tabRules,#tabNotice,#tabWinner,#tabWaitlist,#tabLoser')
-      .forEach(btn=>btn.classList.remove('active'));
+  async function refreshTemplates(){
+    loading=true;
+    loadFailed=false;
+    renderEditor();
+    try{
+      templates=await loadCorrectionEmailTemplates();
+    }catch(error){
+      console.error(error);
+      loadFailed=true;
+    }finally{
+      loading=false;
+      if(card.isConnected&&isCorrection(currentKey()))renderEditor();
+    }
+  }
 
-    const activeMap={
-      rules:'tabRules',
-      notice:'tabNotice',
-      winner:'tabWinner',
-      waitlist:'tabWaitlist',
-      loser:'tabLoser'
-    };
-
-    document.getElementById(activeMap[type]).classList.add('active');
-
-    if(type==='rules'){
-      tabContent.innerHTML=`
-
-        <label style="font-weight:700;">前台登記辦法</label>
-
-        <textarea
-          id="rulesContentEditor" class="settings-editor settings-editor-rules"
-          style="
-            width:100%;
-            min-height:420px;
-            border:1px solid #d1d5db;
-            border-radius:12px;
-            padding:14px;
-            font-size:14px;
-            line-height:1.9;
-            margin-top:8px;
-          "
-        >${escapeHtml(systemSettings.rules_content || '')}</textarea>
-      `;
+  function renderEditor(){
+    const key=currentKey();
+    const correction=isCorrection(key);
+    saveButton.hidden=correction&&!templates;
+    showStatus('');
+    if(correction&&!templates){
+      if(loadFailed){
+        editor.innerHTML='<div class="msg error">無法載入補件通知文字。 <button type="button" class="btn btn-gray btn-compact">重新載入</button></div>';
+        editor.querySelector('button').onclick=()=>void refreshTemplates();
+      }else{
+        editor.innerHTML='<div class="small" role="status">正在讀取補件通知文字…</div>';
+        if(!loading)void refreshTemplates();
+      }
+      return;
     }
 
-    if(type==='notice'){
-      tabContent.innerHTML=`
-
-        <label style="font-weight:700;">前台提醒文字</label>
-
-        <textarea
-          id="registerNoticeEditor" class="settings-editor settings-editor-short"
-          style="
-            width:100%;
-            min-height:220px;
-            border:1px solid #d1d5db;
-            border-radius:12px;
-            padding:14px;
-            font-size:14px;
-            line-height:1.9;
-            margin-top:8px;
-          "
-        >${escapeHtml(systemSettings.register_notice || '')}</textarea>
+    if(correction){
+      const values=drafts.get(key)??correctionEmailTemplate(key,templates);
+      const tokens=['申請人姓名','登記筆數',...CORRECTION_EMAIL_TYPES[key].tokens];
+      editor.innerHTML=`
+        <label for="settingsNoticeSubject">主旨</label>
+        <input id="settingsNoticeSubject" type="text" required value="${escapeHtml(values.subject)}" aria-describedby="settingsNoticeSubjectHelp">
+        <div class="small" id="settingsNoticeSubjectHelp">系統會在主旨後自動加上登記序號。</div>
+        <label for="settingsNoticeBody">內文</label>
+        <div class="small settings-correction-tokens" id="settingsNoticeBodyHelp">
+          代碼會帶入對應資料。明細表代碼可獨立放一行。<br>
+          ${tokens.map(token=>`<code>{${token}}</code>`).join(' ')}
+        </div>
+        <textarea id="settingsNoticeBody" class="settings-editor settings-editor-template" rows="16" required aria-describedby="settingsNoticeBodyHelp">${escapeHtml(values.body)}</textarea>
       `;
-    }
-
-    if(type==='winner'){
-      tabContent.innerHTML=`
-
-        <details class="settings-token-help">
-          <summary>可用代碼</summary>
-          <div>{name}、{phone}、{venue}、{day}、{time}、{status}、{serial_number}</div>
-        </details>
-
-        <label style="font-weight:700;">中籤通知模板</label>
-
-        <textarea
-          id="winnerTemplateEditor" class="settings-editor settings-editor-template"
-          style="
-            width:100%;
-            min-height:260px;
-            border:1px solid #d1d5db;
-            border-radius:12px;
-            padding:14px;
-            font-size:14px;
-            line-height:1.9;
-            margin-top:8px;
-          "
-        >${escapeHtml(systemSettings.winner_template || '')}</textarea>
-      `;
-    }
-
-    if(type==='waitlist'){
-      tabContent.innerHTML=`
-
-        <details class="settings-token-help">
-          <summary>可用代碼</summary>
-          <div>{name}、{phone}、{venue}、{day}、{time}、{status}、{serial_number}</div>
-        </details>
-
-        <label style="font-weight:700;">備取通知模板</label>
-
-        <textarea
-          id="waitlistTemplateEditor" class="settings-editor settings-editor-template"
-          style="
-            width:100%;
-            min-height:260px;
-            border:1px solid #d1d5db;
-            border-radius:12px;
-            padding:14px;
-            font-size:14px;
-            line-height:1.9;
-            margin-top:8px;
-          "
-        >${escapeHtml(systemSettings.waitlist_template || '')}</textarea>
-      `;
-    }
-
-    if(type==='loser'){
-      tabContent.innerHTML=`
-
-        <details class="settings-token-help">
-          <summary>可用代碼</summary>
-          <div>{name}、{phone}、{venue}、{day}、{time}、{status}、{serial_number}</div>
-        </details>
-
-        <label style="font-weight:700;">未中籤通知模板</label>
-
-        <textarea
-          id="loserTemplateEditor" class="settings-editor settings-editor-template"
-          style="
-            width:100%;
-            min-height:260px;
-            border:1px solid #d1d5db;
-            border-radius:12px;
-            padding:14px;
-            font-size:14px;
-            line-height:1.9;
-            margin-top:8px;
-          "
-        >${escapeHtml(systemSettings.loser_template || '')}</textarea>
+    }else{
+      const field=frontFields[key]??lotteryFields[key];
+      const tokens=area==='back'
+        ? '<details class="settings-token-help"><summary>可用代碼</summary><div>{name}、{phone}、{venue}、{day}、{time}、{status}、{serial_number}</div></details>'
+        : '';
+      editor.innerHTML=`
+        ${tokens}
+        <label for="settingsRegularEditor">${field.fieldLabel}</label>
+        <textarea id="settingsRegularEditor" class="settings-editor settings-editor-${field.editor}">${escapeHtml(drafts.get(key)??systemSettings[key]??'')}</textarea>
       `;
     }
   }
 
-  switchTab('rules');
+  function renderTypes(){
+    for(const button of groups){
+      const active=button.dataset.settingsGroup===area;
+      button.classList.toggle('active',active);
+      button.setAttribute('aria-pressed',String(active));
+    }
+    const fields=area==='front'?frontFields:backFields;
+    typeBar.innerHTML=Object.entries(fields).map(([key,field])=>{
+      const active=key===currentKey();
+      return `<button type="button" class="admin-tab${active?' active':''}" data-settings-type="${key}" aria-pressed="${active}">${field.label}</button>`;
+    }).join('');
+    renderEditor();
+  }
 
-  document.getElementById('tabRules').onclick=()=>switchTab('rules');
-  document.getElementById('tabNotice').onclick=()=>switchTab('notice');
-  document.getElementById('tabWinner').onclick=()=>switchTab('winner');
-  document.getElementById('tabWaitlist').onclick=()=>switchTab('waitlist');
-  document.getElementById('tabLoser').onclick=()=>switchTab('loser');
-
-  document.getElementById('saveTextSettingsBtn').onclick=async()=>{
-
-    const editors={
-      rules_content: document.getElementById('rulesContentEditor')?.value,
-      register_notice: document.getElementById('registerNoticeEditor')?.value,
-      winner_template: document.getElementById('winnerTemplateEditor')?.value,
-      waitlist_template: document.getElementById('waitlistTemplateEditor')?.value,
-      loser_template: document.getElementById('loserTemplateEditor')?.value
+  for(const button of groups){
+    button.onclick=()=>{
+      if(saving||area===button.dataset.settingsGroup)return;
+      area=button.dataset.settingsGroup;
+      renderTypes();
     };
+  }
+  typeBar.onclick=event=>{
+    const button=event.target.closest('[data-settings-type]');
+    if(!button||saving||currentKey()===button.dataset.settingsType)return;
+    const key=button.dataset.settingsType;
+    selected[area]=key;
+    renderTypes();
+    typeBar.querySelector(`[data-settings-type="${key}"]`).focus();
+  };
 
-    for(const [key,value] of Object.entries(editors)){
-      if(typeof value !== 'undefined'){
-        const ok=await saveSetting(key,value);
-        if(!ok) return;
+  const readEditor=()=>isCorrection(currentKey())
+    ? {subject:editor.querySelector('#settingsNoticeSubject').value,body:editor.querySelector('#settingsNoticeBody').value}
+    : editor.querySelector('#settingsRegularEditor').value;
+  editor.oninput=()=>{
+    drafts.set(currentKey(),readEditor());
+    showStatus('');
+  };
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    if(saving||saveButton.hidden)return;
+    const key=currentKey();
+    const correction=isCorrection(key);
+    const value=readEditor();
+    if(correction){
+      value.subject=value.subject.trim();
+      value.body=value.body.trim();
+      if(!value.subject||!value.body){
+        showStatus('請填寫主旨及內文。',true);
+        return;
       }
     }
 
-    alert('文字設定已儲存');
-    await loadAllData();
-    renderSettingsPage();
+    saving=true;
+    const fields=[...card.querySelectorAll('button, input, textarea')];
+    for(const field of fields)field.disabled=true;
+    showStatus('正在儲存…');
+    try{
+      if(correction){
+        const {data,error}=await reviewDbClient().rpc('court_correction_email_templates_v1',{p_kind:key,p_template:value});
+        if(error)throw error;
+        templates[key]=data;
+        editor.querySelector('#settingsNoticeSubject').value=data.subject;
+        editor.querySelector('#settingsNoticeBody').value=data.body;
+      }else if(!await saveSetting(key,value)){
+        showStatus('儲存失敗，請重試。',true);
+        return;
+      }
+      drafts.delete(key);
+      showStatus('已儲存。');
+    }catch(error){
+      console.error(error);
+      showStatus('儲存失敗。'+(error?.message||'請重試。'),true);
+    }finally{
+      saving=false;
+      for(const field of fields)field.disabled=false;
+    }
   };
+  renderTypes();
 }
-
 
 
 function renderAccountsPage(){
