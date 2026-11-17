@@ -7866,18 +7866,22 @@ function correctionNoticeEmailTable(records){
 const CORRECTION_EMAIL_SUBJECT='【北投會館】116 年運動場域長期租借登記補正通知';
 const CORRECTION_EMAIL_INTRO=[
   '{申請人姓名} 您好：',
-  '有關您申請北投會館 116 年運動場域長期租借，本次通知涉及 {登記筆數} 筆登記，請依下列期限完成補正。',
-  '下表的登記序號由本館編列，回覆時請直接使用表內序號。登記日期與時間為您送出登記的時間（臺灣時間）。'
+  '有關您申請北投會館 116 年運動場域長期租借，本次通知涉及 {登記筆數} 筆登記，說明如下。'
 ];
 const CORRECTION_EMAIL_DUPLICATE_TEXT=[
-  '請於 {重複登記期限}（臺灣時間）前回覆本信，依下列各組登記上限，告知要保留的登記序號。',
-  '{重複登記明細表}',
-  '逾期未回覆者，將以各組最早登記的一筆為準，並依資格審查結果辦理抽籤。'
+  '依登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段，每時段 2 小時，並須擇一填寫使用用途。桌球場每週不限登記時段，每時段 2 小時，B1、B2 可依開放時段複選。',
+  '本次登記資料核對時，同一會員於同一日、同一時段，無論登記何種球類或場地，僅得登記 1 筆。',
+  '經查有重複登記情形，本館將依送出時間保留最早送出的第一筆，其餘重複登記不列入本次抽籤。保留的登記仍須通過資格審查。',
+  '相關登記如下。如您認為登記資料有誤，請於 {重複登記期限}（臺灣時間）前回覆本信，並註明表內登記序號。表中的登記日期及時間為您送出登記的時間。',
+  '{重複登記明細表}'
 ];
 const CORRECTION_EMAIL_MEMBERSHIP_TEXT=[
-  '目前查無您登記所列的會員資料。請於 {會員補件期限}（臺灣時間）前完成台北捷運 GO 會員註冊，並以您登記時的手機號碼綁定會員，供本館查核。',
+  '依登記規定，申請人須具備台北捷運 Go App 會員或北投會館有效會員資格，並於申請時擇一填寫會員類別。',
+  '目前查無您登記所填的會員資料。請於 {會員補件期限}（臺灣時間）前完成補正，並回覆本信註明表內登記序號，供本館查核。',
+  '登記為台北捷運 Go App 會員者，請確認會員綁定手機與登記手機一致。尚未完成註冊者，請以登記手機完成註冊及綁定。',
+  '登記為北投會館會員者，請於回覆時說明會員資格或登記資料需更正之處，供本館核對。',
   '{會員登記明細表}',
-  '未於期限內完成註冊，視同放棄本次抽籤資格。如已完成註冊或登記資料需更正，可回覆本信並提供登記序號。'
+  '逾期未完成補正，視同放棄本次抽籤資格。'
 ];
 const CORRECTION_EMAIL_SIGNATURE=['謝謝您的配合。','北投會館營運管理中心'];
 const CORRECTION_EMAIL_TYPES={
@@ -8295,6 +8299,9 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
 }
 function renderUnifiedReviewRow(item,index,now,templates){
   const reasons=[...new Set(item.rows.flatMap(row=>qualificationIssueTypes(row)))];
+  const mailUnavailable=item.nameConflict?'請先核對姓名與收件人'
+    :!correctionNoticeDraftableTracks(item).length?'目前無補正草稿'
+    :!templates?'信件範本載入失敗，請重新載入':'';
   const stats={};
   for(const row of item.rows){const state=qualificationState(row);stats[state]=(stats[state]||0)+1;}
   const review=QUALIFICATION_REVIEW_OPTIONS.map(([key,label])=>stats[key]
@@ -8312,7 +8319,7 @@ function renderUnifiedReviewRow(item,index,now,templates){
       </div>`).join('')||'—'}</td>
     <td><div class="correction-list-actions">
       <button type="button" class="btn btn-primary btn-compact" data-unified-review-expand aria-expanded="false" aria-controls="unifiedReviewDetail-${index}">展開處理</button>
-      ${templates&&correctionNoticeDraftableTracks(item).length?'<button type="button" class="btn btn-gray btn-compact" data-unified-outlook>開啟 Outlook</button>':''}
+      ${mailUnavailable?`<span class="small">${escapeHtml(mailUnavailable)}</span>`:'<button type="button" class="btn btn-gray btn-compact" data-unified-outlook>開啟 Outlook</button>'}
       </div><p class="small correction-list-message" data-unified-row-status role="status"></p></td>
   </tr><tr class="unified-review-detail" id="unifiedReviewDetail-${index}" hidden><td colspan="5" data-unified-detail-content></td></tr>`;
 }
@@ -8330,7 +8337,6 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
     </section>
     ${draftable.length?`<details data-unified-draft-section class="unified-notice-section">
       <summary>查看信件草稿</summary>
-      ${item.nameConflict?'<p class="small">同一會員識別有不同姓名，請先核對收件人與登記資料。</p>':''}
       ${draftable.length>1?`<div class="unified-draft-tracks">${draftable.map(track=>`<label><input type="checkbox" checked data-unified-include="${track.kind}"> ${CORRECTION_NOTICE_KINDS[track.kind]}</label>`).join('')}</div>`:''}
       <p class="small correction-list-message" data-unified-draft-warning role="status"></p>
       <div data-unified-draft-content hidden>
@@ -8345,7 +8351,7 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
         </div>
         <div class="correction-draft-body" data-unified-mail-body tabindex="0" aria-label="信件內文預覽"></div>
       </div>
-    </details>`:''}
+    </details>`:item.nameConflict?'<p class="small">同一會員識別有不同姓名。請人工核對姓名、收件信箱與相關登記序號後，再從公務信箱寄出。</p>':''}
     <p class="small correction-list-message" data-unified-detail-status role="status"></p>
   </div>`;
 
