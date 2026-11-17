@@ -5396,6 +5396,11 @@ body .ux-review-edit{align-items:end}
   .unified-review-detail[hidden],[data-unified-draft-content][hidden]{display:none!important}
   .unified-review-detail>td{padding:12px 16px!important;background:#f8fafc}
   .unified-review-fields{display:grid;gap:10px}
+  .unified-case-statuses{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(170px,100%),1fr));gap:12px;margin-top:12px;}
+  .unified-case-statuses>div,.unified-case-statuses label,.unified-case-note{min-width:0;}
+  .unified-case-note{display:grid;gap:6px;margin:12px 0;}
+  .unified-case-note textarea{width:100%;resize:vertical;}
+  .unified-case-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;}
   .unified-review-card-head,.unified-review-badges,.unified-review-notice-status{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
   .unified-review-card-head{justify-content:space-between}
   .unified-review-notice-status+.unified-review-notice-status{margin-top:5px}
@@ -7616,7 +7621,7 @@ async function loadQualificationReviews(){
     let offset=0;
     const batchSize=500;
     for(;;){
-      const {data,error}=await client.rpc('list_registration_qualifications_v54')
+      const {data,error}=await client.rpc('court_list_qualifications_with_notes_v1')
         .order('record_id',{ascending:true}).range(offset,offset+batchSize-1);
       if(error)throw error;
       const rows=Array.isArray(data)?data:[];
@@ -7629,71 +7634,51 @@ async function loadQualificationReviews(){
   }catch(e){console.warn('資格審查讀取失敗',e);}
 }
 const QUALIFICATION_REVIEW_OPTIONS=[['qualified','合格'],['pending','待審查'],['correction','待補正'],['invalid','不合格']];
-function renderQualificationReviewCard(r,prefix,showReasons){
-  const saved=qualificationReviews.get(String(r.id))||{};
-  const st=qualificationState(r);
-  const rejection=registrationWindowRejection(r);
-  const reasons=qualificationIssueTypes(r);
-  const reviewLabel=QUALIFICATION_REVIEW_OPTIONS.find(([value])=>value===st)?.[1]||'待審查';
-  return `<article class="ux-review-case">
-      <div class="unified-review-card-head"><div>
-        <strong>資格審查</strong>
-        <div class="small">${escapeHtml(compactRecordCode(r))}｜${escapeHtml(correctionNoticeSlot(r))}</div>
-      </div><span class="tag review-${st}">${escapeHtml(reviewLabel)}</span></div>
-      ${showReasons&&reasons.length?`<div class="small unified-record-reasons">${reasons.map(reason=>reason==='超過次數'?registrationLimitButton(r):escapeHtml(reason)).join('、')}</div>`:''}
-      ${rejection?`<p class="small">依登記期間判定不合格（${escapeHtml(rejection)}）。</p>`:`<div class="ux-review-edit">
-        <div class="ux-review-field"><label for="${prefix}-member-${r.id}">是否為會員</label><select id="${prefix}-member-${r.id}" data-qmember="${r.id}">${membershipCheckOptions(membershipCheckStatus(r))}</select></div>
-        <div class="ux-review-field"><label for="${prefix}-state-${r.id}">審查結果</label><select id="${prefix}-state-${r.id}" data-qstate="${r.id}">${QUALIFICATION_REVIEW_OPTIONS.map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select></div>
-        <div class="ux-review-field ux-review-note"><label for="${prefix}-note-${r.id}">處理說明</label><textarea id="${prefix}-note-${r.id}" data-qnote="${r.id}" maxlength="1000" rows="1" placeholder="例如已通知補正、補正期限已過">${escapeHtml(saved.review_note||'')}</textarea></div>
-        <div class="ux-review-save"><button type="button" class="btn btn-primary" data-qsave="${r.id}">儲存審查結果</button></div>
-      </div>`}
-      ${saved.reviewed_at?`<div class="ux-review-history">最近處理：${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</div>`:''}
-    </article>`;
+function unifiedReviewNote(saved,tracks){
+  if(saved?.processing_note!=null)return saved.processing_note;
+  const notes=[saved?.review_note,...tracks.map(track=>track.prior?.note)]
+    .map(note=>String(note??'').trim()).filter(Boolean);
+  return [...new Set(notes)].join('\n\n');
 }
-function bindQualificationReviewEditors(container,afterSave,onSaving){
-  let saving=false;
-  container.querySelectorAll('[data-qsave]').forEach(btn=>{
-    const id=btn.dataset.qsave;
-    const state=container.querySelector(`[data-qstate="${id}"]`);
-    const member=container.querySelector(`[data-qmember="${id}"]`);
-    const note=container.querySelector(`[data-qnote="${id}"]`);
-    const originalMember=member.value;
-    state.onchange=()=>{
-      if(state.value!=='qualified')return;
-      member.value='verified';
-      if(note.value===note.defaultValue&&note.value.startsWith('會員查核：非會員。'))note.value='';
-    };
-    member.onchange=()=>{
-      if(member.value!=='verified'&&state.value==='qualified')state.value='pending';
-    };
-    btn.onclick=async()=>{
-      if(saving)return;
-      const st=state.value,memberStatus=member.value,reason=note.value.trim();
-      if(st==='invalid'&&!reason){alert('不合格時請填寫原因。');return;}
-      if(st==='qualified'&&memberStatus!=='verified'){alert('審查合格須同時確認會員為「是」。');return;}
-      if(st==='qualified'&&originalMember!=='verified'&&!confirm('請確認申請人已具會員資格。儲存後，審查結果將設為「合格」，會員欄將設為「是」。'))return;
-      saving=true;
-      btn.disabled=true;
-      onSaving?.(true);
-      let committed=false;
-      try{
-        const closed=await saveQualificationWithNotices(id,st,memberStatus,reason);
-        committed=true;
-        await afterSave(closed,id);
-      }catch(error){
-        if(committed){
-          console.error(error);
-          alert('資格審查已儲存，畫面更新失敗。請重新載入清單。');
-        }else{
-          alert('儲存失敗：'+(error?.message||'請稍後再試'));
-        }
-      }finally{
-        saving=false;
-        btn.disabled=false;
-        onSaving?.(false);
-      }
-    };
-  });
+function renderUnifiedCaseEditor(record,key,showReasons,tracks,deadline){
+  const id=String(record.id);
+  const saved=qualificationReviews.get(id);
+  const state=qualificationState(record);
+  const rejection=registrationWindowRejection(record);
+  const reasons=qualificationIssueTypes(record);
+  const reviewLabel=QUALIFICATION_REVIEW_OPTIONS.find(([value])=>value===state)?.[1]||'待審查';
+  return `<article class="ux-review-case">
+    <div class="unified-review-card-head"><div>
+      <strong>案件處理</strong>
+      <div class="small">${escapeHtml(compactRecordCode(record))}｜${escapeHtml(correctionNoticeSlot(record))}</div>
+    </div><span class="tag review-${state}">${escapeHtml(reviewLabel)}</span></div>
+    ${showReasons&&reasons.length?`<div class="small unified-record-reasons">${reasons.map(reason=>reason==='超過次數'?registrationLimitButton(record):escapeHtml(reason)).join('、')}</div>`:''}
+    ${rejection?`<p class="small">依登記期間判定不合格（${escapeHtml(rejection)}）。</p>`:''}
+    <div class="unified-case-statuses">
+      ${rejection?'':`<label>是否為會員<select data-qmember>${membershipCheckOptions(membershipCheckStatus(record))}</select></label>
+      <label>審查結果<select data-qstate>${QUALIFICATION_REVIEW_OPTIONS.map(([value,label])=>`<option value="${value}" ${state===value?'selected':''}>${label}</option>`).join('')}</select></label>`}
+      ${tracks.map(track=>{
+        const status=track.prior?.status||'draft';
+        const history=[['寄出',track.prior?.sent_at],['回覆',track.prior?.replied_at],['結案',track.prior?.closed_at]]
+          .filter(([,time])=>time).map(([label,time])=>label+' '+correctionNoticeDate(time)).join('｜');
+        return `<div><label>${CORRECTION_NOTICE_KINDS[track.kind]}通知進度
+          <select data-unified-notice-status="${track.kind}">
+            ${CORRECTION_NOTICE_TRANSITIONS[status].map(value=>`<option value="${value}" ${value===status?'selected':''}>${CORRECTION_NOTICE_STATUS[value]}</option>`).join('')}
+          </select></label>
+          ${status==='closed'?'':`<div class="small">回覆期限 <span data-unified-notice-deadline="${track.kind}">${escapeHtml(correctionNoticeDate(correctionNoticeTrackDeadline(track,deadline))||'尚未設定')}</span></div>`}
+          ${history?`<div class="small">${escapeHtml(history)}</div>`:''}
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="unified-case-note">
+      <label for="${key}-note-${id}">審查備註</label>
+      <textarea id="${key}-note-${id}" data-qnote maxlength="4500" rows="2" placeholder="例如已回覆、會員資格已確認">${escapeHtml(unifiedReviewNote(saved,tracks))}</textarea>
+    </div>
+    <div class="unified-case-actions">
+      <button type="button" class="btn btn-primary btn-compact" data-qsave>儲存</button>
+      ${saved?.reviewed_at?`<span class="small">上次資格審查　${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</span>`:''}
+    </div>
+  </article>`;
 }
 const CORRECTION_NOTICE_KINDS={
   duplicate:'重複登記',
@@ -7823,31 +7808,17 @@ function correctionNoticeTrackUpdate(track,sharedDeadline,status,note=track.prio
     status,due_at:correctionNoticeTrackDeadline(track,sharedDeadline),note
   };
 }
-async function saveQualificationWithNotices(id,status,memberStatus,note){
-  const client=reviewDbClient();
-  let items=[];
-  if(status==='qualified'||status==='invalid'){
-    const record=allRecords.find(row=>String(row.id)===id);
-    if(!record)throw new Error('查不到此筆登記，請重新載入清單');
-    const key=personKey(record);
-    const {data,error}=await client.rpc('court_list_correction_notices_v1');
-    if(error)throw error;
-    if(!Array.isArray(data))throw new Error('補正通知資料格式不符');
-    const memberRows=allRecords.filter(row=>personKey(row)===key);
-    const [noticeCase]=buildCorrectionNoticeCases(memberRows,data);
-    items=(noticeCase?.tracks||[])
-      .filter(track=>track.prior?.status!=='closed'&&track.rows.some(row=>String(row.id)===id))
-      .map(track=>correctionNoticeTrackUpdate(track,null,track.prior?.status||'draft'));
-  }
-  const {data,error}=await client.rpc('court_save_qualification_with_notices_v1',{
-    p_record_id:id,p_status:status,p_member_status:memberStatus,p_note:note,p_notice_items:items
+async function saveUnifiedReview(id,status,memberStatus,note,noteVersion,edits,tracks){
+  const linked=['qualified','invalid'].includes(status)
+    ? tracks.filter(track=>track.prior?.status!=='closed')
+      .map(track=>correctionNoticeTrackUpdate(track,null,track.prior?.status||'draft'))
+    : [];
+  const {data,error}=await reviewDbClient().rpc('court_save_review_and_notice_progress_v1',{
+    p_record_id:id,p_status:status,p_member_status:memberStatus,p_note:note,
+    p_note_version:noteVersion,p_notice_edits:edits,p_linked_notices:linked
   });
   if(error)throw error;
   return data;
-}
-async function saveCorrectionNoticeProgress(items){
-  const {error}=await reviewDbClient().rpc('court_save_correction_notices_v1',{p_items:items});
-  if(error)throw error;
 }
 function correctionNoticeDraftRows(caseData,items){
   const kinds=new Set(items.map(item=>item.kind));
@@ -8052,10 +8023,10 @@ async function openCorrectionOutlook(recipient,draft,message){
     window.location.href=correctionOutlookComposeLink(recipient,draft);
     message.textContent=copiedTable
       ?'已複製表格版。在 Outlook 內文按 Ctrl+A，再按 Ctrl+V 即可替換。'
-      :'已帶入純文字內文。可展開「補正通知與紀錄」下載表格草稿。';
+      :'已帶入純文字內文。可在「查看信件草稿」下載表格草稿。';
   }catch(error){
     console.error(error);
-    message.textContent='無法開啟郵件視窗。可展開「補正通知與紀錄」下載表格草稿。';
+    message.textContent='無法開啟郵件視窗。可在「查看信件草稿」下載表格草稿。';
   }finally{
     correctionOutlookOpening=false;
   }
@@ -8084,8 +8055,10 @@ function buildUnifiedReviewCases(records,savedNotices){
   const focus=correctionNoticeView.focusId;
   for(const row of records){
     const id=String(row.id);
-    const reviewed=qualificationReviews.get(id)?.review_status==='qualified';
-    if(qualificationState(row)==='qualified'&&id!==focus&&!(reviewed&&qualificationIssueTypes(row).length))continue;
+    const review=qualificationReviews.get(id);
+    const hasReviewDetails=review?.processing_note_version>0||
+      (review?.review_status==='qualified'&&qualificationIssueTypes(row).length>0);
+    if(qualificationState(row)==='qualified'&&id!==focus&&!hasReviewDetails)continue;
     const key=personKey(row);
     let item=cases.get(key);
     if(!item){
@@ -8118,16 +8091,6 @@ async function renderUnifiedReviewList(container,feedback){
     if(!Array.isArray(notices.data))throw new Error('補正通知資料格式不符');
     correctionNoticeView.deadline=deadline.data||null;
     const cases=buildUnifiedReviewCases(allRecords,notices.data);
-    if(feedback?.noticeDrafts?.length){
-      const tracks=cases.find(item=>item.key===feedback.key)?.tracks||[];
-      feedback={...feedback,noticeDrafts:feedback.noticeDrafts.filter(entry=>{
-        const track=tracks.find(item=>item.kind===entry.kind);
-        if(!track)return false;
-        const status=track.prior?.status||'draft';
-        return entry.note!==(track.prior?.note||'')||
-          (entry.status!==status&&CORRECTION_NOTICE_TRANSITIONS[status].includes(entry.status));
-      })};
-    }
     drawUnifiedReviewList(container,cases,templates,feedback);
   }catch(error){
     if(!current())return;
@@ -8157,7 +8120,6 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
   const inScope=view.focusId?null:new Set(getFilteredRecords().map(record=>String(record.id)));
   const filtered=cases.filter(caseData=>{
     if(view.focusId)return caseData.rows.some(row=>String(row.id)===view.focusId);
-    if(caseData.key===feedback?.key&&(feedback.noticeDrafts?.length||feedback.reviewDraft))return true;
     if(!caseData.rows.some(row=>inScope.has(String(row.id))))return false;
     const qualifications=caseData.rows.map(qualificationState);
     const notices=caseData.tracks.map(track=>correctionNoticeTrackStatus(track,now));
@@ -8229,8 +8191,7 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
       deadlineButton.disabled=deadlineInput.disabled=false;
     }
   };
-  if(feedback)status.textContent=feedback.message
-    +(feedback.noticeDrafts?.length||feedback.reviewDraft?' 這列仍有未儲存的欄位。':'');
+  if(feedback)status.textContent=feedback.message;
   const redraw=()=>{
     view.expandedKey=null;
     view.recordId=null;
@@ -8311,7 +8272,6 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
       if(emails.length!==1){
         if(view.expandedKey!==item.key)view.recordId=null;
         setExpanded(detail,button,item,true);
-        detail.querySelector('[data-unified-notice-section]').open=true;
         detail.querySelector('[data-unified-draft-section]').open=true;
         const recipient=detail.querySelector('[data-unified-mail-recipient]');
         if(recipient&&!recipient.closest('[hidden]'))recipient.focus();
@@ -8351,51 +8311,30 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
   const changes=feedback?.key===item.key?feedback:null;
   const draftable=correctionNoticeDraftableTracks(item);
   const key=detail.id;
-  const dateFields=(track)=>{
-    const history=[['寄出',track.prior?.sent_at],['回覆',track.prior?.replied_at],['結案',track.prior?.closed_at]]
-      .filter(([,time])=>time).map(([label,time])=>label+' '+correctionNoticeDate(time)).join('｜');
-    return history?`<div class="small">${escapeHtml(history)}</div>`:'';
-  };
   detail.querySelector('[data-unified-detail-content]').innerHTML=`<div class="unified-review-fields">
-    <section aria-label="資格審查">
+    <section aria-label="案件處理">
       ${item.rows.length>1?`<label class="small unified-review-picker" for="${key}-record">編輯登記
         <select id="${key}-record" data-unified-record>${item.rows.map(record=>`<option value="${escapeHtml(String(record.id))}">${escapeHtml(compactRecordCode(record))}｜${escapeHtml(record.name||'姓名未填')}｜${escapeHtml(correctionNoticeSlot(record))}</option>`).join('')}</select>
       </label>`:''}
       <div data-unified-qualification-editor></div>
     </section>
-    ${item.tracks.length?`<details data-unified-notice-section class="unified-notice-section" ${changes?.noticeOpen?'open':''}>
-      <summary>補正通知與紀錄</summary>
+    ${draftable.length?`<details data-unified-draft-section class="unified-notice-section">
+      <summary>查看信件草稿</summary>
       ${item.nameConflict?'<p class="small">同一會員識別有不同姓名，請先核對收件人與登記資料。</p>':''}
-      <div class="correction-notice-tracks">${item.tracks.map(track=>{
-        const status=track.prior?.status||'draft';
-        return `<fieldset data-unified-notice-track="${track.kind}"><legend>${CORRECTION_NOTICE_KINDS[track.kind]}</legend>
-          <div class="correction-notice-fields">
-            <label>通知進度<select data-unified-notice-status>
-              ${CORRECTION_NOTICE_TRANSITIONS[status].map(value=>`<option value="${value}" ${value===status?'selected':''}>${CORRECTION_NOTICE_STATUS[value]}</option>`).join('')}
-            </select></label>
-            <div class="small">回覆期限（臺灣時間）<div data-unified-notice-deadline></div>${dateFields(track)}</div>
-          </div>
-          <label>回覆／處理紀錄<textarea maxlength="1500" rows="2" data-unified-notice-note>${escapeHtml(track.prior?.note||'')}</textarea></label>
-        </fieldset>`;
-      }).join('')}</div>
-      <button type="button" class="btn btn-primary btn-compact" data-unified-save-notices>儲存通知紀錄</button>
-      ${draftable.length?`<details data-unified-draft-section class="unified-notice-section">
-        <summary>查看信件草稿</summary>
-        ${draftable.length>1?`<div class="unified-draft-tracks">${draftable.map(track=>`<label><input type="checkbox" checked data-unified-include="${track.kind}"> ${CORRECTION_NOTICE_KINDS[track.kind]}</label>`).join('')}</div>`:''}
-        <p class="small correction-list-message" data-unified-draft-warning role="status"></p>
-        <div data-unified-draft-content hidden>
-          <div class="correction-notice-fields">
-            <label>收件信箱<select data-unified-mail-recipient></select></label>
-            <label>主旨<input data-unified-mail-subject readonly></label>
-          </div>
-          <div class="correction-notice-buttons">
-            <button type="button" class="btn btn-primary btn-compact" data-unified-open-mail>開啟 Outlook</button>
-            <button type="button" class="btn btn-gray btn-compact" data-unified-copy-mail>複製表格版內文</button>
-            <button type="button" class="btn btn-gray btn-compact" data-unified-download-mail>下載表格草稿</button>
-          </div>
-          <div class="correction-draft-body" data-unified-mail-body tabindex="0" aria-label="信件內文預覽"></div>
+      ${draftable.length>1?`<div class="unified-draft-tracks">${draftable.map(track=>`<label><input type="checkbox" checked data-unified-include="${track.kind}"> ${CORRECTION_NOTICE_KINDS[track.kind]}</label>`).join('')}</div>`:''}
+      <p class="small correction-list-message" data-unified-draft-warning role="status"></p>
+      <div data-unified-draft-content hidden>
+        <div class="correction-notice-fields">
+          <label>收件信箱<select data-unified-mail-recipient></select></label>
+          <label>主旨<input data-unified-mail-subject readonly></label>
         </div>
-      </details>`:''}
+        <div class="correction-notice-buttons">
+          <button type="button" class="btn btn-primary btn-compact" data-unified-open-mail>開啟 Outlook</button>
+          <button type="button" class="btn btn-gray btn-compact" data-unified-copy-mail>複製表格版內文</button>
+          <button type="button" class="btn btn-gray btn-compact" data-unified-download-mail>下載表格草稿</button>
+        </div>
+        <div class="correction-draft-body" data-unified-mail-body tabindex="0" aria-label="信件內文預覽"></div>
+      </div>
     </details>`:''}
     <p class="small correction-list-message" data-unified-detail-status role="status"></p>
   </div>`;
@@ -8404,8 +8343,6 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
   const message=find('[data-unified-detail-status]');
   const picker=find('[data-unified-record]');
   const editor=find('[data-unified-qualification-editor]');
-  const noticeSection=find('[data-unified-notice-section]');
-  const saveNotice=find('[data-unified-save-notices]');
   const pending=item.rows.find(record=>['pending','correction'].includes(qualificationState(record))&&String(record.id)!==changes?.savedId);
   const selected=item.rows.find(record=>String(record.id)===view.recordId);
   const retained=selected&&String(selected.id)!==changes?.savedId;
@@ -8418,78 +8355,79 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
     busy=value;
     actions.setBusy(value);
     if(picker)picker.disabled=value;
-    if(saveNotice)saveNotice.disabled=value;
-    const saveReview=editor.querySelector('[data-qsave]');
-    if(saveReview)saveReview.disabled=value;
+    for(const field of editor.querySelectorAll('select, textarea, [data-qsave]'))field.disabled=value;
   };
-
-  const readNotices=()=>item.tracks.map(track=>{
-    const field=find(`[data-unified-notice-track="${track.kind}"]`);
-    return correctionNoticeTrackUpdate(track,view.deadline,field.querySelector('[data-unified-notice-status]').value,
-      field.querySelector('[data-unified-notice-note]').value.trim());
-  });
-  const editedNotices=()=>readNotices().filter(entry=>{
-    const prior=item.tracks.find(track=>track.kind===entry.kind).prior;
-    return entry.status!==(prior?.status||'draft')||entry.note!==(prior?.note||'');
-  });
   const showRecord=()=>{
     const record=item.rows.find(row=>String(row.id)===recordId);
-    if(!record)return;
+    const saved=qualificationReviews.get(recordId);
+    const tracks=item.tracks.filter(track=>track.rows.some(row=>String(row.id)===recordId));
     view.recordId=recordId;
     detail.dataset.reviewRecordId=recordId;
-    editor.innerHTML=renderQualificationReviewCard(record,key,item.rows.length>1);
-    if(changes?.reviewDraft?.id===recordId){
-      const draft=changes.reviewDraft;
-      const reviewState=editor.querySelector('[data-qstate]');
-      if(reviewState){
-        reviewState.value=draft.status;
-        editor.querySelector('[data-qmember]').value=draft.member;
-        editor.querySelector('[data-qnote]').value=draft.note;
-      }
-    }
-    bindQualificationReviewEditors(editor,async(closed,id)=>{
-      const noticeDrafts=editedNotices();
-      message.textContent=closed?'審查結果已儲存，補正事項已結案。':'審查結果已儲存。';
-      await actions.refresh({
-        key:item.key,savedId:id,noticeOpen:noticeSection?.open,noticeDrafts,
-        message:closed?'已儲存審查結果，並結案 '+closed+' 項補正事項。':'已儲存審查結果。'
-      });
-    },setBusy);
-  };
-  showRecord();
-  if(picker)picker.onchange=()=>{recordId=picker.value;showRecord();};
-
-  for(const entry of changes?.noticeDrafts||[]){
-    const field=find(`[data-unified-notice-track="${entry.kind}"]`);
-    if(!field)continue;
-    const state=field.querySelector('[data-unified-notice-status]');
-    if([...state.options].some(option=>option.value===entry.status))state.value=entry.status;
-    field.querySelector('[data-unified-notice-note]').value=entry.note;
-  }
-  if(saveNotice)saveNotice.onclick=async()=>{
-    if(busy)return;
-    const items=editedNotices();
-    if(!items.length){message.textContent='目前沒有變更。';return;}
-    if(items.some(entry=>['sent','replied'].includes(entry.status)&&(!entry.due_at||
-      (!item.tracks.find(track=>track.kind===entry.kind).prior?.sent_at&&actions.deadlinePending())))){
-      actions.revealDeadline();return;
-    }
+    editor.innerHTML=renderUnifiedCaseEditor(record,key,item.rows.length>1,tracks,view.deadline);
+    bindRegistrationLimitButtons(editor);
     const state=editor.querySelector('[data-qstate]');
     const member=editor.querySelector('[data-qmember]');
     const note=editor.querySelector('[data-qnote]');
-    const dirtyReview=state&&(state.selectedOptions[0]?.defaultSelected===false||
-      member.selectedOptions[0]?.defaultSelected===false||note.value!==note.defaultValue);
-    const reviewDraft=dirtyReview?{id:recordId,status:state.value,member:member.value,note:note.value}:null;
-    setBusy(true);
-    try{
-      await saveCorrectionNoticeProgress(items);
-      message.textContent='通知紀錄已儲存。';
-      await actions.refresh({key:item.key,noticeOpen:true,reviewDraft,message:'已儲存通知紀錄。'});
-    }catch(error){
-      message.textContent=error?.code==='40001'?'案件已由其他承辦人更新。請重新載入後核對。':'無法儲存通知紀錄：'+(error?.message||'請稍後重試');
-    }finally{
-      setBusy(false);
+    const originalState=state?.value;
+    const originalMember=member?.value;
+    if(state&&member){
+      state.onchange=()=>{if(state.value==='qualified')member.value='verified';};
+      member.onchange=()=>{
+        if(member.value!=='verified'&&state.value==='qualified')state.value='pending';
+      };
     }
+
+    editor.querySelector('[data-qsave]').onclick=async()=>{
+      if(busy)return;
+      const reviewChanged=state?.value!==originalState||member?.value!==originalMember;
+      const edits=tracks.flatMap(track=>{
+        const status=editor.querySelector(`[data-unified-notice-status="${track.kind}"]`).value;
+        return status===(track.prior?.status||'draft')?[]
+          :[correctionNoticeTrackUpdate(track,view.deadline,status)];
+      });
+      const noteValue=note.value.trim();
+      if(!reviewChanged&&!edits.length&&noteValue===note.defaultValue.trim()){
+        message.textContent='目前沒有變更。';
+        return;
+      }
+      if(state?.value==='invalid'&&!noteValue){
+        message.textContent='請在審查備註填寫不合格原因。';
+        note.focus();
+        return;
+      }
+      if(reviewChanged&&state.value==='qualified'&&originalMember!=='verified'&&
+        !confirm('請確認申請人已具會員資格。儲存後，審查結果將設為「合格」，會員欄將設為「是」。'))return;
+      if(edits.some(entry=>['sent','replied'].includes(entry.status)&&(!entry.due_at||
+        (!tracks.find(track=>track.kind===entry.kind).prior?.sent_at&&actions.deadlinePending())))){
+        actions.revealDeadline();
+        return;
+      }
+      setBusy(true);
+      let committed=false;
+      try{
+        const result=reviewChanged?state.value:null;
+        const closed=await saveUnifiedReview(recordId,result,reviewChanged?member.value:null,
+          noteValue,saved?.processing_note_version||0,edits,tracks);
+        committed=true;
+        const success=closed?`已儲存，並結案 ${closed} 項補正事項。`:'已儲存。';
+        message.textContent=success;
+        await actions.refresh({
+          key:item.key,savedId:['qualified','invalid'].includes(result)?recordId:null,message:success
+        });
+      }catch(error){
+        message.textContent=committed?'資料已儲存，請重新載入清單。':error?.code==='40001'
+          ?'案件已由其他承辦人更新。請重新載入後核對。'
+          :'無法儲存：'+(error?.message||'請稍後重試');
+      }finally{
+        setBusy(false);
+      }
+    };
+  };
+  showRecord();
+  if(picker)picker.onchange=()=>{
+    recordId=picker.value;
+    message.textContent='';
+    showRecord();
   };
 
   const draftSection=find('[data-unified-draft-section]');
@@ -8499,8 +8437,8 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
   let draft=null;
   const refreshDraft=()=>{
     for(const track of item.tracks){
-      const field=find(`[data-unified-notice-track="${track.kind}"]`);
-      field.querySelector('[data-unified-notice-deadline]').textContent=correctionNoticeDate(correctionNoticeTrackDeadline(track,view.deadline))||'尚未設定';
+      const deadline=editor.querySelector(`[data-unified-notice-deadline="${track.kind}"]`);
+      if(deadline)deadline.textContent=correctionNoticeDate(correctionNoticeTrackDeadline(track,view.deadline))||'尚未設定';
     }
     if(!draftSection)return;
     draft=null;
