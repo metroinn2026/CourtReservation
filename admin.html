@@ -8226,49 +8226,55 @@ function hasUnverifiedHallPhoneConflict(row){
       needsHallCorrection(peer) && qualificationState(peer)!=='invalid'
       && recordLocation(peer)===recordLocation(row) && registrationSlotKey(peer)===slot));
 }
-function buildRelationNoticeEmail(rows,deadline){
+const RELATION_EMAIL_INTRO=[
+  '您好：',
+  '本館核對您的長期租借登記資料後，請於 {回覆期限}（臺灣時間）前，依下列事項辦理並回覆本信。'
+];
+const RELATION_EMAIL_MEMBERSHIP_START=['一、會員資格補正',CORRECTION_EMAIL_MEMBERSHIP_RULE];
+const RELATION_EMAIL_MEMBERSHIP_END=[...CORRECTION_EMAIL_GO_DOWNLOADS,CORRECTION_EMAIL_MEMBERSHIP_EXPIRY,'二、登記資料確認'];
+const RELATION_EMAIL_CONFIRMATION=[
+  '{同會員姓名不同}本館發現同一會員識別有不同的登記姓名，請在回信中告知您的正確姓名，並確認下表哪些登記是您本人送出。',
+  '依登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段，同一天同一時段限登記一種球類。'
+];
+const RELATION_EMAIL_END=[
+  '請核對下表的登記時間、場次及識別資料，回覆哪些登記由您本人送出。回覆時可使用表上的登記序號或「關聯」編號。如有時段衝突或超過登記上限，請註明各組欲保留的登記。',
+  '逾期未回覆時，如本館確認為同一人重複登記，將按登記規定保留最早送出的登記，其餘重複登記不具抽籤資格。',
+  '關聯登記｜異常明細',
+  '{關聯登記明細表}',
+  ...CORRECTION_EMAIL_SIGNATURE
+];
+function buildRelationNoticeEmail(rows,deadline,templates){
   const membershipRows=rows.filter(row=>membershipCheckStatus(row)==='not_member');
   const sharedHallPhoneRows=membershipRows.filter(hasUnverifiedHallPhoneConflict);
-  const sharedHallPhone=sharedHallPhoneRows.length>0;
-  const checkMembership=membershipRows.length>0;
+  const kind=sharedHallPhoneRows.length?'relation_shared_phone':membershipRows.length?'relation_membership':'relation';
+  const template=correctionEmailTemplate(kind,templates);
   const serials=[...new Set(rows.map(compactRecordCode).filter(code=>code!=='—'))];
-  const subject='【北投會館】116 年運動場域長期租借登記'+(checkMembership?'補正與確認':'確認')
+  const subject=template.subject
     +(serials.length?'｜登記序號 '+serials.slice(0,4).join('、')+(serials.length>4?' 等 '+serials.length+' 筆':''):'');
-  const paragraphs=[
-    '您好：',
-    '本館核對您的長期租借登記資料後，請於 '+correctionNoticeEmailDate(deadline)+'（臺灣時間）前，依下列事項辦理並回覆本信。',
-    ...(checkMembership?[
-      '一、會員資格補正',
-      CORRECTION_EMAIL_MEMBERSHIP_RULE,
-      ...(sharedHallPhone?[
-        '本次有以北投會館會員身分提出的登記查無會員資料，且與下表其他登記在同一時段使用相同的聯絡手機。請以您本人的手機號碼註冊台北捷運 GO 會員，完成後請回信告知註冊使用的手機號碼，以利本館查核。'
-      ]:[]),
-      ...(membershipRows.length>sharedHallPhoneRows.length?[
-        `${sharedHallPhone?'其他標示查無會員資料的登記，':'若您本次通知的登記標示查無會員資料，'}請使用原登記的聯絡手機號碼註冊台北捷運 GO 會員。完成後，歡迎在回信中告知註冊時使用的手機號碼，以利本館加快審查。`
-      ]:[]),
-      ...CORRECTION_EMAIL_GO_DOWNLOADS,
-      CORRECTION_EMAIL_MEMBERSHIP_EXPIRY,
-      '二、登記資料確認'
-    ]:[]),
-    ...(rows.some(row=>courtMemberNameConflict(row))?[
-      '本館發現同一會員識別有不同的登記姓名，請在回信中告知您的正確姓名，並確認下表哪些登記是您本人送出。'
-    ]:[]),
-    '依登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段，同一天同一時段限登記一種球類。',
-    ...(sharedHallPhone?[
-      '下表顯示同一時段有多筆登記使用相同的聯絡手機。以台北捷運 GO 會員身分補正時，同一支綁定手機在同一時段僅能保留一筆登記。若這些登記由不同申請人送出，且各自希望保留登記，請每位申請人使用各自的手機號碼註冊台北捷運 GO 會員，並分別回覆告知登記編號及註冊時使用的手機號碼，以利本館查核。'
-    ]:[]),
-    '請核對下表的登記時間、場次及識別資料，回覆哪些登記由您本人送出。回覆時可使用表上的登記序號或「關聯」編號。如有時段衝突或超過登記上限，請註明各組欲保留的登記。',
-    '逾期未回覆時，如本館確認為同一人重複登記，將按登記規定保留最早送出的登記，其餘重複登記不具抽籤資格。'
-  ];
-  const table=relationNoticeDetailsTable(rows);
-  const detailsTitle='關聯登記｜異常明細';
-  return {
-    subject,serial:serials[0]||'',
-    body:[...paragraphs,detailsTitle,table.text,...CORRECTION_EMAIL_SIGNATURE].join('\n\n'),
-    html:paragraphs.map(value=>correctionEmailParagraph(value,/^[一二]、/.test(value))).join('')
-      +correctionEmailParagraph(detailsTitle,true)+table.html
-      +CORRECTION_EMAIL_SIGNATURE.map(value=>correctionEmailParagraph(value)).join('')
+  const showParagraph={
+    '{同會員姓名不同}':rows.some(row=>courtMemberNameConflict(row)),
+    '{其他登記須補正}':membershipRows.length>sharedHallPhoneRows.length
   };
+  const values={'回覆期限':correctionNoticeEmailDate(deadline),'登記筆數':rows.length};
+  const text=[],html=[];
+  for(const section of template.body.split(/(\{關聯登記明細表\})/)){
+    if(section==='{關聯登記明細表}'){
+      const table=relationNoticeDetailsTable(rows);
+      text.push(table.text);
+      html.push(table.html);
+      continue;
+    }
+    for(const paragraph of section.trim().split(/\r?\n[ \t]*\r?\n/)){
+      const condition=Object.keys(showParagraph).find(token=>paragraph.startsWith(token));
+      if(condition&&!showParagraph[condition])continue;
+      const plain=(condition?paragraph.slice(condition.length):paragraph).trim();
+      if(!plain)continue;
+      const value=plain.replace(/\{([^{}]+)\}/g,(token,key)=>Object.hasOwn(values,key)?values[key]:token);
+      text.push(value);
+      html.push(correctionEmailParagraph(value,/^[一二]、/.test(plain)||plain==='關聯登記｜異常明細'));
+    }
+  }
+  return {subject,serial:serials[0]||'',body:text.join('\n\n'),html:html.join('')};
 }
 const CORRECTION_EMAIL_TYPES={
   duplicate:{
@@ -8289,10 +8295,39 @@ const CORRECTION_EMAIL_TYPES={
       '經查您的登記資料有重複情形。回覆會員補正時，請在同一封信中註明欲保留的登記序號。',
       '如會員資格已通過查核，但逾期未告知欲保留的序號，'+CORRECTION_EMAIL_DUPLICATE_FALLBACK,
       '{相關登記明細表}',...CORRECTION_EMAIL_SIGNATURE].join('\n\n').replace('{會員補件期限}','{合併補件期限}')
+  },
+  relation:{
+    label:'關聯登記確認',
+    subject:'【北投會館】116 年運動場域長期租借登記確認',
+    tokens:['回覆期限','關聯登記明細表'],
+    conditional:['同會員姓名不同'],
+    body:[...RELATION_EMAIL_INTRO,...RELATION_EMAIL_CONFIRMATION,...RELATION_EMAIL_END].join('\n\n')
+  },
+  relation_membership:{
+    label:'關聯登記與會員補正',
+    subject:'【北投會館】116 年運動場域長期租借登記補正與確認',
+    tokens:['回覆期限','關聯登記明細表'],
+    conditional:['同會員姓名不同'],
+    body:[...RELATION_EMAIL_INTRO,...RELATION_EMAIL_MEMBERSHIP_START,
+      '若您本次通知的登記標示查無會員資料，請使用原登記的聯絡手機號碼註冊台北捷運 GO 會員。完成後，歡迎在回信中告知註冊時使用的手機號碼，以利本館加快審查。',
+      ...RELATION_EMAIL_MEMBERSHIP_END,...RELATION_EMAIL_CONFIRMATION,...RELATION_EMAIL_END].join('\n\n')
+  },
+  relation_shared_phone:{
+    label:'共用手機與 GO 補正',
+    subject:'【北投會館】116 年運動場域長期租借登記補正與確認',
+    tokens:['回覆期限','關聯登記明細表'],
+    conditional:['同會員姓名不同','其他登記須補正'],
+    body:[...RELATION_EMAIL_INTRO,...RELATION_EMAIL_MEMBERSHIP_START,
+      '本次有以北投會館會員身分提出的登記查無會員資料，且與下表其他登記在同一時段使用相同的聯絡手機。請以您本人的手機號碼註冊台北捷運 GO 會員，完成後請回信告知註冊使用的手機號碼，以利本館查核。',
+      '{其他登記須補正}其他標示查無會員資料的登記，請使用原登記的聯絡手機號碼註冊台北捷運 GO 會員。完成後，歡迎在回信中告知註冊時使用的手機號碼，以利本館加快審查。',
+      ...RELATION_EMAIL_MEMBERSHIP_END,...RELATION_EMAIL_CONFIRMATION,
+      '下表顯示同一時段有多筆登記使用相同的聯絡手機。以台北捷運 GO 會員身分補正時，同一支綁定手機在同一時段僅能保留一筆登記。若這些登記由不同申請人送出，且各自希望保留登記，請每位申請人使用各自的手機號碼註冊台北捷運 GO 會員，並分別回覆告知登記編號及註冊時使用的手機號碼，以利本館查核。',
+      ...RELATION_EMAIL_END].join('\n\n')
   }
 };
 function correctionEmailTemplate(kind,templates){
-  return templates[kind]??{subject:CORRECTION_EMAIL_SUBJECT,body:CORRECTION_EMAIL_TYPES[kind].body};
+  const defaults=CORRECTION_EMAIL_TYPES[kind];
+  return templates[kind]??{subject:defaults.subject??CORRECTION_EMAIL_SUBJECT,body:defaults.body};
 }
 function correctionEmailParagraph(value,heading=false){
   const lines=value.split(/\r?\n/).map(line=>{
@@ -8466,7 +8501,7 @@ function downloadCorrectionOutlook(recipient,draft,message,container){
     message.textContent='無法下載表格草稿，請重試。';
   }
 }
-function relationNoticeContext(item,deadline){
+function relationNoticeContext(item,deadline,templates){
   const rows=relationNoticeRows(item);
   const recipients=relationNoticeRecipients(rows);
   const confirmRecipient=rows.some(row=>courtMemberNameConflict(row));
@@ -8478,7 +8513,7 @@ function relationNoticeContext(item,deadline){
       return prior?.sent_at&&prior.status!=='closed'&&Date.parse(saved)<Date.parse(date)
         &&track.currentRows.some(row=>ids.has(String(row.id)))?saved:date;
     },deadline);
-    return buildRelationNoticeEmail(recipient.rows,due);
+    return buildRelationNoticeEmail(recipient.rows,due,templates);
   };
   return {rows,recipients,confirmRecipient,buildDraft};
 }
@@ -8737,7 +8772,7 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
     const outlook=row.querySelector('[data-unified-outlook]');
     if(outlook)outlook.onclick=()=>{
       if(expanded&&busyRows.has(expanded.detail))return;
-      const relation=relationNoticeContext(item,view.deadline);
+      const relation=relationNoticeContext(item,view.deadline,templates);
       if(relation.recipients.length){
         if(deadlinePending()||!view.deadline){revealDeadline();return;}
         if(relation.confirmRecipient||relation.recipients.length>1){openRelationNoticeDraft(relation);return;}
@@ -8767,7 +8802,7 @@ function renderUnifiedReviewRow(item,index,now,templates){
   const reasons=[...new Set(item.rows.flatMap(row=>reviewReasons(row)))];
   const relation=relationNoticeContext(item,null);
   const hasCorrectionDraft=correctionNoticeDraftableTracks(item).length>0;
-  const mailUnavailable=relation.recipients.length?''
+  const mailUnavailable=relation.recipients.length?(templates?'':'信件範本載入失敗，請重新載入')
     :item.nameConflict&&!relation.rows.length?'請先核對姓名與收件人'
     :!hasCorrectionDraft?(relation.rows.length?'缺少可用的收件信箱':'目前無補正草稿')
     :!templates?'信件範本載入失敗，請重新載入':'';
@@ -8805,7 +8840,7 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
       </label>`:''}
       <div data-unified-qualification-editor></div>
     </section>
-    ${hasRelationDraft?'<div><button type="button" class="btn btn-gray btn-compact" data-unified-relation-preview>查看信件草稿</button></div>':draftable.length?`<details data-unified-draft-section class="unified-notice-section">
+    ${hasRelationDraft?(templates?'<div><button type="button" class="btn btn-gray btn-compact" data-unified-relation-preview>查看信件草稿</button></div>':'<p class="small">信件範本載入失敗，請重新載入。</p>'):draftable.length?`<details data-unified-draft-section class="unified-notice-section">
       <summary>查看信件草稿</summary>
       ${draftable.length>1?`<div class="unified-draft-tracks">${draftable.map(track=>`<label><input type="checkbox" checked data-unified-include="${track.kind}"> ${CORRECTION_NOTICE_KINDS[track.kind]}</label>`).join('')}</div>`:''}
       <p class="small correction-list-message" data-unified-draft-warning role="status"></p>
@@ -8839,9 +8874,9 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
   let busy=false;
   const relationPreview=find('[data-unified-relation-preview]');
   if(relationPreview)relationPreview.onclick=()=>{
-    if(busy)return;
+    if(busy||!templates)return;
     if(actions.deadlinePending()||!view.deadline){actions.revealDeadline();return;}
-    const relation=relationNoticeContext(item,view.deadline);
+    const relation=relationNoticeContext(item,view.deadline,templates);
     if(relation.recipients.length)openRelationNoticeDraft(relation);
   };
   const setBusy=value=>{
@@ -11965,7 +12000,8 @@ function renderSettingsPage(){
 
     if(correction){
       const values=drafts.get(key)??correctionEmailTemplate(key,templates);
-      const tokens=['申請人姓名','登記筆數',...CORRECTION_EMAIL_TYPES[key].tokens];
+      const field=CORRECTION_EMAIL_TYPES[key];
+      const tokens=[...(field.conditional?[]:['申請人姓名']),'登記筆數',...field.tokens];
       editor.innerHTML=`
         <label for="settingsNoticeSubject">主旨</label>
         <input id="settingsNoticeSubject" type="text" required value="${escapeHtml(values.subject)}" aria-describedby="settingsNoticeSubjectHelp">
@@ -11974,6 +12010,9 @@ function renderSettingsPage(){
         <div class="small settings-correction-tokens" id="settingsNoticeBodyHelp">
           代碼會帶入對應資料。明細表代碼可獨立放一行。<br>
           ${tokens.map(token=>`<code>{${token}}</code>`).join(' ')}
+          ${field.conditional?`<p>請保留 <code>{回覆期限}</code> 與 <code>{關聯登記明細表}</code>。</p>
+          <p>以下代碼放在段落開頭，後面的文字只在符合條件時帶入。請以空行區隔段落。</p>
+          ${field.conditional.map(token=>`<code>{${token}}</code>`).join(' ')}`:''}
         </div>
         <textarea id="settingsNoticeBody" class="settings-editor settings-editor-template" rows="16" required aria-describedby="settingsNoticeBodyHelp">${escapeHtml(values.body)}</textarea>
       `;
@@ -12038,6 +12077,11 @@ function renderSettingsPage(){
       value.body=value.body.trim();
       if(!value.subject||!value.body){
         showStatus('請填寫主旨及內文。',true);
+        return;
+      }
+      if(CORRECTION_EMAIL_TYPES[key].conditional&&
+        ['{回覆期限}','{關聯登記明細表}'].some(token=>value.body.split(token).length!==2)){
+        showStatus('請在內文中各保留一個 {回覆期限} 和 {關聯登記明細表}。',true);
         return;
       }
     }
