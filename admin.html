@@ -8236,16 +8236,23 @@ let correctionOutlookOpening=false;
 async function openCorrectionOutlook(recipient,draft,message){
   if(!recipient||!draft||correctionOutlookOpening)return;
   correctionOutlookOpening=true;
+  const status=document.createElement('span');
+  const download=document.createElement('button');
+  download.type='button';
+  download.className='btn btn-gray btn-compact';
+  download.textContent='下載中文草稿（.eml）';
+  download.onclick=()=>downloadCorrectionOutlook(recipient,draft,status,message);
   try{
     const copiedTable=await copyCorrectionEmailBody(draft).catch(()=>false);
     if(!message.isConnected)return;
+    message.replaceChildren(status,' ',download);
     window.location.href=correctionOutlookComposeLink(recipient,draft);
-    message.textContent=copiedTable
-      ?'已複製表格版。在 Outlook 內文按 Ctrl+A，再按 Ctrl+V 即可替換。'
-      :'已帶入純文字內文。可在「查看信件草稿」下載表格草稿。';
+    status.textContent=copiedTable
+      ?'已複製表格版。在 Outlook 內文按 Ctrl+A、Ctrl+V 可替換。若主旨或內文顯示亂碼，可下載中文草稿。'
+      :'若 Outlook 顯示亂碼或內文不完整，可下載中文草稿。';
   }catch(error){
     console.error(error);
-    message.textContent='無法開啟郵件視窗。可在「查看信件草稿」下載表格草稿。';
+    status.textContent='無法開啟郵件視窗，可下載中文草稿。';
   }finally{
     correctionOutlookOpening=false;
   }
