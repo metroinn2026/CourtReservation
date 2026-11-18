@@ -8090,7 +8090,7 @@ function buildRelationNoticeEmail(rows,deadline){
   const subject='【北投會館】116 年運動場域長期租借登記'+(checkMembership?'補正與確認':'確認')
     +(serials.length?'｜登記序號 '+serials.slice(0,4).join('、')+(serials.length>4?' 等 '+serials.length+' 筆':''):'');
   const paragraphs=[
-    (maskPublicName(rows[0].name,'O')||'申請人')+' 您好：',
+    '您好：',
     '本館核對您的長期租借登記資料後，請於 '+correctionNoticeEmailDate(deadline)+'（臺灣時間）前，依下列事項辦理並回覆本信。',
     ...(checkMembership?[
       '一、會員資格補正',
