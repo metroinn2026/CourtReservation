@@ -5999,10 +5999,10 @@ function renderLocationOptions(selected='', includeAll=false, allLabel='全部�
 }
 function shouldLockLocationFilter(){ return getAdminLocations().length<=1; }
 function isSuspiciousPhone(record){return courtSharedPhoneRelations(record).length>0;}
-function suspiciousTag(record){return isSuspiciousPhone(record)?'<span class="tag gray" title="僅表示共用聯絡電話，不是資格異常">共用聯絡手機</span>':'<span class="tag gray">正常</span>';}
+function suspiciousTag(record){return isSuspiciousPhone(record)?'<span class="tag gray" title="共用聯絡手機，需人工核對是否為同一人">共用聯絡手機</span>':'<span class="tag gray">正常</span>';}
 function getRecordAnomalyTypes(record,{members=allRecords,stage}={}){
   const types=[];
-  // 聯絡手機共用不屬於資格異常，僅提示同會員識別對應不同姓名。
+  types.push(...courtIdentityReviewMatches(record).map(({reason})=>reason));
   if(courtMemberNameConflict(record,members))types.push('同會員識別姓名不同');
 
   if(getRegistrationLimitEvidence(record,members).length)types.push('超過次數');
@@ -6040,13 +6040,17 @@ const MEMBER_NOT_FOUND_LABELS={
   '會館會員':'查無北投會館會員資料',
   unknown:'查無會員資料'
 };
+const COURT_IDENTITY_REVIEW_REASONS={phone:'相同手機登記',name:'相同姓名登記',member:'同會員識別多筆登記'};
 const COURT_ANOMALY_GROUPS={
-  '__registration__':{label:'登記資料需確認',types:['同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常',...Object.values(MEMBER_NOT_FOUND_LABELS),'Go 會員尚未查核']},
+  '__registration__':{label:'登記資料需確認',types:[...Object.values(COURT_IDENTITY_REVIEW_REASONS),'同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常',...Object.values(MEMBER_NOT_FOUND_LABELS),'Go 會員尚未查核']},
   '__lottery__':{label:'抽籤結果需確認',types:['超過名額','候補異常','結果漏匯']},
   '__publication__':{label:'公告進度需確認',types:['公布未完成','結果待發布']}
 };
 const ALL_ANOMALIES_FILTER='__all_anomalies__';
 const COURT_ANOMALY_PATTERNS={
+  [COURT_IDENTITY_REVIEW_REASONS.phone]:{label:COURT_IDENTITY_REVIEW_REASONS.phone,detail:'多筆登記使用同一手機，請核對是否為同一人。'},
+  [COURT_IDENTITY_REVIEW_REASONS.name]:{label:COURT_IDENTITY_REVIEW_REASONS.name,detail:'多筆登記使用相同姓名，請核對是否為同一人。'},
+  [COURT_IDENTITY_REVIEW_REASONS.member]:{label:COURT_IDENTITY_REVIEW_REASONS.member,detail:'同一會員識別有多筆登記，請確認保留的登記。'},
   '超過次數':{label:'重複登記／超過次數', detail:'同一會員重複登記同場次，或超出登記次數上限。'},
   [MEMBER_NOT_FOUND_LABELS.Go會員]:{label:MEMBER_NOT_FOUND_LABELS.Go會員, detail:'Go 會員查核結果為「否」。'},
   [MEMBER_NOT_FOUND_LABELS.會館會員]:{label:MEMBER_NOT_FOUND_LABELS.會館會員, detail:'北投會館會員查核結果為「否」。'},
@@ -6285,6 +6289,35 @@ function courtSharedPhoneRelations(r){
 function normalizeCourtMemberName(name){
  return String(name||'').normalize('NFKC').replace(/[\s\u3000]/g,'').toLowerCase();
 }
+let courtIdentityReviewIndex={records:null};
+function courtIdentityReviewKeys(record){
+ const phone=normalizePhone(record.phone);
+ const member=courtMemberIdentityKey(record);
+ return {phone:/^09\d{8}$/.test(phone)?phone:'',name:normalizeCourtMemberName(record.name),
+   member:member.startsWith('UNVERIFIED:')?'':member};
+}
+function courtIdentityReviewMatches(record){
+ if(courtIdentityReviewIndex.records!==allRecords){
+   const groups={phone:new Map(),name:new Map(),member:new Map()};
+   for(const row of allRecords){
+     for(const [kind,key] of Object.entries(courtIdentityReviewKeys(row))){
+       if(!key)continue;
+       if(!groups[kind].has(key))groups[kind].set(key,[]);
+       groups[kind].get(key).push(row);
+     }
+   }
+   courtIdentityReviewIndex={records:allRecords,groups};
+ }
+ return Object.entries(courtIdentityReviewKeys(record)).flatMap(([kind,key])=>{
+   const peers=(courtIdentityReviewIndex.groups[kind].get(key)||[]).filter(row=>String(row.id)!==String(record.id));
+   return peers.length?[{reason:COURT_IDENTITY_REVIEW_REASONS[kind],peers}]:[];
+ });
+}
+function courtIdentityReviewKey(record){
+ const matches=courtIdentityReviewMatches(record);
+ return matches.length?JSON.stringify(matches.map(({reason,peers})=>
+   [reason,peers.map(row=>String(row.id)).sort()])):null;
+}
 function courtMemberNameConflicts(r,records=allRecords){
  const key=courtMemberIdentityKey(r);
  const name=normalizeCourtMemberName(r.name);
@@ -6298,7 +6331,8 @@ function courtMemberNameConflict(r,records){return courtMemberNameConflicts(r,re
 function courtRelatedRecords(record){
  const phone=normalizePhone(record.phone);
  const direct=phone?allRecords.filter(r=>normalizePhone(r.phone)===phone):[];
- const related=new Map([record,...direct,...courtMemberNameConflicts(record)].map(r=>[String(r.id),r]));
+ const matches=courtIdentityReviewMatches(record).flatMap(issue=>issue.peers);
+ const related=new Map([record,...direct,...matches,...courtMemberNameConflicts(record)].map(r=>[String(r.id),r]));
  for(const r of [...related.values()]){
    for(const item of registrationLimitRows(getRegistrationLimitEvidence(r))){
      related.set(String(item.id),item);
@@ -6319,7 +6353,7 @@ function openCourtSharedPhoneRelations(recordId,additionalRows=[]){
    (new Date(a.registered_at||0)-new Date(b.registered_at||0)) ||
    compactRecordCode(a).localeCompare(compactRecordCode(b)));
  const stateLabel={qualified:'合格',pending:'待確認',correction:'待補正',invalid:'不合格'};
- const body=`<p>共關聯 ${rows.length} 筆，包含目前登記。會館依身分證字號計算登記次數，Go 依綁定手機計算。共用手機的登記也會列在這裡，請依各列的異常與審查狀態核對。</p>
+ const body=`<p>共關聯 ${rows.length} 筆，包含目前登記。請對照同名、同手機及同會員識別的登記。確認為同一人時，僅保留一筆。</p>
  <div class="table-wrap"><table><thead><tr><th>序號</th><th>登記時間</th><th>姓名</th><th>會員類型／識別末四碼</th><th>場次</th><th>異常與核對項目</th><th>資格審查</th></tr></thead><tbody>
  ${rows.map(r=>{
    const limit=getRegistrationLimitEvidence(r);
@@ -7579,16 +7613,21 @@ function membershipReviewIssue(r,{includeGoMembership=true}={}){
   return '';
 }
 function qualificationIssueTypes(r,{includeGoMembership=true}={}){
-  const issues=getRecordAnomalyTypes(r).filter(x=>/同會員識別姓名不同|超過次數|不開放場次有登記|開放前登記|截止後登記|登記時間異常/.test(x));
+  const issues=getRecordAnomalyTypes(r).filter(x=>COURT_ANOMALY_GROUPS.__registration__.types.includes(x));
   const memberIssue=membershipReviewIssue(r,{includeGoMembership});
   if(memberIssue)issues.push(memberIssue);
   return issues;
 }
 function qualificationState(r){
   if(registrationWindowRejection(r))return 'invalid';
-  const saved=qualificationReviews.get(String(r.id))?.review_status;
+  const review=qualificationReviews.get(String(r.id));
+  const saved=review?.review_status;
   if(saved==='invalid')return 'invalid';
   if(membershipReviewIssue(r))return saved==='correction'?'correction':'pending';
+  if(saved==='qualified'){
+    const identityKey=courtIdentityReviewKey(r);
+    if(identityKey&&review.identity_review_key!==identityKey)return 'pending';
+  }
   return saved || (qualificationIssueTypes(r).length?'pending':'qualified');
 }
 function isQualifiedForLottery(r){return qualificationReviewsLoaded && qualificationState(r)==='qualified';}
@@ -7678,7 +7717,7 @@ async function loadQualificationReviews(){
     let offset=0;
     const batchSize=500;
     for(;;){
-      const {data,error}=await client.rpc('court_list_qualifications_with_notes_v1')
+      const {data,error}=await client.rpc('court_list_qualifications_with_identity_v1')
         .order('record_id',{ascending:true}).range(offset,offset+batchSize-1);
       if(error)throw error;
       const rows=Array.isArray(data)?data:[];
@@ -7710,6 +7749,7 @@ function renderUnifiedCaseEditor(record,key,showReasons,tracks,deadline){
       <div class="small">${escapeHtml(compactRecordCode(record))}｜${escapeHtml(correctionNoticeSlot(record))}</div>
     </div><span class="tag review-${state}">${escapeHtml(reviewLabel)}</span></div>
     ${showReasons&&reasons.length?`<div class="small unified-record-reasons">${reasons.map(reason=>reason==='超過次數'?registrationLimitButton(record):escapeHtml(reason)).join('、')}</div>`:''}
+    ${courtIdentityReviewMatches(record).length?`<p class="small"><button type="button" class="court-phone-relations" data-limit-record="${escapeHtml(id)}">查看同名、同手機或同會員識別的登記</button></p>`:''}
     ${rejection?`<p class="small">依登記期間判定不合格（${escapeHtml(rejection)}）。</p>`:''}
     <div class="unified-case-statuses">
       ${rejection?'':`<label>是否為會員<select data-qmember>${membershipCheckOptions(membershipCheckStatus(record))}</select></label>
@@ -7864,14 +7904,14 @@ function correctionNoticeTrackUpdate(track,sharedDeadline,status,note=track.prio
     status,due_at:correctionNoticeTrackDeadline(track,sharedDeadline),note
   };
 }
-async function saveUnifiedReview(id,status,memberStatus,note,noteVersion,edits,tracks){
+async function saveUnifiedReview(id,status,memberStatus,note,noteVersion,edits,tracks,identityReviewKey){
   const linked=['qualified','invalid'].includes(status)
     ? tracks.filter(track=>track.prior?.status!=='closed')
       .map(track=>correctionNoticeTrackUpdate(track,null,track.prior?.status||'draft'))
     : [];
-  const {data,error}=await reviewDbClient().rpc('court_save_review_and_notice_progress_v1',{
+  const {data,error}=await reviewDbClient().rpc('court_save_review_and_notice_progress_v2',{
     p_record_id:id,p_status:status,p_member_status:memberStatus,p_note:note,
-    p_note_version:noteVersion,p_notice_edits:edits,p_linked_notices:linked
+    p_note_version:noteVersion,p_notice_edits:edits,p_linked_notices:linked,p_identity_review_key:identityReviewKey
   });
   if(error)throw error;
   return data;
@@ -8474,6 +8514,9 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
         note.focus();
         return;
       }
+      const identityReviewKey=courtIdentityReviewKey(record);
+      if(reviewChanged&&state.value==='qualified'&&identityReviewKey&&
+        !confirm('請先核對關聯登記，確認為同一人時只保留一筆。確定將本筆設為合格？'))return;
       if(reviewChanged&&state.value==='qualified'&&originalMember!=='verified'&&
         !confirm('請確認申請人已具會員資格。儲存後，審查結果將設為「合格」，會員欄將設為「是」。'))return;
       if(edits.some(entry=>['sent','replied'].includes(entry.status)&&(!entry.due_at||
@@ -8486,7 +8529,7 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
       try{
         const result=reviewChanged?state.value:null;
         const closed=await saveUnifiedReview(recordId,result,reviewChanged?member.value:null,
-          noteValue,saved?.processing_note_version||0,edits,tracks);
+          noteValue,saved?.processing_note_version||0,edits,tracks,identityReviewKey);
         committed=true;
         const success=closed?`已儲存，並結案 ${closed} 項補正事項。`:'已儲存。';
         message.textContent=success;
@@ -12171,11 +12214,11 @@ function exportToCsv(records){
 function showAnomalyDefinitionModal(){
   const body=`
     <div style="display:grid;gap:8px;text-align:left;">
-      <div><strong>登記資料需確認</strong>：同會員識別姓名不同、超過登記次數、不開放場次、登記時間異常；共用聯絡手機不算資格異常。</div>
+      <div><strong>登記資料需確認</strong>：相同手機、相同姓名、同會員識別多筆登記、超過登記次數、不開放場次及登記時間異常。</div>
       <div><strong>抽籤結果需確認</strong>：超過名額、候補順位異常、部分結果尚未匯入。</div>
       <div><strong>公告進度需確認</strong>：結果未完成或尚未公告。</div>
       <div style="border-top:1px solid #e2e8f0;padding-top:8px"><strong>詳細原因對照</strong></div>
-      <div><strong>共用聯絡手機</strong>：點擊手機欄旁「關聯」可查詢，不代表同一人或不合格。</div><div><strong>同會員識別姓名不同</strong>：同一身分證或 Go 綁定手機出現不同姓名，需人工核對。</div>
+      <div><strong>同名或共用聯絡手機</strong>：點擊手機欄旁「關聯」可查詢。請人工核對是否為同一人。</div><div><strong>同會員識別姓名不同</strong>：同一身分證或 Go 綁定手機出現不同姓名，需人工核對。</div>
       <div><strong>超過次數</strong>：同一申請人登記次數超過規則。</div>
       <div><strong>超過名額</strong>：中籤人數超過場次名額。</div>
       <div><strong>公布未完成</strong>：已公布但仍有未完成結果。</div>
