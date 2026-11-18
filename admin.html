@@ -8103,11 +8103,14 @@ function correctionNoticeEmails(rows){
   }
   return [...unique.values()];
 }
+function hasRelationNoticeIssue(row){
+  return courtIdentityReviewMatches(row).length>0 || courtMemberNameConflict(row);
+}
 function relationNoticeRows(item){
   const rows=item.rows.filter(row=>!row.result_published&&!row.lottery_locked
     && ['','未抽籤'].includes(String(row.lottery_status||'').trim())
     && !['invalid','qualified'].includes(qualificationState(row)));
-  return rows.some(row=>courtIdentityReviewMatches(row).length)?rows:[];
+  return rows.some(hasRelationNoticeIssue)?rows:[];
 }
 function relationNoticeRecipients(rows){
   const groups=new Map();
@@ -8119,9 +8122,9 @@ function relationNoticeRecipients(rows){
     groups.get(key).rows.push(row);
   }
   return [...groups.values()]
-    .filter(group=>group.rows.some(row=>courtIdentityReviewMatches(row).length))
+    .filter(group=>group.rows.some(hasRelationNoticeIssue))
     .map(group=>({...group,rows:group.rows.filter(row=>
-      courtIdentityReviewMatches(row).length || membershipCheckStatus(row)==='not_member'
+      hasRelationNoticeIssue(row) || membershipCheckStatus(row)==='not_member'
       || getRegistrationLimitEvidence(row,rows).length)}));
 }
 const correctionNoticeRegistrationFormat=new Intl.DateTimeFormat('sv-SE',{
@@ -8228,6 +8231,9 @@ function buildRelationNoticeEmail(rows,deadline){
       ...CORRECTION_EMAIL_GO_DOWNLOADS,
       CORRECTION_EMAIL_MEMBERSHIP_EXPIRY,
       '二、登記資料確認'
+    ]:[]),
+    ...(rows.some(row=>courtMemberNameConflict(row))?[
+      '本館發現同一會員識別有不同的登記姓名，請在回信中告知您的正確姓名，並確認下表哪些登記是您本人送出。'
     ]:[]),
     '依登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段，同一天同一時段限登記一種球類。',
     '請核對下表的登記時間、場次及識別資料，回覆哪些登記由您本人送出。回覆時可使用表上的登記序號或「關聯」編號。如有時段衝突或超過登記上限，請註明各組欲保留的登記。',
@@ -8442,6 +8448,7 @@ function downloadCorrectionOutlook(recipient,draft,message,container){
 function relationNoticeContext(item,deadline){
   const rows=relationNoticeRows(item);
   const recipients=relationNoticeRecipients(rows);
+  const confirmRecipient=rows.some(row=>courtMemberNameConflict(row));
   const buildDraft=recipient=>{
     const ids=new Set(recipient.rows.map(row=>String(row.id)));
     const due=item.tracks.reduce((date,track)=>{
@@ -8452,12 +8459,13 @@ function relationNoticeContext(item,deadline){
     },deadline);
     return buildRelationNoticeEmail(recipient.rows,due);
   };
-  return {rows,recipients,buildDraft};
+  return {rows,recipients,confirmRecipient,buildDraft};
 }
-function openRelationNoticeDraft({recipients,buildDraft}){
+function openRelationNoticeDraft({recipients,confirmRecipient,buildDraft}){
   const dialog=showCourtDetailsDialog('查看信件草稿',`
+    ${confirmRecipient?'<p>同一會員識別有不同姓名，請核對姓名、登記序號及信箱，再選擇本次收件人。</p>':''}
     <div class="correction-notice-fields">
-      <label>收件信箱<select data-relation-recipient>${recipients.length>1?'<option value="">請選擇收件信箱</option>':''}
+      <label>收件信箱<select data-relation-recipient>${confirmRecipient||recipients.length>1?'<option value="">請選擇收件信箱</option>':''}
         ${recipients.map(({email,rows},index)=>`<option value="${index}">${escapeHtml(email)}｜${escapeHtml(rows[0].name)}｜${escapeHtml(rows.map(compactRecordCode).join('、'))}</option>`).join('')}
       </select></label>
       <label>主旨<input readonly data-relation-subject></label>
@@ -8711,7 +8719,7 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
       const relation=relationNoticeContext(item,view.deadline);
       if(relation.recipients.length){
         if(deadlinePending()||!view.deadline){revealDeadline();return;}
-        if(relation.recipients.length>1){openRelationNoticeDraft(relation);return;}
+        if(relation.confirmRecipient||relation.recipients.length>1){openRelationNoticeDraft(relation);return;}
         const [recipient]=relation.recipients;
         void openCorrectionOutlook(recipient.email,relation.buildDraft(recipient),message);
         return;
@@ -8738,7 +8746,8 @@ function renderUnifiedReviewRow(item,index,now,templates){
   const reasons=[...new Set(item.rows.flatMap(row=>reviewReasons(row)))];
   const relation=relationNoticeContext(item,null);
   const hasCorrectionDraft=correctionNoticeDraftableTracks(item).length>0;
-  const mailUnavailable=relation.recipients.length?'':item.nameConflict?'請先核對姓名與收件人'
+  const mailUnavailable=relation.recipients.length?''
+    :item.nameConflict&&!relation.rows.length?'請先核對姓名與收件人'
     :!hasCorrectionDraft?(relation.rows.length?'缺少可用的收件信箱':'目前無補正草稿')
     :!templates?'信件範本載入失敗，請重新載入':'';
   const stats={};
