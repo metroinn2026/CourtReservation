@@ -8268,10 +8268,23 @@ function downloadCorrectionOutlook(recipient,draft,message,container){
     message.textContent='無法下載表格草稿，請重試。';
   }
 }
-function openRelationNoticeDraft(rows,deadline){
+function relationNoticeContext(item,deadline){
+  const rows=relationNoticeRows(item);
   const recipients=relationNoticeRecipients(rows);
-  if(!recipients.length)return;
-  const dialog=showCourtDetailsDialog('查看信件草稿｜異常關聯',`
+  const buildDraft=recipient=>{
+    const ids=new Set(recipient.rows.map(row=>String(row.id)));
+    const due=item.tracks.reduce((date,track)=>{
+      const prior=track.prior;
+      const saved=prior?.due_at;
+      return prior?.sent_at&&prior.status!=='closed'&&Date.parse(saved)<Date.parse(date)
+        &&track.currentRows.some(row=>ids.has(String(row.id)))?saved:date;
+    },deadline);
+    return buildRelationNoticeEmail(recipient.rows,due,rows);
+  };
+  return {rows,recipients,buildDraft};
+}
+function openRelationNoticeDraft({recipients,buildDraft}){
+  const dialog=showCourtDetailsDialog('查看信件草稿',`
     <div class="correction-notice-fields">
       <label>收件信箱<select data-relation-recipient>${recipients.length>1?'<option value="">請選擇收件信箱</option>':''}
         ${recipients.map(({email,rows},index)=>`<option value="${index}">${escapeHtml(email)}｜${escapeHtml(rows[0].name)}｜${escapeHtml(rows.map(compactRecordCode).join('、'))}</option>`).join('')}
@@ -8293,7 +8306,7 @@ function openRelationNoticeDraft(rows,deadline){
   const download=dialog.querySelector('[data-relation-download]');
   const refresh=()=>{
     const recipient=recipients[select.value];
-    const draft=recipient?buildRelationNoticeEmail(recipient.rows,deadline,rows):null;
+    const draft=recipient?buildDraft(recipient):null;
     subject.value=draft?.subject||'';
     body.innerHTML=draft?.html||'';
     message.textContent='';
@@ -8508,12 +8521,6 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
     const detail=find(`#unifiedReviewDetail-${index}`);
     const button=row.querySelector('[data-unified-review-expand]');
     const message=row.querySelector('[data-unified-row-status]');
-    const relationOutlook=row.querySelector('[data-relation-draft]');
-    if(relationOutlook)relationOutlook.onclick=()=>{
-      if(expanded&&busyRows.has(expanded.detail))return;
-      if(deadlinePending()||!view.deadline){revealDeadline();return;}
-      openRelationNoticeDraft(relationNoticeRows(item),view.deadline);
-    };
     row.querySelectorAll('[data-correction-related-record]').forEach(link=>{
       link.onclick=()=>openCourtSharedPhoneRelations(link.dataset.correctionRelatedRecord,item.rows);
     });
@@ -8527,6 +8534,14 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
     const outlook=row.querySelector('[data-unified-outlook]');
     if(outlook)outlook.onclick=()=>{
       if(expanded&&busyRows.has(expanded.detail))return;
+      const relation=relationNoticeContext(item,view.deadline);
+      if(relation.recipients.length){
+        if(deadlinePending()||!view.deadline){revealDeadline();return;}
+        if(relation.recipients.length>1){openRelationNoticeDraft(relation);return;}
+        const [recipient]=relation.recipients;
+        void openCorrectionOutlook(recipient.email,relation.buildDraft(recipient),message);
+        return;
+      }
       const tracks=correctionNoticeDraftableTracks(item);
       const items=tracks.map(track=>({kind:track.kind,due_at:correctionNoticeTrackDeadline(track,view.deadline)}));
       const emails=correctionNoticeEmails(correctionNoticeDraftRows(item,items));
@@ -8546,11 +8561,10 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
 }
 function renderUnifiedReviewRow(item,index,now,templates){
   const reasons=[...new Set(item.rows.flatMap(row=>qualificationIssueTypes(row)))];
-  const relationRows=relationNoticeRows(item);
-  const relationReady=relationRows.some(row=>courtIdentityReviewMatches(row).length&&correctionNoticeEmails([row]).length);
+  const relation=relationNoticeContext(item,null);
   const hasCorrectionDraft=correctionNoticeDraftableTracks(item).length>0;
-  const mailUnavailable=item.nameConflict?'請先核對姓名與收件人'
-    :!hasCorrectionDraft?(relationReady?'':'目前無補正草稿')
+  const mailUnavailable=relation.recipients.length?'':item.nameConflict?'請先核對姓名與收件人'
+    :!hasCorrectionDraft?(relation.rows.length?'缺少可用的收件信箱':'目前無補正草稿')
     :!templates?'信件範本載入失敗，請重新載入':'';
   const stats={};
   for(const row of item.rows){const state=qualificationState(row);stats[state]=(stats[state]||0)+1;}
@@ -8569,8 +8583,7 @@ function renderUnifiedReviewRow(item,index,now,templates){
       </div>`).join('')||'—'}</td>
     <td role="cell"><div class="correction-list-actions">
       <button type="button" class="btn btn-primary btn-compact" data-unified-review-expand aria-expanded="false" aria-controls="unifiedReviewDetail-${index}">展開處理</button>
-      ${mailUnavailable?`<span class="small">${escapeHtml(mailUnavailable)}</span>`:hasCorrectionDraft?'<button type="button" class="btn btn-gray btn-compact" data-unified-outlook>開啟 Outlook</button>':''}
-      ${relationReady?'<button type="button" class="btn btn-gray btn-compact" data-relation-draft>開啟 Outlook（異常關聯）</button>':relationRows.length?'<span class="small">異常關聯缺少可用的收件信箱</span>':''}
+      ${mailUnavailable?`<span class="small">${escapeHtml(mailUnavailable)}</span>`:'<button type="button" class="btn btn-gray btn-compact" data-unified-outlook>開啟 Outlook</button>'}
       </div><p class="small correction-list-message" data-unified-row-status role="status"></p></td>
   </tr><tr role="row" class="unified-review-detail" id="unifiedReviewDetail-${index}" hidden><td role="cell" colspan="5" data-unified-detail-content></td></tr>`;
 }
@@ -8578,6 +8591,7 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
   const view=correctionNoticeView;
   const changes=feedback?.key===item.key?feedback:null;
   const draftable=correctionNoticeDraftableTracks(item);
+  const hasRelationDraft=relationNoticeContext(item,null).recipients.length>0;
   const key=detail.id;
   detail.querySelector('[data-unified-detail-content]').innerHTML=`<div class="unified-review-fields">
     <section aria-label="案件處理">
@@ -8586,7 +8600,7 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
       </label>`:''}
       <div data-unified-qualification-editor></div>
     </section>
-    ${draftable.length?`<details data-unified-draft-section class="unified-notice-section">
+    ${hasRelationDraft?'<div><button type="button" class="btn btn-gray btn-compact" data-unified-relation-preview>查看信件草稿</button></div>':draftable.length?`<details data-unified-draft-section class="unified-notice-section">
       <summary>查看信件草稿</summary>
       ${draftable.length>1?`<div class="unified-draft-tracks">${draftable.map(track=>`<label><input type="checkbox" checked data-unified-include="${track.kind}"> ${CORRECTION_NOTICE_KINDS[track.kind]}</label>`).join('')}</div>`:''}
       <p class="small correction-list-message" data-unified-draft-warning role="status"></p>
@@ -8618,6 +8632,13 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
   if(picker)picker.value=recordId;
 
   let busy=false;
+  const relationPreview=find('[data-unified-relation-preview]');
+  if(relationPreview)relationPreview.onclick=()=>{
+    if(busy)return;
+    if(actions.deadlinePending()||!view.deadline){actions.revealDeadline();return;}
+    const relation=relationNoticeContext(item,view.deadline);
+    if(relation.recipients.length)openRelationNoticeDraft(relation);
+  };
   const setBusy=value=>{
     busy=value;
     actions.setBusy(value);
