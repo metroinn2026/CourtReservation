@@ -8020,11 +8020,39 @@ function correctionNoticeEmailTable(records,reasonsByRecord){
     if(reasonsByRecord)cells.push(reasonsByRecord.get(String(record.id)).join('、'));
     return cells;
   });
+  return correctionEmailTable(headers,rows);
+}
+function correctionEmailTable(headers,rows){
   const cellStyle='border:1px solid #a9b8cb;padding:7px 9px;vertical-align:top;text-align:left;';
   const html='<table border="1" cellspacing="0" cellpadding="7" style="border-collapse:collapse;width:100%;margin:6px 0 14px;">'
     +'<thead><tr>'+headers.map(label=>'<th scope="col" style="'+cellStyle+'background-color:#eef3f9;color:#172b43;">'+escapeHtml(label)+'</th>').join('')+'</tr></thead>'
     +'<tbody>'+rows.map(row=>'<tr>'+row.map(value=>'<td style="'+cellStyle+'">'+escapeHtml(value)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
   return {html,text:[headers,...rows].map(row=>row.join(' ｜ ')).join('\n')};
+}
+function relationNoticeComparisonTable(records,matchesByRecord){
+  const ownIds=new Set(records.map(record=>String(record.id)));
+  const related=new Map();
+  for(const record of records){
+    const serial=compactRecordCode(record);
+    for(const {reason,peers} of matchesByRecord.get(String(record.id))){
+      for(const peer of peers){
+        const id=String(peer.id);
+        if(ownIds.has(id))continue;
+        if(!related.has(id))related.set(id,{peer,reasons:new Set()});
+        related.get(id).reasons.add(serial==='—'?reason:`${reason}（對照 ${serial}）`);
+      }
+    }
+  }
+  if(!related.size)return null;
+  const headers=['比對編號','場地','使用目的','申請時段','登記日期','關聯原因'];
+  const rows=[...related.values()].sort((a,b)=>correctionNoticeRecordOrder(a.peer,b.peer)).map(({peer,reasons},index)=>{
+    const registered=new Date(peer.registered_at||'');
+    const date=Number.isNaN(registered.getTime())?'未記錄':correctionNoticeRegistrationFormat.format(registered).split(' ')[0].replaceAll('-','/');
+    const slot=[peer.day_of_week,peer.time_slot].filter(Boolean).join(' ');
+    // 比對表僅呈現可辨識場次的資訊。登記序號、姓名及會員識別等資料只列於收件人的登記表。
+    return [`關聯 ${index+1}`,courtVenueLabel(peer),courtUsage(peer),slot||'未記錄',date,[...reasons].join('、')];
+  });
+  return correctionEmailTable(headers,rows);
 }
 const CORRECTION_EMAIL_SUBJECT='【北投會館】116 年運動場域長期租借登記補正通知';
 const CORRECTION_EMAIL_GREETING='{申請人姓名} 您好：';
@@ -8052,9 +8080,11 @@ const CORRECTION_EMAIL_SIGNATURE=[
 ];
 function buildRelationNoticeEmail(rows,deadline,caseRows){
   const checkMembership=rows.some(row=>membershipCheckStatus(row)==='not_member');
+  const matchesByRecord=new Map(rows.map(row=>[String(row.id),courtIdentityReviewMatches(row).map(({reason,peers})=>({
+    reason:reason===COURT_IDENTITY_REVIEW_REASONS.phone?'手機相同':'姓名相同',peers
+  }))]));
   const reasonsByRecord=new Map(rows.map(row=>{
-    const reasons=courtIdentityReviewMatches(row).map(match=>
-      match.reason===COURT_IDENTITY_REVIEW_REASONS.phone?'手機相同':'姓名相同');
+    const reasons=matchesByRecord.get(String(row.id)).map(match=>match.reason);
     reasons.push(...getRegistrationLimitEvidence(row,caseRows).map(issue=>issue.label));
     if(membershipCheckStatus(row)==='not_member')reasons.unshift('查無會員資料');
     return [String(row.id),reasons];
@@ -8078,11 +8108,15 @@ function buildRelationNoticeEmail(rows,deadline,caseRows){
     '逾期未回覆時，如本館確認為同一人重複登記，將按登記規定保留最早送出的登記，其餘重複登記不具抽籤資格。'
   ];
   const table=correctionNoticeEmailTable(rows,reasonsByRecord);
+  const compare=relationNoticeComparisonTable(rows,matchesByRecord);
+  const compareTitle='關聯登記供比對';
+  const compareInstructions='請比對下列場次。如您認得其中任何一筆，請在回信中註明「關聯」編號及是否由本人登記。如為本人登記且您手邊有登記序號，請一併提供。';
   return {
     subject,serial:serials[0]||'',
-    body:[...paragraphs,table.text,...CORRECTION_EMAIL_SIGNATURE].join('\n\n'),
+    body:[...paragraphs,table.text,...(compare?[compareTitle,compareInstructions,compare.text]:[]),...CORRECTION_EMAIL_SIGNATURE].join('\n\n'),
     html:paragraphs.map(value=>correctionEmailParagraph(value,/^[一二]、/.test(value))).join('')
-      +table.html+CORRECTION_EMAIL_SIGNATURE.map(value=>correctionEmailParagraph(value)).join('')
+      +table.html+(compare?correctionEmailParagraph(compareTitle,true)+correctionEmailParagraph(compareInstructions)+compare.html:'')
+      +CORRECTION_EMAIL_SIGNATURE.map(value=>correctionEmailParagraph(value)).join('')
   };
 }
 const CORRECTION_EMAIL_TYPES={
