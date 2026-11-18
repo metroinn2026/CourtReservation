@@ -8029,28 +8029,34 @@ function correctionEmailTable(headers,rows){
     +'<tbody>'+rows.map(row=>'<tr>'+row.map(value=>'<td style="'+cellStyle+'">'+escapeHtml(value)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
   return {html,text:[headers,...rows].map(row=>row.join(' ｜ ')).join('\n')};
 }
-function relationNoticeComparisonTable(records,matchesByRecord){
+function relationNoticeDetailsTable(records){
   const ownIds=new Set(records.map(record=>String(record.id)));
-  const related=new Map();
-  for(const record of records){
-    const serial=compactRecordCode(record);
-    for(const {reason,peers} of matchesByRecord.get(String(record.id))){
-      for(const peer of peers){
-        const id=String(peer.id);
-        if(ownIds.has(id))continue;
-        if(!related.has(id))related.set(id,{peer,reasons:new Set()});
-        related.get(id).reasons.add(serial==='—'?reason:`${reason}（對照 ${serial}）`);
-      }
+  const related=new Map(records.flatMap(courtRelatedRecords).map(record=>[String(record.id),record]));
+  const sorted=[...related.values()].sort(correctionNoticeRecordOrder);
+  // 收件人可用比對編號回覆。只有本次通知的登記列出實際序號。
+  let relatedIndex=0;
+  const labels=new Map(sorted.map(record=>{
+    const id=String(record.id);
+    return [id,ownIds.has(id)?compactRecordCode(record):`關聯 ${++relatedIndex}`];
+  }));
+  const headers=['登記／比對編號','登記時間','遮罩姓名','手機末三碼','會員類別','識別碼末三碼','場次','異常與核對項目'];
+  const rows=sorted.map(record=>{
+    const id=String(record.id);
+    const registered=new Date(record.registered_at||'');
+    const date=Number.isNaN(registered.getTime())?'未記錄':correctionNoticeRegistrationFormat.format(registered).replaceAll('-','/');
+    const memberType=memberIdentityType(record);
+    const memberLast3=memberIdentifierLast4(record).match(/\d{3}$/)?.[0]||'未記錄';
+    const reasons=qualificationIssueTypes(record).filter(reason=>![COURT_IDENTITY_RELATION_ANOMALY,'超過次數'].includes(reason));
+    for(const {reason,peers} of courtIdentityReviewMatches(record)){
+      const label=reason===COURT_IDENTITY_REVIEW_REASONS.phone?'手機相同':'姓名相同';
+      const references=peers.map(peer=>labels.get(String(peer.id))).filter(code=>code&&code!=='—');
+      reasons.push(references.length?`${label}（${references.join('、')}）`:label);
     }
-  }
-  if(!related.size)return null;
-  const headers=['比對編號','場地','使用目的','申請時段','登記日期','關聯原因'];
-  const rows=[...related.values()].sort((a,b)=>correctionNoticeRecordOrder(a.peer,b.peer)).map(({peer,reasons},index)=>{
-    const registered=new Date(peer.registered_at||'');
-    const date=Number.isNaN(registered.getTime())?'未記錄':correctionNoticeRegistrationFormat.format(registered).split(' ')[0].replaceAll('-','/');
-    const slot=[peer.day_of_week,peer.time_slot].filter(Boolean).join(' ');
-    // 比對表僅呈現可辨識場次的資訊。登記序號、姓名及會員識別等資料只列於收件人的登記表。
-    return [`關聯 ${index+1}`,courtVenueLabel(peer),courtUsage(peer),slot||'未記錄',date,[...reasons].join('、')];
+    reasons.push(...getRegistrationLimitEvidence(record).map(issue=>issue.label));
+    const reference=ownIds.has(id)?`${labels.get(id)}（本次通知）`:labels.get(id);
+    return [reference,date,maskPublicName(record.name,'O')||'未記錄',
+      getLotteryPhoneLast3(record)||'未記錄',memberType,memberLast3,
+      correctionNoticeSlot(record)||'未記錄',[...new Set(reasons)].join('、')||'—'];
   });
   return correctionEmailTable(headers,rows);
 }
@@ -8078,44 +8084,33 @@ const CORRECTION_EMAIL_SIGNATURE=[
   '如有疑問，可於上班時間致電 02-28930105（分機 8317）洽林先生。',
   '北投會館營運管理中心'
 ];
-function buildRelationNoticeEmail(rows,deadline,caseRows){
+function buildRelationNoticeEmail(rows,deadline){
   const checkMembership=rows.some(row=>membershipCheckStatus(row)==='not_member');
-  const matchesByRecord=new Map(rows.map(row=>[String(row.id),courtIdentityReviewMatches(row).map(({reason,peers})=>({
-    reason:reason===COURT_IDENTITY_REVIEW_REASONS.phone?'手機相同':'姓名相同',peers
-  }))]));
-  const reasonsByRecord=new Map(rows.map(row=>{
-    const reasons=matchesByRecord.get(String(row.id)).map(match=>match.reason);
-    reasons.push(...getRegistrationLimitEvidence(row,caseRows).map(issue=>issue.label));
-    if(membershipCheckStatus(row)==='not_member')reasons.unshift('查無會員資料');
-    return [String(row.id),reasons];
-  }));
   const serials=[...new Set(rows.map(compactRecordCode).filter(code=>code!=='—'))];
   const subject='【北投會館】116 年運動場域長期租借登記'+(checkMembership?'補正與確認':'確認')
     +(serials.length?'｜登記序號 '+serials.slice(0,4).join('、')+(serials.length>4?' 等 '+serials.length+' 筆':''):'');
   const paragraphs=[
-    (rows[0].name||'申請人')+' 您好：',
+    (maskPublicName(rows[0].name,'O')||'申請人')+' 您好：',
     '本館核對您的長期租借登記資料後，請於 '+correctionNoticeEmailDate(deadline)+'（臺灣時間）前，依下列事項辦理並回覆本信。',
     ...(checkMembership?[
       '一、會員資格補正',
       CORRECTION_EMAIL_MEMBERSHIP_RULE,
-      '下表標示「查無會員資料」的登記，請使用您原先登記的聯絡手機號碼完成台北捷運 GO 會員註冊。完成後，歡迎在同一封回信中告知註冊時使用的手機號碼，以利本館加快審查。',
+      '若您本次通知的登記標示查無會員資料，請使用原登記的聯絡手機號碼註冊台北捷運 GO 會員。完成後，歡迎在回信中告知註冊時使用的手機號碼，以利本館加快審查。',
       ...CORRECTION_EMAIL_GO_DOWNLOADS,
       CORRECTION_EMAIL_MEMBERSHIP_EXPIRY,
       '二、登記資料確認'
     ]:[]),
     '依登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段，同一天同一時段限登記一種球類。',
-    '請依下表「補正事項」確認哪些登記是您本人送出，並於回信中註明登記序號。如另有您本人送出的登記，請一併提供序號。如有時段衝突或超過登記上限，請註明各組欲保留的登記序號。',
+    '請核對下表的登記時間、場次及識別資料，回覆哪些登記由您本人送出。回覆時可使用表上的登記序號或「關聯」編號。如有時段衝突或超過登記上限，請註明各組欲保留的登記。',
     '逾期未回覆時，如本館確認為同一人重複登記，將按登記規定保留最早送出的登記，其餘重複登記不具抽籤資格。'
   ];
-  const table=correctionNoticeEmailTable(rows,reasonsByRecord);
-  const compare=relationNoticeComparisonTable(rows,matchesByRecord);
-  const compareTitle='關聯登記供比對';
-  const compareInstructions='請比對下列場次。如您認得其中任何一筆，請在回信中註明「關聯」編號及是否由本人登記。如為本人登記且您手邊有登記序號，請一併提供。';
+  const table=relationNoticeDetailsTable(rows);
+  const detailsTitle='關聯登記｜異常明細';
   return {
     subject,serial:serials[0]||'',
-    body:[...paragraphs,table.text,...(compare?[compareTitle,compareInstructions,compare.text]:[]),...CORRECTION_EMAIL_SIGNATURE].join('\n\n'),
+    body:[...paragraphs,detailsTitle,table.text,...CORRECTION_EMAIL_SIGNATURE].join('\n\n'),
     html:paragraphs.map(value=>correctionEmailParagraph(value,/^[一二]、/.test(value))).join('')
-      +table.html+(compare?correctionEmailParagraph(compareTitle,true)+correctionEmailParagraph(compareInstructions)+compare.html:'')
+      +correctionEmailParagraph(detailsTitle,true)+table.html
       +CORRECTION_EMAIL_SIGNATURE.map(value=>correctionEmailParagraph(value)).join('')
   };
 }
@@ -8326,7 +8321,7 @@ function relationNoticeContext(item,deadline){
       return prior?.sent_at&&prior.status!=='closed'&&Date.parse(saved)<Date.parse(date)
         &&track.currentRows.some(row=>ids.has(String(row.id)))?saved:date;
     },deadline);
-    return buildRelationNoticeEmail(recipient.rows,due,rows);
+    return buildRelationNoticeEmail(recipient.rows,due);
   };
   return {rows,recipients,buildDraft};
 }
