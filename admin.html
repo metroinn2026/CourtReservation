@@ -6372,16 +6372,24 @@ function openCourtSharedPhoneRelations(recordId,additionalRows=[]){
    compactRecordCode(a).localeCompare(compactRecordCode(b)));
  const stateLabel={qualified:'合格',pending:'待確認',correction:'待補正',invalid:'不合格'};
  const body=`<p>共關聯 ${rows.length} 筆，包含目前登記。請核對姓名、手機及會員識別，並依時段和登記上限確認可保留的登記。</p>
- <div class="table-wrap"><table><thead><tr><th>序號</th><th>登記時間</th><th>姓名</th><th>會員類型／識別末四碼</th><th>場次</th><th>異常與核對項目</th><th>資格審查</th></tr></thead><tbody>
+ <div class="table-wrap"><table><thead><tr><th>序號</th><th>登記時間</th><th>姓名</th><th scope="col">手機末三碼</th><th>會員類型／識別末四碼</th><th>場次</th><th>異常與核對項目</th><th>資格審查</th></tr></thead><tbody>
  ${rows.map(r=>{
    const limit=getRegistrationLimitEvidence(r);
-   const reasons=registrationReviewReasons(r).filter(reason=>reason!=='超過次數');
+   const reasons=registrationReviewReasons(r).filter(reason=>reason!=='超過次數').flatMap(reason=>{
+     if(reason!==COURT_IDENTITY_RELATION_ANOMALY)return [reason];
+     return courtIdentityReviewMatches(r).map(match=>{
+       const label=match.reason===COURT_IDENTITY_REVIEW_REASONS.phone?'手機相同':'姓名相同';
+       const codes=match.peers.filter(peer=>related.has(String(peer.id))).map(compactRecordCode);
+       return codes.length?`${label}（${codes.join('、')}）`:label;
+     });
+   });
    reasons.push(...limit.map(issue=>`超過次數：${issue.label}（${issue.rows.length} 筆）`));
    const state=registrationWindowRejection(r)?'不合格':qualificationReviewsLoaded?stateLabel[qualificationState(r)]:'未載入';
    return `<tr>
      <td><strong>${escapeHtml(compactRecordCode(r))}</strong>${r===record?'<div class="small">目前登記</div>':''}</td>
      <td>${escapeHtml(formatCompactDateTime(r.registered_at))}</td>
      <td>${escapeHtml(r.name)}</td>
+     <td>${escapeHtml(getLotteryPhoneLast3(r)||'—')}</td>
      <td>${escapeHtml(memberIdentityType(r))}／${escapeHtml(memberIdentifierLast4(r)||'—')}</td>
      <td>${escapeHtml(courtVenueLabel(r))}／${escapeHtml(courtUsage(r))}<br>${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</td>
      <td>${reasons.map(escapeHtml).join('<br>')||'—'}</td><td>${escapeHtml(state||'待確認')}</td>
