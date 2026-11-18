@@ -7923,7 +7923,7 @@ function renderUnifiedCaseEditor(record,key,showReasons,tracks,deadline){
       ${rejection?'':`<label>是否為會員<select data-qmember>${membershipCheckOptions(membershipCheckStatus(record))}</select></label>
       <label>審查結果<select data-qstate>${QUALIFICATION_REVIEW_OPTIONS.map(([value,label])=>`<option value="${value}" ${state===value?'selected':''}>${label}</option>`).join('')}</select></label>`}
       ${tracks.map(track=>{
-        const status=track.prior?.status||'draft';
+        const status=correctionNoticeTrackProgress(track);
         const history=[['寄出',track.prior?.sent_at],['回覆',track.prior?.replied_at],['結案',track.prior?.closed_at]]
           .filter(([,time])=>time).map(([label,time])=>label+' '+correctionNoticeDate(time)).join('｜');
         return `<div><label>${CORRECTION_NOTICE_KINDS[track.kind]}通知進度
@@ -7961,6 +7961,11 @@ const CORRECTION_NOTICE_TRANSITIONS={
   replied:['replied','closed'],
   closed:['closed']
 };
+function correctionNoticeTrackProgress(track){
+  const prior=track.prior;
+  if(prior?.status==='closed'&&!prior.sent_at&&track.currentRows.length)return 'draft';
+  return prior?.status||'draft';
+}
 const correctionNoticeView={filter:'active',noticeFilter:'all',page:1,deadline:null,focusId:null,expandedKey:null,recordId:null};
 function resetUnifiedReviewSelection(){
   Object.assign(correctionNoticeView,{page:1,focusId:null,expandedKey:null,recordId:null});
@@ -8023,7 +8028,7 @@ function buildCorrectionNoticeCases(records,savedNotices){
 function correctionNoticeTrackStatus(track,now){
   if(!track.prior)return 'draft';
   if(['sent','replied'].includes(track.prior.status)&&Date.parse(track.prior.due_at)<now)return 'overdue';
-  return track.prior.status;
+  return correctionNoticeTrackProgress(track);
 }
 function correctionNoticeTrackLabel(track,now){
   const status=correctionNoticeTrackStatus(track,now);
@@ -8060,10 +8065,10 @@ function correctionNoticeSlot(r){
   return [...new Set([locationLabel(recordLocation(r)),courtVenueLabel(r),courtUsage(r),r.day_of_week,r.time_slot].filter(Boolean))].join(' ');
 }
 function correctionNoticeDraftableTracks(caseData){
-  return caseData.nameConflict?[]:caseData.tracks.filter(track=>track.currentRows.length&&track.prior?.status!=='closed');
+  return caseData.nameConflict?[]:caseData.tracks.filter(track=>track.currentRows.length&&correctionNoticeTrackProgress(track)!=='closed');
 }
 function correctionNoticeTrackDeadline(track,sharedDeadline){
-  if(track.prior?.sent_at||track.prior?.status==='closed')return track.prior?.due_at||null;
+  if(track.prior?.sent_at||correctionNoticeTrackProgress(track)==='closed')return track.prior?.due_at||null;
   return sharedDeadline||track.prior?.due_at||null;
 }
 function correctionNoticeTrackUpdate(track,sharedDeadline,status,note=track.prior?.note||''){
@@ -8841,7 +8846,7 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
       const reviewChanged=state?.value!==originalState||member?.value!==originalMember;
       const edits=tracks.flatMap(track=>{
         const status=editor.querySelector(`[data-unified-notice-status="${track.kind}"]`).value;
-        return status===(track.prior?.status||'draft')?[]
+        return status===correctionNoticeTrackProgress(track)?[]
           :[correctionNoticeTrackUpdate(track,view.deadline,status)];
       });
       const noteValue=note.value.trim();
