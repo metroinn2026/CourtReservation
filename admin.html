@@ -8216,8 +8216,21 @@ const CORRECTION_EMAIL_SIGNATURE=[
   '如有疑問，可於上班時間致電 02-28930105（分機 8317）洽林先生。',
   '北投會館營運管理中心'
 ];
+function hasUnverifiedHallPhoneConflict(row){
+  const needsHallCorrection=record=>memberIdentityType(record)==='會館會員'
+    && membershipCheckStatus(record)==='not_member';
+  const slot=registrationSlotKey(row);
+  if(!slot||!needsHallCorrection(row))return false;
+  return courtIdentityReviewMatches(row).some(({reason,peers})=>
+    reason===COURT_IDENTITY_REVIEW_REASONS.phone && peers.some(peer=>
+      needsHallCorrection(peer) && qualificationState(peer)!=='invalid'
+      && recordLocation(peer)===recordLocation(row) && registrationSlotKey(peer)===slot));
+}
 function buildRelationNoticeEmail(rows,deadline){
-  const checkMembership=rows.some(row=>membershipCheckStatus(row)==='not_member');
+  const membershipRows=rows.filter(row=>membershipCheckStatus(row)==='not_member');
+  const sharedHallPhoneRows=membershipRows.filter(hasUnverifiedHallPhoneConflict);
+  const sharedHallPhone=sharedHallPhoneRows.length>0;
+  const checkMembership=membershipRows.length>0;
   const serials=[...new Set(rows.map(compactRecordCode).filter(code=>code!=='—'))];
   const subject='【北投會館】116 年運動場域長期租借登記'+(checkMembership?'補正與確認':'確認')
     +(serials.length?'｜登記序號 '+serials.slice(0,4).join('、')+(serials.length>4?' 等 '+serials.length+' 筆':''):'');
@@ -8227,7 +8240,12 @@ function buildRelationNoticeEmail(rows,deadline){
     ...(checkMembership?[
       '一、會員資格補正',
       CORRECTION_EMAIL_MEMBERSHIP_RULE,
-      '若您本次通知的登記標示查無會員資料，請使用原登記的聯絡手機號碼註冊台北捷運 GO 會員。完成後，歡迎在回信中告知註冊時使用的手機號碼，以利本館加快審查。',
+      ...(sharedHallPhone?[
+        '本次有以北投會館會員身分提出的登記查無會員資料，且與下表其他登記在同一時段使用相同的聯絡手機。請以您本人的手機號碼註冊台北捷運 GO 會員，完成後請回信告知註冊使用的手機號碼，以利本館查核。'
+      ]:[]),
+      ...(membershipRows.length>sharedHallPhoneRows.length?[
+        `${sharedHallPhone?'其他標示查無會員資料的登記，':'若您本次通知的登記標示查無會員資料，'}請使用原登記的聯絡手機號碼註冊台北捷運 GO 會員。完成後，歡迎在回信中告知註冊時使用的手機號碼，以利本館加快審查。`
+      ]:[]),
       ...CORRECTION_EMAIL_GO_DOWNLOADS,
       CORRECTION_EMAIL_MEMBERSHIP_EXPIRY,
       '二、登記資料確認'
@@ -8236,6 +8254,9 @@ function buildRelationNoticeEmail(rows,deadline){
       '本館發現同一會員識別有不同的登記姓名，請在回信中告知您的正確姓名，並確認下表哪些登記是您本人送出。'
     ]:[]),
     '依登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段，同一天同一時段限登記一種球類。',
+    ...(sharedHallPhone?[
+      '下表顯示同一時段有多筆登記使用相同的聯絡手機。以台北捷運 GO 會員身分補正時，同一支綁定手機在同一時段僅能保留一筆登記。若其中有其他人送出的登記，請在回信中註明，供本館分別核對。'
+    ]:[]),
     '請核對下表的登記時間、場次及識別資料，回覆哪些登記由您本人送出。回覆時可使用表上的登記序號或「關聯」編號。如有時段衝突或超過登記上限，請註明各組欲保留的登記。',
     '逾期未回覆時，如本館確認為同一人重複登記，將按登記規定保留最早送出的登記，其餘重複登記不具抽籤資格。'
   ];
