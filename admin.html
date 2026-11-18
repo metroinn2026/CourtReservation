@@ -6002,7 +6002,7 @@ function isSuspiciousPhone(record){return courtSharedPhoneRelations(record).leng
 function suspiciousTag(record){return isSuspiciousPhone(record)?'<span class="tag gray" title="共用聯絡手機，需人工核對是否為同一人">共用聯絡手機</span>':'<span class="tag gray">正常</span>';}
 function getRecordAnomalyTypes(record,{members=allRecords,stage}={}){
   const types=[];
-  types.push(...courtIdentityReviewMatches(record).map(({reason})=>reason));
+  if(courtIdentityReviewMatches(record).length)types.push(COURT_IDENTITY_RELATION_ANOMALY);
   if(courtMemberNameConflict(record,members))types.push('同會員識別姓名不同');
 
   if(getRegistrationLimitEvidence(record,members).length)types.push('超過次數');
@@ -6040,17 +6040,18 @@ const MEMBER_NOT_FOUND_LABELS={
   '會館會員':'查無北投會館會員資料',
   unknown:'查無會員資料'
 };
+const COURT_IDENTITY_RELATION_ANOMALY='異常關聯(手機或姓名相同)';
+// 保留個別比對事由，供已完成的身分審查核對。
 const COURT_IDENTITY_REVIEW_REASONS={phone:'相同手機登記',name:'相同姓名登記'};
 const COURT_MEMBER_LIMIT_REVIEW_KEY='同會員識別多筆登記';
 const COURT_ANOMALY_GROUPS={
-  '__registration__':{label:'登記資料需確認',types:[...Object.values(COURT_IDENTITY_REVIEW_REASONS),'同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常',...Object.values(MEMBER_NOT_FOUND_LABELS),'Go 會員尚未查核']},
+  '__registration__':{label:'登記資料需確認',types:[COURT_IDENTITY_RELATION_ANOMALY,'同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常',...Object.values(MEMBER_NOT_FOUND_LABELS),'Go 會員尚未查核']},
   '__lottery__':{label:'抽籤結果需確認',types:['超過名額','候補異常','結果漏匯']},
   '__publication__':{label:'公告進度需確認',types:['公布未完成','結果待發布']}
 };
 const ALL_ANOMALIES_FILTER='__all_anomalies__';
 const COURT_ANOMALY_PATTERNS={
-  [COURT_IDENTITY_REVIEW_REASONS.phone]:{label:COURT_IDENTITY_REVIEW_REASONS.phone,detail:'多筆登記使用同一手機，請核對是否為同一人。'},
-  [COURT_IDENTITY_REVIEW_REASONS.name]:{label:COURT_IDENTITY_REVIEW_REASONS.name,detail:'多筆登記使用相同姓名，請核對是否為同一人。'},
+  [COURT_IDENTITY_RELATION_ANOMALY]:{label:COURT_IDENTITY_RELATION_ANOMALY,detail:'手機或姓名相同，請核對是否為同一人。'},
   '超過次數':{label:'重複登記／超過次數', detail:'同一會員重複登記同場次、同一日同時段登記不同球類，或超出登記上限。'},
   [MEMBER_NOT_FOUND_LABELS.Go會員]:{label:MEMBER_NOT_FOUND_LABELS.Go會員, detail:'Go 會員查核結果為「否」。'},
   [MEMBER_NOT_FOUND_LABELS.會館會員]:{label:MEMBER_NOT_FOUND_LABELS.會館會員, detail:'北投會館會員查核結果為「否」。'},
@@ -12246,7 +12247,7 @@ function showAnomalyDefinitionModal(){
       <div><strong>抽籤結果需確認</strong>：超過名額、候補順位異常、部分結果尚未匯入。</div>
       <div><strong>公告進度需確認</strong>：結果未完成或尚未公告。</div>
       <div style="border-top:1px solid #e2e8f0;padding-top:8px"><strong>詳細原因對照</strong></div>
-      <div><strong>同名或共用聯絡手機</strong>：點擊手機欄旁「關聯」可查詢。請人工核對是否為同一人。</div><div><strong>同會員識別姓名不同</strong>：同一身分證或 Go 綁定手機出現不同姓名，需人工核對。</div>
+      <div><strong>${COURT_IDENTITY_RELATION_ANOMALY}</strong>：點擊手機欄旁「關聯」可查詢。請人工核對是否為同一人。</div><div><strong>同會員識別姓名不同</strong>：同一身分證或 Go 綁定手機出現不同姓名，需人工核對。</div>
       <div><strong>超過次數</strong>：同一申請人登記次數超過規則。</div>
       <div><strong>超過名額</strong>：中籤人數超過場次名額。</div>
       <div><strong>公布未完成</strong>：已公布但仍有未完成結果。</div>
