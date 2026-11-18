@@ -7187,12 +7187,7 @@ function renderDashboard(){
   if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
 
   document.querySelectorAll('#anomalyCenter .anomaly-text-action').forEach(button=>button.onclick=()=>{
-    recordsFromAnomalyShortcut=true;
-    recordsActionTab='filter';
-    Object.assign(recordState,{q:'',location:'',venue:'',usage:'',day:'',time:'',
-      anomaly:button.dataset.anomaly,lotteryFilter:'',page:1});
-    renderPage('records');
-    document.querySelector('.records-function-tabs')?.scrollIntoView({behavior:'smooth',block:'start'});
+    openDashboardAnomalyReview(button.dataset.anomaly);
   });
 
   document.querySelectorAll('.dashboard-action').forEach(btn=>{
@@ -7448,7 +7443,17 @@ function renderCourtUsageOptions(venue, selected=''){
   return '<option value="">全部使用項目</option>'+availableCourtUsages(venue).map(u=>
     `<option value="${escapeHtml(u)}" ${u===selected?'selected':''}>${escapeHtml(u)}</option>`).join('');
 }
+function openDashboardAnomalyReview(anomaly){
+  clearRecordFilters();
+  recordsFromAnomalyShortcut=true;
+  recordsActionTab='review';
+  Object.assign(recordState,{location:'',anomaly});
+  Object.assign(correctionNoticeView,{filter:'all',noticeFilter:'all'});
+  renderPage('records');
+  document.querySelector('.records-function-tabs')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
 function clearRecordFilters(){
+  if(recordsFromAnomalyShortcut)Object.assign(correctionNoticeView,{filter:'active',noticeFilter:'all'});
   recordsFromAnomalyShortcut=false;
   Object.assign(recordState,{q:'',location:DEFAULT_LOCATION,venue:'',usage:'',day:'',time:'',
     anomaly:'',lotteryFilter:'',page:1});
@@ -7614,6 +7619,7 @@ function renderRecordsPage(){
   document.querySelectorAll('.records-function-tab').forEach(btn=>{
     btn.onclick=()=>{
       closeCourtImportModal();
+      if(recordsFromAnomalyShortcut&&recordsActionTab===btn.dataset.actionTab)return;
       recordsActionTab=btn.dataset.actionTab;
       if(recordsFromAnomalyShortcut){
         clearRecordFilters();
@@ -8328,12 +8334,13 @@ function openRelationNoticeDraft({recipients,buildDraft}){
 function buildUnifiedReviewCases(records,savedNotices){
   const cases=new Map(buildCorrectionNoticeCases(records,savedNotices).map(item=>[item.key,item]));
   const focus=correctionNoticeView.focusId;
+  const shortcutIds=recordsFromAnomalyShortcut?new Set(getFilteredRecords().map(row=>String(row.id))):null;
   for(const row of records){
     const id=String(row.id);
     const review=qualificationReviews.get(id);
     const hasReviewDetails=review?.processing_note_version>0||
       (review?.review_status==='qualified'&&qualificationIssueTypes(row).length>0);
-    if(qualificationState(row)==='qualified'&&id!==focus&&!hasReviewDetails)continue;
+    if(qualificationState(row)==='qualified'&&id!==focus&&!hasReviewDetails&&!shortcutIds?.has(id))continue;
     const key=personKey(row);
     let item=cases.get(key);
     if(!item){
@@ -8375,12 +8382,13 @@ async function renderUnifiedReviewList(container,feedback){
       const status=container.querySelector('#unifiedReviewStatus');
       if(status){status.textContent=warning+'請按「重新載入」。';return;}
     }
-    const readOnly=allRecords.filter(record=>qualificationIssueTypes(record).length);
+    const reasons=recordsFromAnomalyShortcut?registrationReviewReasons:qualificationIssueTypes;
+    const readOnly=recordsFromAnomalyShortcut?getFilteredRecords():allRecords.filter(record=>reasons(record).length);
     container.innerHTML=`<div class="panel admin-inner-section">
       <p class="small" role="status">${warning} 以下顯示系統偵測的異常原因。</p>
       <button type="button" class="btn btn-gray btn-compact" id="reloadUnifiedReadOnly">重新載入</button>
       <div class="table-wrap unified-review-table-wrap"><table><thead><tr><th>申請人</th><th>登記序號</th><th>異常原因</th></tr></thead>
-      <tbody>${readOnly.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(compactRecordCode(r))}</td><td>${escapeHtml(qualificationIssueTypes(r).join('、'))}</td></tr>`).join('')||'<tr><td colspan="3">目前沒有系統偵測到的異常案件。</td></tr>'}</tbody></table></div>
+      <tbody>${readOnly.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(compactRecordCode(r))}</td><td>${escapeHtml(reasons(r).join('、'))}</td></tr>`).join('')||'<tr><td colspan="3">目前沒有符合條件的案件。</td></tr>'}</tbody></table></div>
     </div>`;
     container.querySelector('#reloadUnifiedReadOnly').onclick=()=>void renderUnifiedReviewList(container);
   }
@@ -8414,6 +8422,7 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
         `<label for="unifiedReviewFilter">案件狀態</label><select id="unifiedReviewFilter">${options(casesByStatus,view.filter)}</select>
         <label for="unifiedNoticeFilter">通知進度</label><select id="unifiedNoticeFilter">${options(noticeStatuses,view.noticeFilter)}</select>`}
       <button type="button" class="btn btn-gray btn-compact" id="reloadUnifiedReview">重新載入</button>
+      ${recordsFromAnomalyShortcut&&!view.focusId?`<span class="small">異常篩選 ${escapeHtml(currentRecordsScopeLabel())}</span>`:''}
       <span class="small">共 ${filtered.length} 件案件</span>
     </form>
     <details id="unifiedReviewDeadline" class="unified-review-deadline">
@@ -8567,7 +8576,8 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
   });
 }
 function renderUnifiedReviewRow(item,index,now,templates){
-  const reasons=[...new Set(item.rows.flatMap(row=>qualificationIssueTypes(row)))];
+  const reviewReasons=recordsFromAnomalyShortcut?registrationReviewReasons:qualificationIssueTypes;
+  const reasons=[...new Set(item.rows.flatMap(row=>reviewReasons(row)))];
   const relation=relationNoticeContext(item,null);
   const hasCorrectionDraft=correctionNoticeDraftableTracks(item).length>0;
   const mailUnavailable=relation.recipients.length?'':item.nameConflict?'請先核對姓名與收件人'
