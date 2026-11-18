@@ -5613,6 +5613,7 @@ async function endAdminSession(reason='signed-out',notify=false){
   allRecords=[];allLogs=[];
   secureIdentityBySubmission.clear();secureEmailBySubmission.clear();
   revealedSensitiveKeys.clear();secureIdentityAuthenticated=false;
+  document.querySelector?.('dialog[data-relation-notice]')?.close();
   const app=document.getElementById('app');
   if(app)app.classList.add('hidden');
   let revokeTimeout=null;
@@ -7967,6 +7968,23 @@ function correctionNoticeEmails(rows){
   }
   return [...unique.values()];
 }
+function relationNoticeRows(item){
+  return item.rows.filter(row=>!row.result_published&&!row.lottery_locked
+    && ['','未抽籤'].includes(String(row.lottery_status||'').trim())
+    && !['invalid','qualified'].includes(qualificationState(row))
+    && courtIdentityReviewMatches(row).length);
+}
+function relationNoticeRecipients(rows){
+  const groups=new Map();
+  for(const row of rows){
+    const email=correctionNoticeEmails([row])[0];
+    if(!email)continue;
+    const key=JSON.stringify([email.toLowerCase(),normalizeCourtMemberName(row.name)]);
+    if(!groups.has(key))groups.set(key,{email,rows:[]});
+    groups.get(key).rows.push(row);
+  }
+  return [...groups.values()];
+}
 const correctionNoticeRegistrationFormat=new Intl.DateTimeFormat('sv-SE',{
   timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
 });
@@ -8017,6 +8035,25 @@ const CORRECTION_EMAIL_SIGNATURE=[
   '如有疑問，可於上班時間致電 02-28930105（分機 8317）洽林先生。',
   '北投會館營運管理中心'
 ];
+function buildRelationNoticeEmail(rows,deadline){
+  const serials=[...new Set(rows.map(compactRecordCode).filter(code=>code!=='—'))];
+  const subject='【北投會館】116 年運動場域長期租借登記確認'
+    +(serials.length?'｜登記序號 '+serials.slice(0,4).join('、')+(serials.length>4?' 等 '+serials.length+' 筆':''):'');
+  const paragraphs=[
+    (rows[0].name||'申請人')+' 您好：',
+    '本館核對 116 年運動場域長期租借登記時，發現有登記資料的手機號碼或姓名相同，想請您協助確認下表所列登記是否由您本人送出。',
+    '依登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段，同一天同一時段限登記一種球類。',
+    '請於 '+correctionNoticeEmailDate(deadline)+'（臺灣時間）前回覆本信，註明下表哪些登記是您本人送出。如另有您本人送出的登記，請一併提供登記序號。如有時段衝突或超過登記上限，請註明各組欲保留的登記序號。',
+    '逾期未回覆時，如本館確認為同一人重複登記，將按登記規定保留最早送出的登記，其餘重複登記不具抽籤資格。'
+  ];
+  const table=correctionNoticeEmailTable(rows);
+  const asHtml=text=>`<p style="margin:0 0 10px;line-height:1.65;">${escapeHtml(text)}</p>`;
+  return {
+    subject,serial:serials[0]||'',
+    body:[...paragraphs,table.text,...CORRECTION_EMAIL_SIGNATURE].join('\n\n'),
+    html:paragraphs.map(asHtml).join('')+table.html+CORRECTION_EMAIL_SIGNATURE.map(asHtml).join('')
+  };
+}
 const CORRECTION_EMAIL_TYPES={
   duplicate:{
     label:'重複登記補件',
@@ -8202,6 +8239,42 @@ function downloadCorrectionOutlook(recipient,draft,message,container){
     console.error(error);
     message.textContent='無法下載表格草稿，請重試。';
   }
+}
+function openRelationNoticeDraft(rows,deadline){
+  const recipients=relationNoticeRecipients(rows);
+  if(!recipients.length)return;
+  const dialog=showCourtDetailsDialog('查看信件草稿｜異常關聯',`
+    <div class="correction-notice-fields">
+      <label>收件信箱<select data-relation-recipient>${recipients.length>1?'<option value="">請選擇收件信箱</option>':''}
+        ${recipients.map(({email,rows},index)=>`<option value="${index}">${escapeHtml(email)}｜${escapeHtml(rows[0].name)}｜${escapeHtml(rows.map(compactRecordCode).join('、'))}</option>`).join('')}
+      </select></label>
+      <label>主旨<input readonly data-relation-subject></label>
+    </div>
+    <div class="correction-notice-buttons">
+      <button type="button" class="btn btn-primary btn-compact" data-relation-outlook>開啟 Outlook</button>
+      <button type="button" class="btn btn-gray btn-compact" data-relation-download>下載表格草稿</button>
+    </div>
+    <p class="small" data-relation-status role="status"></p>
+    <div class="correction-draft-body" data-relation-body></div>`);
+  dialog.dataset.relationNotice='';
+  const select=dialog.querySelector('[data-relation-recipient]');
+  const subject=dialog.querySelector('[data-relation-subject]');
+  const body=dialog.querySelector('[data-relation-body]');
+  const message=dialog.querySelector('[data-relation-status]');
+  const outlook=dialog.querySelector('[data-relation-outlook]');
+  const download=dialog.querySelector('[data-relation-download]');
+  const refresh=()=>{
+    const recipient=recipients[select.value];
+    const draft=recipient?buildRelationNoticeEmail(recipient.rows,deadline):null;
+    subject.value=draft?.subject||'';
+    body.innerHTML=draft?.html||'';
+    message.textContent='';
+    outlook.disabled=download.disabled=!draft;
+    outlook.onclick=draft?()=>void openCorrectionOutlook(recipient.email,draft,message):null;
+    download.onclick=draft?()=>downloadCorrectionOutlook(recipient.email,draft,message,dialog):null;
+  };
+  select.onchange=refresh;
+  refresh();
 }
 
 function buildUnifiedReviewCases(records,savedNotices){
@@ -8407,6 +8480,12 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
     const detail=find(`#unifiedReviewDetail-${index}`);
     const button=row.querySelector('[data-unified-review-expand]');
     const message=row.querySelector('[data-unified-row-status]');
+    const relationOutlook=row.querySelector('[data-relation-draft]');
+    if(relationOutlook)relationOutlook.onclick=()=>{
+      if(expanded&&busyRows.has(expanded.detail))return;
+      if(deadlinePending()||!view.deadline){revealDeadline();return;}
+      openRelationNoticeDraft(relationNoticeRows(item),view.deadline);
+    };
     row.querySelectorAll('[data-correction-related-record]').forEach(link=>{
       link.onclick=()=>openCourtSharedPhoneRelations(link.dataset.correctionRelatedRecord,item.rows);
     });
@@ -8439,8 +8518,11 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
 }
 function renderUnifiedReviewRow(item,index,now,templates){
   const reasons=[...new Set(item.rows.flatMap(row=>qualificationIssueTypes(row)))];
+  const relationRows=relationNoticeRows(item);
+  const relationReady=relationRows.some(row=>correctionNoticeEmails([row]).length);
+  const hasCorrectionDraft=correctionNoticeDraftableTracks(item).length>0;
   const mailUnavailable=item.nameConflict?'請先核對姓名與收件人'
-    :!correctionNoticeDraftableTracks(item).length?'目前無補正草稿'
+    :!hasCorrectionDraft?(relationReady?'':'目前無補正草稿')
     :!templates?'信件範本載入失敗，請重新載入':'';
   const stats={};
   for(const row of item.rows){const state=qualificationState(row);stats[state]=(stats[state]||0)+1;}
@@ -8459,7 +8541,8 @@ function renderUnifiedReviewRow(item,index,now,templates){
       </div>`).join('')||'—'}</td>
     <td role="cell"><div class="correction-list-actions">
       <button type="button" class="btn btn-primary btn-compact" data-unified-review-expand aria-expanded="false" aria-controls="unifiedReviewDetail-${index}">展開處理</button>
-      ${mailUnavailable?`<span class="small">${escapeHtml(mailUnavailable)}</span>`:'<button type="button" class="btn btn-gray btn-compact" data-unified-outlook>開啟 Outlook</button>'}
+      ${mailUnavailable?`<span class="small">${escapeHtml(mailUnavailable)}</span>`:hasCorrectionDraft?'<button type="button" class="btn btn-gray btn-compact" data-unified-outlook>開啟 Outlook</button>':''}
+      ${relationReady?'<button type="button" class="btn btn-gray btn-compact" data-relation-draft>開啟 Outlook（異常關聯）</button>':relationRows.length?'<span class="small">異常關聯缺少可用的收件信箱</span>':''}
       </div><p class="small correction-list-message" data-unified-row-status role="status"></p></td>
   </tr><tr role="row" class="unified-review-detail" id="unifiedReviewDetail-${index}" hidden><td role="cell" colspan="5" data-unified-detail-content></td></tr>`;
 }
@@ -12286,6 +12369,7 @@ function showCourtDetailsDialog(title,body){
     if(opener instanceof HTMLElement&&opener.isConnected)opener.focus({preventScroll:true});
   },{once:true});
   dialog.showModal();
+  return dialog;
 }
 
 function showModal(title,body,onOk,withInput=false,onCancel=null){
