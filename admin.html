@@ -5611,9 +5611,11 @@ async function endAdminSession(reason='signed-out',notify=false){
   if(adminIdleTimer){clearInterval(adminIdleTimer);adminIdleTimer=null;}
   // Hide sensitive records synchronously before making any async network requests.
   allRecords=[];allLogs=[];
+  phoneCorrectionHistory.clear();
   secureIdentityBySubmission.clear();secureEmailBySubmission.clear();
   revealedSensitiveKeys.clear();secureIdentityAuthenticated=false;
   document.querySelector?.('dialog[data-relation-notice]')?.close();
+  document.querySelector?.('dialog[data-phone-correction]')?.close();
   const app=document.getElementById('app');
   if(app)app.classList.add('hidden');
   let revokeTimeout=null;
@@ -6147,8 +6149,110 @@ function adminEmailCell(r){
   return `<a class="admin-email-link" href="${mailto}" title="寄信給 ${safeEmail}">${safeEmail}</a>`;
 }
 function adminPhoneCell(r){
-  // Go會員=會員綁定手機；會館會員=表單填寫的聯絡手機。
-  return escapeHtml(String(r.phone||''));
+  const history=phoneCorrectionHistory.get(String(r.id));
+  const prior=history?.[0];
+  const match=phoneHistoryMatches(r,recordState.q);
+  return `${escapeHtml(r.phone||'—')}
+    ${prior?`<div class="small">更正前 ${escapeHtml(prior.previous_phone||'—')}</div>`:''}
+    ${match?`<div class="small">符合舊手機 ${escapeHtml(match.previous_phone)}</div>`:''}
+    ${phoneCorrectionButton(r)}`;
+}
+const phoneCorrectionHistory=new Map();
+function normalizePhoneSearch(value){
+  const raw=String(value||'').normalize('NFKC');
+  const phone=normalizePhone(raw);
+  return /^[+\d()\s-]+$/.test(raw)&&/^09\d{8}$/.test(phone)?phone:null;
+}
+function phoneHistoryMatches(record,query){
+  const phone=normalizePhoneSearch(query);
+  return phone?phoneCorrectionHistory.get(String(record.id))?.find(change=>normalizePhone(change.previous_phone)===phone):null;
+}
+function canCorrectPhone(record){
+  return ['super_admin','staff'].includes(currentAdmin?.role) && !record.lottery_locked && !record.result_published
+    && ['','未抽籤'].includes(String(record.lottery_status||'').trim());
+}
+function phoneCorrectionButton(record){
+  const history=phoneCorrectionHistory.get(String(record.id));
+  if(!canCorrectPhone(record)&&!history?.length)return '';
+  const label=canCorrectPhone(record)?(history?.length?'更正手機／紀錄':'更正手機'):'更正紀錄';
+  return `<button type="button" class="court-phone-relations" data-correct-phone="${escapeHtml(String(record.id))}">${label}</button>`;
+}
+async function loadPhoneCorrectionHistory(client,isCurrent){
+  const entries=[];
+  const batchSize=500;
+  for(let offset=0;isCurrent();offset+=batchSize){
+    const {data,error}=await client.rpc('court_admin_phone_history_v1').order('record_id').range(offset,offset+batchSize-1);
+    if(error){console.warn('手機更正紀錄暫時無法讀取',error);return;}
+    const page=data||[];
+    entries.push(...page);
+    if(page.length<batchSize){
+      if(isCurrent()){
+        phoneCorrectionHistory.clear();
+        for(const row of entries)phoneCorrectionHistory.set(String(row.record_id),row.changes);
+      }
+      return;
+    }
+  }
+}
+function bindPhoneCorrectionButtons(container){
+  container.querySelectorAll('[data-correct-phone]').forEach(button=>{
+    button.onclick=()=>openPhoneCorrection(button.dataset.correctPhone);
+  });
+}
+function openPhoneCorrection(id){
+  const record=allRecords.find(row=>String(row.id)===String(id));
+  if(!record)return;
+  const history=phoneCorrectionHistory.get(String(id))||[];
+  const isGo=memberIdentityType(record)==='Go會員';
+  const canChange=canCorrectPhone(record);
+  const dialog=showCourtDetailsDialog(canChange?'更正手機':'手機更正紀錄',`
+    <p>登記序號 ${escapeHtml(compactRecordCode(record))}｜目前手機 ${escapeHtml(record.phone||'—')}</p>
+    ${canChange?`<form data-phone-form class="correction-notice-fields">
+      <label>更正後手機<input name="phone" type="tel" inputmode="tel" required placeholder="09xxxxxxxx"></label>
+      <label>更正原因<input name="reason" required maxlength="300" placeholder="例如民眾回覆原號碼誤填"></label>
+      <div><button type="submit" class="btn btn-primary btn-compact">儲存並重新比對</button></div>
+    </form><p>同一份表單回覆的各場次會一併更正。${isGo?'Go 綁定手機是會員識別資料，更正後須重新查核會員資格。':''}</p>`:''}
+    <p data-phone-status role="status"></p>
+    ${history.length?`<div class="table-wrap"><table><thead><tr><th>更正時間</th><th>更正前</th><th>更正後</th><th>承辦人</th><th>原因</th></tr></thead>
+      <tbody>${history.map(change=>`<tr><td>${escapeHtml(correctionNoticeDate(change.changed_at))}</td><td>${escapeHtml(change.previous_phone||'—')}</td><td>${escapeHtml(change.current_phone)}</td><td>${escapeHtml(change.display_name)}</td><td>${escapeHtml(change.reason)}</td></tr>`).join('')}</tbody></table></div>`:''}`);
+  dialog.dataset.phoneCorrection='';
+  const form=dialog.querySelector('[data-phone-form]');
+  if(!form)return;
+  const status=dialog.querySelector('[data-phone-status]');
+  const submit=form.querySelector('button');
+  const close=dialog.querySelector('form[method="dialog"] button');
+  dialog.addEventListener('cancel',event=>{if(submit.disabled)event.preventDefault();});
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    if(submit.disabled)return;
+    const phone=normalizePhoneSearch(form.elements.phone.value);
+    const reason=form.elements.reason.value.trim();
+    if(!phone||!reason){
+      status.textContent='請輸入有效的 10 碼手機及更正原因。';return;
+    }
+    if(phone===normalizePhone(record.phone)){
+      status.textContent='新手機和目前號碼相同。';return;
+    }
+    submit.disabled=close.disabled=true;
+    status.textContent='正在儲存及重新比對…';
+    let saved=false;
+    try{
+      const {data,error}=await reviewDbClient().rpc('court_admin_correct_phone_v1',{
+        p_record_id:id,p_expected_phone:record.phone??null,p_new_phone:phone,p_reason:reason
+      });
+      if(error)throw error;
+      saved=true;
+      form.hidden=true;
+      if((await loadAllData())===false||!dialog.isConnected)return;
+      renderRecordsWorkspace();
+      const changed=new Set(data.map(String));
+      const affected=allRecords.filter(row=>changed.has(String(row.id)));
+      const reasons=[...new Set(affected.flatMap(row=>qualificationIssueTypes(row)))];
+      status.textContent=`已更正 ${affected.length} 筆登記（${record.phone||'未記錄'} → ${phone}）。重新比對結果${reasons.length?'為 '+reasons.join('、'):'未發現異常'}。`;
+    }catch(error){
+      status.textContent=saved?'已儲存更正，請重新整理後台以載入比對結果。':error.message||'手機更正失敗，請重新整理後再試。';
+    }finally{submit.disabled=close.disabled=false;}
+  };
 }
 async function loadSensitiveIdentifiers(){
   if(!secureIdentityAuthenticated){
@@ -6611,7 +6715,7 @@ async function loadAllData(){
       return user ? await reviewClient.rpc('court_admin_list_logs_v1',{p_limit:200}) : {data:[],error:null};
     }catch(e){return {data:[],error:e};}
   })();
-  await Promise.all([loadSensitiveIdentifiers(),loadQualificationReviews()]);
+  await Promise.all([loadSensitiveIdentifiers(),loadQualificationReviews(),loadPhoneCorrectionHistory(reviewDbClient(),requestStillAuthorized)]);
   if(!requestStillAuthorized()){allRecords=[];return false;}
   const logsRes=await logsPromise;
   if(!requestStillAuthorized())return false;
@@ -7327,7 +7431,7 @@ function getRecordsInScope(filters){
     if(lf && lf!=='__not_drawn__' && lf!=='__backup__' && lotteryStatus!==lf)return false;
     if(q){
       const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${secureIdentityBySubmission.get(String(r.import_submission_key||''))||''} ${r.serial_number||''} ${compactRecordCode(r)} ${recordLocation(r)} ${r.venue_type||''} ${courtUsage(r)} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
-      if(!hay.includes(q)) return false;
+      if(!hay.includes(q) && !phoneHistoryMatches(r,q) && normalizePhone(r.phone)!==normalizePhoneSearch(q))return false;
     }
     return true;
   });
@@ -7817,6 +7921,7 @@ function renderUnifiedCaseEditor(record,key,showReasons,tracks,deadline){
     </div>
     <div class="unified-case-actions">
       <button type="button" class="btn btn-primary btn-compact" data-qsave>儲存</button>
+      ${phoneCorrectionButton(record)}
       ${saved?.reviewed_at?`<span class="small">上次資格審查　${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</span>`:''}
     </div>
   </article>`;
@@ -8699,6 +8804,7 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
     detail.dataset.reviewRecordId=recordId;
     editor.innerHTML=renderUnifiedCaseEditor(record,key,item.rows.length>1,tracks,view.deadline);
     bindRegistrationLimitButtons(editor);
+    bindPhoneCorrectionButtons(editor);
     const state=editor.querySelector('[data-qstate]');
     const member=editor.querySelector('[data-qmember]');
     const note=editor.querySelector('[data-qnote]');
@@ -9185,6 +9291,7 @@ function renderRecordsTable(){
   html+=`</tbody></table></div><div class="pager" style="justify-content:flex-end"><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
   document.getElementById('recordsTable').innerHTML=html;
   bindIdentityReveal();
+  bindPhoneCorrectionButtons(document.getElementById('recordsTable'));
   bindRegistrationLimitButtons(document.getElementById('recordsTable'));
   document.querySelectorAll('#recordsTable [data-shared-phone-id]').forEach(b=>b.onclick=()=>openCourtSharedPhoneRelations(b.dataset.sharedPhoneId));
   document.querySelectorAll('#recordsTable [data-membership-check]').forEach(b=>b.onchange=()=>void setManualMembershipCheck(b.dataset.membershipCheck,b.value));
