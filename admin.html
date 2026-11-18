@@ -5409,6 +5409,12 @@ body .ux-review-edit{align-items:end}
   .unified-case-note{display:grid;gap:6px;margin:12px 0;}
   .unified-case-note textarea{width:100%;resize:vertical;}
   .unified-case-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;}
+  .unified-registration-details{border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px}
+  .unified-registration-details h4{margin:0;font-size:1em}
+  .unified-registration-details dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12em),1fr));gap:8px 16px;margin:8px 0 0}
+  .unified-registration-details dt{color:var(--muted);font-size:.875em}
+  .unified-registration-details dd{margin:2px 0 0;overflow-wrap:anywhere;white-space:normal}
+  .unified-registration-phone{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}
   .unified-review-card-head,.unified-review-badges,.unified-review-notice-status{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
   .unified-review-card-head{justify-content:space-between}
   .unified-review-notice-status+.unified-review-notice-status{margin-top:5px}
@@ -7890,12 +7896,26 @@ function renderUnifiedCaseEditor(record,key,showReasons,tracks,deadline){
   const state=qualificationState(record);
   const rejection=registrationWindowRejection(record);
   const reasons=qualificationIssueTypes(record);
+  const prior=phoneCorrectionHistory.get(id)?.[0];
   const reviewLabel=QUALIFICATION_REVIEW_OPTIONS.find(([value])=>value===state)?.[1]||'待審查';
   return `<article class="ux-review-case">
-    <div class="unified-review-card-head"><div>
-      <strong>案件處理</strong>
-      <div class="small">${escapeHtml(compactRecordCode(record))}｜${escapeHtml(correctionNoticeSlot(record))}</div>
-    </div><span class="tag review-${state}">${escapeHtml(reviewLabel)}</span></div>
+    <section class="unified-registration-details">
+      <h4>登記基本資料</h4>
+      <dl>
+        <div><dt>姓名</dt><dd>${escapeHtml(record.name||'—')}</dd></div>
+        <div><dt>會員類別</dt><dd>${escapeHtml(memberIdentityType(record))}</dd></div>
+        <div><dt>會員識別碼末四碼</dt><dd>${escapeHtml(memberIdentifierLast4(record)||'—')}</dd></div>
+        <div><dt>目前手機</dt><dd>
+          <div class="unified-registration-phone"><span>${escapeHtml(record.phone||'—')}</span>${phoneCorrectionButton(record)}</div>
+          ${prior?`<div class="small">更正前 ${escapeHtml(prior.previous_phone||'—')}</div>`:''}
+        </dd></div>
+        <div><dt>Email</dt><dd>${adminEmailCell(record)}</dd></div>
+        <div><dt>登記序號</dt><dd>${escapeHtml(compactRecordCode(record))}</dd></div>
+        <div><dt>登記時間</dt><dd>${escapeHtml(correctionNoticeDate(record.registered_at)||'—')}</dd></div>
+        <div><dt>申請場次</dt><dd>${escapeHtml(correctionNoticeSlot(record)||'—')}</dd></div>
+      </dl>
+    </section>
+    <div class="unified-review-card-head"><strong>案件處理</strong><span class="tag review-${state}">${escapeHtml(reviewLabel)}</span></div>
     ${showReasons&&reasons.length?`<div class="small unified-record-reasons">${reasons.map(reason=>reason==='超過次數'?registrationLimitButton(record):escapeHtml(reason)).join('、')}</div>`:''}
     ${courtIdentityReviewMatches(record).length?`<p class="small"><button type="button" class="court-phone-relations" data-limit-record="${escapeHtml(id)}">查看同名、同手機或同會員識別的登記</button></p>`:''}
     ${rejection?`<p class="small">依登記期間判定不合格（${escapeHtml(rejection)}）。</p>`:''}
@@ -7921,7 +7941,6 @@ function renderUnifiedCaseEditor(record,key,showReasons,tracks,deadline){
     </div>
     <div class="unified-case-actions">
       <button type="button" class="btn btn-primary btn-compact" data-qsave>儲存</button>
-      ${phoneCorrectionButton(record)}
       ${saved?.reviewed_at?`<span class="small">上次資格審查　${escapeHtml(saved.reviewer_email||'管理員')}　${escapeHtml(new Date(saved.reviewed_at).toLocaleString('zh-TW'))}</span>`:''}
     </div>
   </article>`;
