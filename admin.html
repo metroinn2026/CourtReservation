@@ -6040,7 +6040,8 @@ const MEMBER_NOT_FOUND_LABELS={
   '會館會員':'查無北投會館會員資料',
   unknown:'查無會員資料'
 };
-const COURT_IDENTITY_REVIEW_REASONS={phone:'相同手機登記',name:'相同姓名登記',member:'同會員識別多筆登記'};
+const COURT_IDENTITY_REVIEW_REASONS={phone:'相同手機登記',name:'相同姓名登記'};
+const COURT_MEMBER_LIMIT_REVIEW_KEY='同會員識別多筆登記';
 const COURT_ANOMALY_GROUPS={
   '__registration__':{label:'登記資料需確認',types:[...Object.values(COURT_IDENTITY_REVIEW_REASONS),'同會員識別姓名不同','超過次數','不開放場次有登記','開放前登記','截止後登記','登記時間異常',...Object.values(MEMBER_NOT_FOUND_LABELS),'Go 會員尚未查核']},
   '__lottery__':{label:'抽籤結果需確認',types:['超過名額','候補異常','結果漏匯']},
@@ -6050,8 +6051,7 @@ const ALL_ANOMALIES_FILTER='__all_anomalies__';
 const COURT_ANOMALY_PATTERNS={
   [COURT_IDENTITY_REVIEW_REASONS.phone]:{label:COURT_IDENTITY_REVIEW_REASONS.phone,detail:'多筆登記使用同一手機，請核對是否為同一人。'},
   [COURT_IDENTITY_REVIEW_REASONS.name]:{label:COURT_IDENTITY_REVIEW_REASONS.name,detail:'多筆登記使用相同姓名，請核對是否為同一人。'},
-  [COURT_IDENTITY_REVIEW_REASONS.member]:{label:COURT_IDENTITY_REVIEW_REASONS.member,detail:'同一會員識別有多筆登記，請確認保留的登記。'},
-  '超過次數':{label:'重複登記／超過次數', detail:'同一會員重複登記同場次，或超出登記次數上限。'},
+  '超過次數':{label:'重複登記／超過次數', detail:'同一會員重複登記同場次、同一日同時段登記不同球類，或超出登記上限。'},
   [MEMBER_NOT_FOUND_LABELS.Go會員]:{label:MEMBER_NOT_FOUND_LABELS.Go會員, detail:'Go 會員查核結果為「否」。'},
   [MEMBER_NOT_FOUND_LABELS.會館會員]:{label:MEMBER_NOT_FOUND_LABELS.會館會員, detail:'北投會館會員查核結果為「否」。'},
   [MEMBER_NOT_FOUND_LABELS.unknown]:{label:MEMBER_NOT_FOUND_LABELS.unknown, detail:'會員查核結果為「否」，登記的會員類型無法辨識。'},
@@ -6308,15 +6308,32 @@ function courtIdentityReviewMatches(record){
    }
    courtIdentityReviewIndex={records:allRecords,groups};
  }
- return Object.entries(courtIdentityReviewKeys(record)).flatMap(([kind,key])=>{
-   const peers=(courtIdentityReviewIndex.groups[kind].get(key)||[]).filter(row=>String(row.id)!==String(record.id));
-   return peers.length?[{reason:COURT_IDENTITY_REVIEW_REASONS[kind],peers}]:[];
+ const keys=courtIdentityReviewKeys(record);
+ return Object.entries(COURT_IDENTITY_REVIEW_REASONS).flatMap(([kind,reason])=>{
+   const peers=(courtIdentityReviewIndex.groups[kind].get(keys[kind])||[]).filter(row=>
+     String(row.id)!==String(record.id) && (!keys.member||courtMemberIdentityKey(row)!==keys.member));
+   return peers.length?[{reason,peers}]:[];
  });
 }
 function courtIdentityReviewKey(record){
  const matches=courtIdentityReviewMatches(record);
+ const member=courtIdentityReviewKeys(record).member;
+ const memberRows=courtIdentityReviewIndex.groups.member.get(member)||[];
+ const peers=registrationLimitRows(getRegistrationLimitEvidence(record,memberRows))
+   .filter(row=>String(row.id)!==String(record.id));
+ if(peers.length)matches.push({reason:COURT_MEMBER_LIMIT_REVIEW_KEY,peers});
  return matches.length?JSON.stringify(matches.map(({reason,peers})=>
    [reason,peers.map(row=>String(row.id)).sort()])):null;
+}
+function courtIdentityReviewConfirmed(key,savedKey){
+ if(key===savedKey)return true;
+ if(!savedKey)return false;
+ try{
+   const saved=new Map(JSON.parse(savedKey).map(([reason,peers])=>[reason,new Set(peers)]));
+   return JSON.parse(key).every(([reason,peers])=>peers.every(id=>saved.get(reason)?.has(id)));
+ }catch{
+   return false;
+ }
 }
 function courtMemberNameConflicts(r,records=allRecords){
  const key=courtMemberIdentityKey(r);
@@ -6353,7 +6370,7 @@ function openCourtSharedPhoneRelations(recordId,additionalRows=[]){
    (new Date(a.registered_at||0)-new Date(b.registered_at||0)) ||
    compactRecordCode(a).localeCompare(compactRecordCode(b)));
  const stateLabel={qualified:'合格',pending:'待確認',correction:'待補正',invalid:'不合格'};
- const body=`<p>共關聯 ${rows.length} 筆，包含目前登記。請對照同名、同手機及同會員識別的登記。確認為同一人時，僅保留一筆。</p>
+ const body=`<p>共關聯 ${rows.length} 筆，包含目前登記。請核對姓名、手機及會員識別，並依時段和登記上限確認可保留的登記。</p>
  <div class="table-wrap"><table><thead><tr><th>序號</th><th>登記時間</th><th>姓名</th><th>會員類型／識別末四碼</th><th>場次</th><th>異常與核對項目</th><th>資格審查</th></tr></thead><tbody>
  ${rows.map(r=>{
    const limit=getRegistrationLimitEvidence(r);
@@ -6700,19 +6717,30 @@ function normalizeRegistrationLimitRules(raw){
 function getRegistrationLimitRules(){
   return normalizeRegistrationLimitRules(systemSettings.registration_limit_rules);
 }
+function registrationSlotKey(record){
+  const day=String(record.day_of_week||'').trim().replace(/^週/,'周');
+  const start=slotRangeKey(record.time_slot).match(/\d{2}:\d{2}/)?.[0];
+  return day&&start?`${day}|${start}`:'';
+}
 function getRegistrationLimitEvidence(record, records=allRecords){
   const key=personKey(record);
   if(key.startsWith('UNVERIFIED:'))return [];
   const location=recordLocation(record);
   const related=records.filter(r=>personKey(r)===key && recordLocation(r)===location);
-  const sameSport=related.filter(r=>r.venue_type===record.venue_type);
-  const sameStage=sameSport.filter(r=>stageKeyFromRecord(r)===stageKeyFromRecord(record));
+  const sameVenue=related.filter(r=>r.venue_type===record.venue_type);
+  const slot=registrationSlotKey(record);
+  const sameStage=sameVenue.filter(r=>slot&&registrationSlotKey(r)===slot);
+  const usage=courtUsage(record);
+  const otherSports=related.filter(r=>slot&&registrationSlotKey(r)===slot
+    && r.venue_type!==record.venue_type && courtUsage(r)!==usage
+    && usage!=='待確認' && courtUsage(r)!=='待確認');
   const rules=getRegistrationLimitRules();
   const evidence=[];
   if(sameStage.length>1)evidence.push({label:'同場次重複登記',rows:sameStage,max:1});
+  if(otherSports.length)evidence.push({label:'同日同時段登記不同球類',rows:[record,...otherSports],max:1});
   const singleMax=rules.single[record.venue_type];
-  if(singleMax>0&&sameSport.length>singleMax){
-    evidence.push({label:`${record.venue_type}最多 ${singleMax} 筆`,rows:sameSport,max:singleMax});
+  if(singleMax>0&&sameVenue.length>singleMax){
+    evidence.push({label:`${record.venue_type}最多 ${singleMax} 筆`,rows:sameVenue,max:singleMax});
   }
   for(const group of rules.groups){
     if(!group.venues.includes(record.venue_type))continue;
@@ -7626,7 +7654,7 @@ function qualificationState(r){
   if(membershipReviewIssue(r))return saved==='correction'?'correction':'pending';
   if(saved==='qualified'){
     const identityKey=courtIdentityReviewKey(r);
-    if(identityKey&&review.identity_review_key!==identityKey)return 'pending';
+    if(identityKey&&!courtIdentityReviewConfirmed(identityKey,review.identity_review_key))return 'pending';
   }
   return saved || (qualificationIssueTypes(r).length?'pending':'qualified');
 }
@@ -8516,7 +8544,7 @@ function bindUnifiedReviewDetails(detail,item,templates,feedback,actions){
       }
       const identityReviewKey=courtIdentityReviewKey(record);
       if(reviewChanged&&state.value==='qualified'&&identityReviewKey&&
-        !confirm('請先核對關聯登記，確認為同一人時只保留一筆。確定將本筆設為合格？'))return;
+        !confirm('請先核對關聯登記，並依時段及登記上限確認可保留的場次。確定將本筆設為合格？'))return;
       if(reviewChanged&&state.value==='qualified'&&originalMember!=='verified'&&
         !confirm('請確認申請人已具會員資格。儲存後，審查結果將設為「合格」，會員欄將設為「是」。'))return;
       if(edits.some(entry=>['sent','replied'].includes(entry.status)&&(!entry.due_at||
@@ -12214,7 +12242,7 @@ function exportToCsv(records){
 function showAnomalyDefinitionModal(){
   const body=`
     <div style="display:grid;gap:8px;text-align:left;">
-      <div><strong>登記資料需確認</strong>：相同手機、相同姓名、同會員識別多筆登記、超過登記次數、不開放場次及登記時間異常。</div>
+      <div><strong>登記資料需確認</strong>：相同手機或姓名、場次重複或超過登記上限、不開放場次及登記時間異常。</div>
       <div><strong>抽籤結果需確認</strong>：超過名額、候補順位異常、部分結果尚未匯入。</div>
       <div><strong>公告進度需確認</strong>：結果未完成或尚未公告。</div>
       <div style="border-top:1px solid #e2e8f0;padding-top:8px"><strong>詳細原因對照</strong></div>
