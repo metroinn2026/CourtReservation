@@ -6147,8 +6147,12 @@ function courtUsage(r){
 function courtVenueLabel(r){
   return ({'羽球':'羽球場','籃球':'籃球場','B1桌球':'B1桌球場','B2桌球':'B2桌球場'})[r.venue_type]||r.venue_type||'—';
 }
+function adminRecordEmail(r){
+  return (courtAuthLoginActive||secureIdentityAuthenticated)
+    ? secureEmailBySubmission.get(String(r.import_submission_key||''))||'' : '';
+}
 function adminEmailCell(r){
-  const email = (courtAuthLoginActive||secureIdentityAuthenticated) ? secureEmailBySubmission.get(String(r.import_submission_key||'')) : '';
+  const email=adminRecordEmail(r);
   if(!email) return '<span class="small" title="登入資料庫授權帳號後可查閱">—</span>';
   const safeEmail=escapeHtml(email);
   const mailto='mailto:'+encodeURIComponent(String(email).trim());
@@ -7437,7 +7441,8 @@ function getRecordsInScope(filters){
     if(lf && lf!=='__not_drawn__' && lf!=='__backup__' && lotteryStatus!==lf)return false;
     if(q){
       const hay=`${r.name||''} ${r.phone||''} ${r.member_type||''} ${memberIdentifierLast4(r)} ${secureIdentityBySubmission.get(String(r.import_submission_key||''))||''} ${r.serial_number||''} ${compactRecordCode(r)} ${recordLocation(r)} ${r.venue_type||''} ${courtUsage(r)} ${r.day_of_week||''} ${r.time_slot||''}`.toLowerCase();
-      if(!hay.includes(q) && !phoneHistoryMatches(r,q) && normalizePhone(r.phone)!==normalizePhoneSearch(q))return false;
+      if(!hay.includes(q) && !adminRecordEmail(r).toLowerCase().includes(q)
+        && !phoneHistoryMatches(r,q) && normalizePhone(r.phone)!==normalizePhoneSearch(q))return false;
     }
     return true;
   });
@@ -7610,7 +7615,7 @@ function renderRecordsPage(){
       </div>
 
       <div class="records-compact-filterbar">
-        <input id="searchQ" class="records-search" placeholder="搜尋姓名／手機／識別末4碼／序號" value="${escapeHtml(recordState.q)}">
+        <input id="searchQ" class="records-search" placeholder="搜尋姓名／Email／手機／末4碼／序號" aria-label="搜尋姓名、Email、手機、識別末4碼或序號" value="${escapeHtml(recordState.q)}">
         <select id="filterLocation" ${shouldLockLocationFilter()?'disabled':''}>${renderLocationOptions(recordState.location, true, '全部場地')}</select>
         <select id="filterVenue" title="篩選運動場地"><option value="">全部場地</option>${venues.map(v=>`<option ${recordState.venue===v?'selected':''} value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}</select>
         <select id="filterUsage" title="篩選實際運動用途">${renderCourtUsageOptions(recordState.venue,recordState.usage)}</select>
