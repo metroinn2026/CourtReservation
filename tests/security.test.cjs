@@ -420,11 +420,13 @@ test('opening audit history refreshes records without modifying registrations',a
   let renders=0,queries=0;
   const sandbox={
     adminSessionEpoch:7,courtAuthLoginActive:true,adminSigningOut:false,currentPage:'logs',
+    currentAdmin:{role:'super_admin'},operationLogView:{q:'abc123',page:2,request:0},OPERATION_LOG_PAGE_SIZE:30,
     allLogs:[],console:{warn:()=>{}},
     reviewDbClient:()=>({rpc:async(name,args)=>{
       queries++;
-      assert.equal(name,'court_admin_list_logs_v1');
-      assert.equal(args.p_limit,200);
+      assert.equal(name,'court_admin_search_logs_v1');
+      assert.equal(args.p_query,'abc123');
+      assert.equal(args.p_offset,60);
       return {data:[{action:'停用管理員帳號'}],error:null};
     }}),
     renderLogsPage:()=>{renders++;}
@@ -434,7 +436,10 @@ test('opening audit history refreshes records without modifying registrations',a
   await sandbox.refreshAdminOperationLogs();
   assert.equal(queries,1);
   assert.equal(sandbox.allLogs.length,1);
-  assert.equal(renders,1);
+  assert.equal(renders,2);
+  sandbox.currentAdmin={role:'staff'};
+  await sandbox.refreshAdminOperationLogs();
+  assert.equal(queries,1);
 });
 test('an old audit refresh cannot repopulate data after session logout',async()=>{
   const start=admin.indexOf('async function refreshAdminOperationLogs(){');
@@ -442,7 +447,8 @@ test('an old audit refresh cannot repopulate data after session logout',async()=
   let resolveQuery;
   const sandbox={
     adminSessionEpoch:10,courtAuthLoginActive:true,adminSigningOut:false,currentPage:'logs',
-    allLogs:[],console:{warn:()=>{}},renderLogsPage:()=>{throw Error('stale data rendered');},
+    currentAdmin:{role:'super_admin'},operationLogView:{q:'abc123',page:2,request:0},OPERATION_LOG_PAGE_SIZE:30,
+    allLogs:[],console:{warn:()=>{}},renderLogsPage:()=>{if(!sandbox.operationLogView.loading)throw Error('stale data rendered');},
     reviewDbClient:()=>({rpc:()=>new Promise(resolve=>{resolveQuery=resolve;})})
   };
   vm.createContext(sandbox);

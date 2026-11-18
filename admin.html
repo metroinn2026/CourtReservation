@@ -5507,7 +5507,7 @@ body .ux-review-edit{align-items:end}
         <button data-page="capacity">名額設定</button>
         <button data-page="lottery">抽籤作業</button>
         <button data-page="settings">文字設定</button>
-        <button data-page="logs">操作紀錄</button>
+        <button data-page="logs" id="logsNav" style="display:none">操作紀錄</button>
         <button data-page="accounts" id="accountsNav">帳號權限</button>
       </nav>
       <div id="mobileNavOptions" class="mobile-nav-options"></div>
@@ -5617,6 +5617,7 @@ async function endAdminSession(reason='signed-out',notify=false){
   if(adminIdleTimer){clearInterval(adminIdleTimer);adminIdleTimer=null;}
   // Hide sensitive records synchronously before making any async network requests.
   allRecords=[];allLogs=[];
+  Object.assign(operationLogView,{q:'',page:0,loading:false,error:false});
   phoneCorrectionHistory.clear();
   secureIdentityBySubmission.clear();secureEmailBySubmission.clear();
   revealedSensitiveKeys.clear();secureIdentityAuthenticated=false;
@@ -5877,6 +5878,8 @@ const DEFAULT_LOCATION = '北投會館';
 let currentAdmin = null;
 let allRecords = [];
 let allLogs = [];
+const OPERATION_LOG_PAGE_SIZE=30;
+const operationLogView={q:'',page:0,loading:false,error:false,request:0};
 let capacitySettings = {};
 let capacitySettingsLoaded = false;
 let closedSlotSettings = {};
@@ -6653,7 +6656,9 @@ async function enterApp(){
   document.getElementById('sideUser').textContent=`${currentAdmin.display_name||currentAdmin.username}｜${roleName(currentAdmin.role)}`;
   document.getElementById('topRole').textContent=roleName(currentAdmin.role);
   document.getElementById('userAvatar').textContent=(currentAdmin.display_name||currentAdmin.username||'A').slice(0,1).toUpperCase();
-  if(currentAdmin.role!=='super_admin') document.getElementById('accountsNav').style.display='none';
+  const isSuperAdmin=currentAdmin.role==='super_admin';
+  document.getElementById('accountsNav').style.display=isSuperAdmin?'':'none';
+  document.getElementById('logsNav').style.display=isSuperAdmin?'':'none';
   if((await loadAllData())===false)return;
   if(!courtAuthLoginActive||adminSigningOut)return;
   renderPage('dashboard');
@@ -6717,20 +6722,8 @@ async function loadAllData(){
   }
 
   allRecords=(recordsRes.data||[]).map(r=>({...r,__backendId:r.id}));
-  // 彼此獨立的敏感資料、資格查核與操作紀錄同步載入，減少初次進入後台的等待。
-  const logsPromise=(async()=>{
-    const reviewClient=reviewDbClient();
-    try{
-      const {data:{user}}=await reviewClient.auth.getUser();
-      return user ? await reviewClient.rpc('court_admin_list_logs_v1',{p_limit:200}) : {data:[],error:null};
-    }catch(e){return {data:[],error:e};}
-  })();
   await Promise.all([loadSensitiveIdentifiers(),loadQualificationReviews(),loadPhoneCorrectionHistory(reviewDbClient(),requestStillAuthorized)]);
   if(!requestStillAuthorized()){allRecords=[];return false;}
-  const logsRes=await logsPromise;
-  if(!requestStillAuthorized())return false;
-  allLogs=logsRes.error?[]:(logsRes.data||[]);
-  if(logsRes.error)console.warn('操作紀錄讀取失敗，需先完成 Supabase 管理員授權。',logsRes.error);
 
   capacitySettings={};
   closedSlotSettings={};
@@ -7026,7 +7019,7 @@ function setActiveNav(page){
   document.getElementById('pageTitle').textContent=title;
 }
 function renderPage(page){
-  if(page==='accounts' && currentAdmin.role!=='super_admin'){ alert('此功能限超級管理員使用'); return; }
+  if(['accounts','logs'].includes(page) && currentAdmin?.role!=='super_admin'){ alert('此功能限超級管理員使用'); return; }
   if(page!=='records' && recordsFromAnomalyShortcut) clearRecordFilters();
   currentPage=page; setActiveNav(page);
   if(page==='dashboard') renderDashboard();
@@ -7034,10 +7027,7 @@ function renderPage(page){
   if(page==='capacity') renderCapacityPage();
   if(page==='lottery') renderLotteryPage();
   if(page==='settings') renderSettingsPage();
-  if(page==='logs'){
-    renderLogsPage();
-    void refreshAdminOperationLogs();
-  }
+  if(page==='logs')void refreshAdminOperationLogs();
   if(page==='accounts') renderAccountsPage();
   if(page==='form-import'){ recordsActionTab='filter'; renderPage('records'); setTimeout(()=>openCourtImportModal('import'),0); return; }
 }
@@ -9520,9 +9510,11 @@ function batchDeleteSelectedRecords(){
   const ids=[...selectedRecordIds];
   if(ids.length===0){ alert('請先勾選要刪除的資料'); return; }
   showModal('確認批次刪除',`確定要刪除已勾選的 ${ids.length} 筆登記資料嗎？刪除後無法復原。`,async()=>{
+    const deletedIds=new Set(ids.map(String));
+    const serialNumbers=allRecords.filter(record=>deletedIds.has(String(record.id))).map(record=>record.serial_number).filter(Boolean);
     const {error}=await deleteCourtRecords(ids);
     if(error){ alert('批次刪除失敗'); console.error(error); return; }
-    await writeOperationLog('批次刪除登記資料', {total:ids.length}, ids);
+    await writeOperationLog('批次刪除登記資料', {total:ids.length,serial_numbers:serialNumbers}, ids);
     selectedRecordIds.clear();
     await loadAllData(); renderPage(currentPage);
   });
@@ -10109,31 +10101,57 @@ async function writeOperationLog(action, detail={}, recordIds=[]){
 }
 
 async function refreshAdminOperationLogs(){
-  // Load fresh audit rows whenever this section opens; do not reuse stale login-time data.
   const epoch=adminSessionEpoch;
-  if(!courtAuthLoginActive||adminSigningOut)return;
+  const view=operationLogView;
+  if(!courtAuthLoginActive||adminSigningOut||currentAdmin?.role!=='super_admin')return;
+  const request=++view.request;
+  const current=()=>courtAuthLoginActive&&!adminSigningOut&&adminSessionEpoch===epoch
+    && currentPage==='logs'&&currentAdmin?.role==='super_admin'&&view.request===request;
+  view.loading=true;
+  view.error=false;
+  allLogs=[];
+  renderLogsPage();
   try{
-    const {data,error}=await reviewDbClient().rpc('court_admin_list_logs_v1',{p_limit:200});
-    if(!courtAuthLoginActive||adminSigningOut||adminSessionEpoch!==epoch||currentPage!=='logs')return;
-    if(error){console.warn('操作紀錄更新失敗',error);return;}
-    allLogs=data||[];
-    renderLogsPage();
-  }catch(e){
-    console.warn('操作紀錄更新失敗',e);
+    const {data,error}=await reviewDbClient().rpc('court_admin_search_logs_v1',{
+      p_query:view.q,p_offset:view.page*OPERATION_LOG_PAGE_SIZE
+    });
+    if(error)throw error;
+    if(current())allLogs=data||[];
+  }catch(error){
+    if(current())view.error=true;
+    console.warn('操作紀錄更新失敗',error);
+  }finally{
+    if(current()){
+      view.loading=false;
+      renderLogsPage();
+    }
   }
 }
 function summarizeAdminOperationLog(log){
   const detail=log?.detail && typeof log.detail==='object' ? log.detail : {};
-  const capacityChanges=Array.isArray(detail.changes)?detail.changes:[];
-  const first=capacityChanges[0]||{};
-  const scope=[detail.venue_type||first.venue_type,detail.day_of_week||first.day_of_week,detail.time_slot||first.time_slot]
-    .filter(Boolean).join('｜') || detail.scope || '-';
-  const target=detail.target_display_name||detail.target_username||detail.name||'';
+  const registrations=Array.isArray(log?.registration_context)?log.registration_context:[];
+  const changes=Array.isArray(detail.changes)?detail.changes:[];
+  const capacityChanges=changes.filter(change=>change?.before||change?.after);
+  const first=capacityChanges[0]||registrations[0]||{};
+  const slotLabel=record=>[record.venue_type,record.day_of_week,record.time_slot].filter(Boolean).join('｜');
+  const registrationScopes=new Set(registrations.map(slotLabel).filter(Boolean));
+  const scope=detail.scope||slotLabel(detail)||(registrationScopes.size>1?`${registrationScopes.size} 個場次`:slotLabel(first))||'—';
+  const target=detail.target_display_name||detail.target_username||detail.deleted_display_name||detail.deleted_username||detail.name||'';
   let description='';
   if(typeof detail.before_active==='boolean' && typeof detail.after_active==='boolean'){
     description=`${detail.before_active?'啟用':'停用'} → ${detail.after_active?'啟用':'停用'}`;
   }else if(detail.before_role && detail.after_role){
     description=`${roleName(detail.before_role)} → ${roleName(detail.after_role)}`;
+  }else if(log.action==='會員身分查核'||log.action==='資格審查'){
+    const labels={unchecked:'未查核',verified:'是會員',not_member:'非會員',
+      pending:'待審查',correction:'待補正',qualified:'合格',invalid:'不合格'};
+    const before=labels[detail.before]??detail.before??'—';
+    const after=labels[detail.after]??detail.after??'—';
+    description=before+' → '+after+(detail.reason?'｜'+detail.reason:'');
+  }else if(detail['更正後末三碼']){
+    description=`手機末三碼 ${detail['之前末三碼']||'—'} → ${detail['更正後末三碼']}`;
+  }else if(detail.before_display_name&&detail.after_display_name){
+    description=`${detail.before_display_name} → ${detail.after_display_name}`;
   }else if(capacityChanges.length){
     const prior=first.before||{};
     const next=first.after||{};
@@ -10146,32 +10164,85 @@ function summarizeAdminOperationLog(log){
     const s=detail.summary;
     description=`總${s.total||0}｜中籤${s.winner||0}｜候補${s.waitlist||0}｜未中籤${s.loser||0}｜未抽籤${s.noResult||0}`;
   }
+  if(!description&&changes.some(change=>change?.before_status||change?.after_status)){
+    description=changes.map(change=>`${compactRecordCode(change)} ${change.before_status||'未抽籤'} → ${change.after_status||'未抽籤'}`).join('\n');
+  }
+  if(!description){
+    const counts=[[detail.total??detail['筆數']??detail.record_count??detail.total_updated,'處理'],
+      [detail.imported_count,'匯入'],[detail.failed_count,'失敗'],[detail.stage_count,'場次']];
+    description=[detail.after_status||'',...counts.filter(([count])=>Number.isInteger(count))
+      .map(([count,label])=>`${label} ${count} ${label==='場次'?'場':'筆'}`)].filter(Boolean).join('｜');
+  }
   return {scope:String(scope),target:String(target),description:String(description)};
 }
 function renderLogsPage(){
-  const rows=allLogs || [];
+  if(currentAdmin?.role!=='super_admin')return;
+  const view=operationLogView;
+  const hasNext=allLogs.length>OPERATION_LOG_PAGE_SIZE;
+  const rows=allLogs.slice(0,OPERATION_LOG_PAGE_SIZE);
   const htmlRows=rows.map(log=>{
     const {scope,target,description}=summarizeAdminOperationLog(log);
+    const detail=log.detail||{};
+    const serials=[...new Set([
+      ...(log.registration_context||[]).map(record=>record.serial_number),
+      detail.serial_number,
+      ...(Array.isArray(detail.serial_numbers)?detail.serial_numbers:[]),
+      ...(Array.isArray(detail.changes)?detail.changes.map(change=>change?.serial_number):[])
+    ].filter(Boolean).map(serial_number=>compactRecordCode({serial_number})))].filter(code=>code!=='—');
+    const recordCount=log.record_ids?.length||0;
+    const serialCell=serials.length>6
+      ? `<details><summary>${escapeHtml(serials.slice(0,3).join('、'))} 等 ${serials.length} 個序號</summary>${escapeHtml(serials.join('、'))}</details>`
+      : escapeHtml(serials.join('、')||(recordCount?'未留存序號':'—'));
     return `<tr>
-      <td>${log.created_at?new Date(log.created_at).toLocaleString('zh-TW',{hour12:false}):''}</td>
-      <td><strong>${escapeHtml(log.admin_display_name||log.admin_username||'-')}</strong></td>
+      <td>${log.created_at?new Date(log.created_at).toLocaleString('zh-TW',{hour12:false,timeZone:'Asia/Taipei'}):''}</td>
+      <td><strong>${escapeHtml(log.admin_display_name||log.admin_username||'—')}</strong></td>
       <td><span class="tag blue">${escapeHtml(log.action||'')}</span></td>
+      <td style="white-space:normal;min-width:132px;">${serialCell}</td>
       <td>${escapeHtml(scope)}</td>
-      <td>${escapeHtml(target)}</td>
-      <td>${escapeHtml(description)}</td>
+      <td>${escapeHtml(target||'—')}</td>
+      <td style="white-space:pre-line;min-width:150px;">${escapeHtml(description||'—')}</td>
     </tr>`;
   }).join('');
-
-  document.getElementById('content').innerHTML=`
+  const emptyMessage=view.loading?'正在讀取操作紀錄…':view.error?'無法讀取操作紀錄，請重新搜尋。':view.q?'找不到符合關鍵字的操作紀錄。':'目前尚無操作紀錄。';
+  const panel=document.getElementById('content');
+  panel.innerHTML=`
     <div class="panel compact-page-card logs-compact-card">
       <div class="admin-section-head"><h3>操作紀錄</h3></div>
-      <div class="table-wrap">
+      <form id="operationLogSearch" class="records-compact-filterbar" role="search" aria-label="搜尋操作紀錄">
+        <input id="operationLogQuery" class="records-search" aria-label="操作紀錄關鍵字"
+          placeholder="搜尋登記序號／管理員／操作／內容" maxlength="120" value="${escapeHtml(view.q)}" ${view.loading?'disabled':''}>
+        <button type="submit" class="btn btn-primary btn-compact" ${view.loading?'disabled':''}>搜尋</button>
+        <button type="button" id="operationLogClear" class="btn btn-gray btn-compact" ${view.loading?'disabled':''}>清除</button>
+      </form>
+      <div class="table-wrap" aria-busy="${view.loading}">
         <table>
-          <thead><tr><th>時間</th><th>管理員</th><th>操作</th><th>範圍</th><th>對象</th><th>內容</th></tr></thead>
-          <tbody>${htmlRows || '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:20px;">目前尚無操作紀錄</td></tr>'}</tbody>
+          <thead><tr><th>時間</th><th>管理員</th><th>操作</th><th>登記序號</th><th>範圍</th><th>對象</th><th>內容</th></tr></thead>
+          <tbody>${htmlRows || `<tr><td colspan="7" class="flat-empty" role="status">${emptyMessage}</td></tr>`}</tbody>
         </table>
       </div>
+      ${view.page||hasNext?`<div class="pager">
+        <span>第 ${view.page+1} 頁</span>
+        <div class="pager-controls">
+          <button type="button" class="btn btn-gray btn-compact" id="operationLogPrev" ${!view.page||view.loading?'disabled':''}>上一頁</button>
+          <button type="button" class="btn btn-gray btn-compact" id="operationLogNext" ${!hasNext||view.loading?'disabled':''}>下一頁</button>
+        </div>
+      </div>`:''}
     </div>`;
+  const find=selector=>panel.querySelector(selector);
+  const search=(q,page)=>{
+    view.q=q;
+    view.page=page;
+    void refreshAdminOperationLogs();
+  };
+  find('#operationLogSearch').onsubmit=event=>{
+    event.preventDefault();
+    search(find('#operationLogQuery').value.trim(),0);
+  };
+  find('#operationLogClear').onclick=()=>search('',0);
+  const prev=find('#operationLogPrev');
+  const next=find('#operationLogNext');
+  if(prev)prev.onclick=()=>search(view.q,view.page-1);
+  if(next)next.onclick=()=>search(view.q,view.page+1);
 }
 
 function publishStatusTag(record){
