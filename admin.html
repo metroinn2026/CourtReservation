@@ -7969,10 +7969,10 @@ function correctionNoticeEmails(rows){
   return [...unique.values()];
 }
 function relationNoticeRows(item){
-  return item.rows.filter(row=>!row.result_published&&!row.lottery_locked
+  const rows=item.rows.filter(row=>!row.result_published&&!row.lottery_locked
     && ['','未抽籤'].includes(String(row.lottery_status||'').trim())
-    && !['invalid','qualified'].includes(qualificationState(row))
-    && courtIdentityReviewMatches(row).length);
+    && !['invalid','qualified'].includes(qualificationState(row)));
+  return rows.some(row=>courtIdentityReviewMatches(row).length)?rows:[];
 }
 function relationNoticeRecipients(rows){
   const groups=new Map();
@@ -7983,7 +7983,11 @@ function relationNoticeRecipients(rows){
     if(!groups.has(key))groups.set(key,{email,rows:[]});
     groups.get(key).rows.push(row);
   }
-  return [...groups.values()];
+  return [...groups.values()]
+    .filter(group=>group.rows.some(row=>courtIdentityReviewMatches(row).length))
+    .map(group=>({...group,rows:group.rows.filter(row=>
+      courtIdentityReviewMatches(row).length || membershipCheckStatus(row)==='not_member'
+      || getRegistrationLimitEvidence(row,rows).length)}));
 }
 const correctionNoticeRegistrationFormat=new Intl.DateTimeFormat('sv-SE',{
   timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
@@ -8024,34 +8028,55 @@ const CORRECTION_EMAIL_DUPLICATE_TEXT=[
   CORRECTION_EMAIL_DUPLICATE_RULE,
   '經查您的登記資料有重複情形，請於 {重複登記期限}（臺灣時間）前回覆本信，註明欲保留的登記序號。逾期未回覆，'+CORRECTION_EMAIL_DUPLICATE_FALLBACK
 ];
-const CORRECTION_EMAIL_MEMBERSHIP_TEXT=[
-  '目前查無您登記時填寫的會員資料。依登記規定，申請人須具備台北捷運 GO 會員或北投會館有效會員資格，並於申請時擇一填寫會員類別。您的會員資格須經本館查核確認，方可參加抽籤。',
-  '請於 {會員補件期限}（臺灣時間）前，使用您原先登記的聯絡手機號碼完成台北捷運 GO 會員註冊。完成後，歡迎回覆本信告知註冊時使用的手機號碼，以利本館加快審查。',
+const CORRECTION_EMAIL_GO_DOWNLOADS=[
   'Android 下載\nhttps://play.google.com/store/apps/details?id=tw.com.trtc.is.android05&hl=zh_TW',
-  'iOS 下載\nhttps://apps.apple.com/tw/app/%E5%8F%B0%E5%8C%97%E6%8D%B7%E9%81%8Bgo/id997212021',
-  '逾期未完成補正，視同放棄本次抽籤資格。'
+  'iOS 下載\nhttps://apps.apple.com/tw/app/%E5%8F%B0%E5%8C%97%E6%8D%B7%E9%81%8Bgo/id997212021'
+];
+const CORRECTION_EMAIL_MEMBERSHIP_RULE='目前查無您登記時填寫的會員資料。依登記規定，申請人須具備台北捷運 GO 會員或北投會館有效會員資格，並於申請時擇一填寫會員類別。您的會員資格須經本館查核確認，方可參加抽籤。';
+const CORRECTION_EMAIL_MEMBERSHIP_EXPIRY='逾期未完成補正，視同放棄本次抽籤資格。';
+const CORRECTION_EMAIL_MEMBERSHIP_TEXT=[
+  CORRECTION_EMAIL_MEMBERSHIP_RULE,
+  '請於 {會員補件期限}（臺灣時間）前，使用您原先登記的聯絡手機號碼完成台北捷運 GO 會員註冊。完成後，歡迎回覆本信告知註冊時使用的手機號碼，以利本館加快審查。',
+  ...CORRECTION_EMAIL_GO_DOWNLOADS,
+  CORRECTION_EMAIL_MEMBERSHIP_EXPIRY
 ];
 const CORRECTION_EMAIL_SIGNATURE=[
   '如有疑問，可於上班時間致電 02-28930105（分機 8317）洽林先生。',
   '北投會館營運管理中心'
 ];
-function buildRelationNoticeEmail(rows,deadline){
+function buildRelationNoticeEmail(rows,deadline,caseRows){
+  const checkMembership=rows.some(row=>membershipCheckStatus(row)==='not_member');
+  const reasonsByRecord=new Map(rows.map(row=>{
+    const reasons=courtIdentityReviewMatches(row).map(match=>
+      match.reason===COURT_IDENTITY_REVIEW_REASONS.phone?'手機相同':'姓名相同');
+    reasons.push(...getRegistrationLimitEvidence(row,caseRows).map(issue=>issue.label));
+    if(membershipCheckStatus(row)==='not_member')reasons.unshift('查無會員資料');
+    return [String(row.id),reasons];
+  }));
   const serials=[...new Set(rows.map(compactRecordCode).filter(code=>code!=='—'))];
-  const subject='【北投會館】116 年運動場域長期租借登記確認'
+  const subject='【北投會館】116 年運動場域長期租借登記'+(checkMembership?'補正與確認':'確認')
     +(serials.length?'｜登記序號 '+serials.slice(0,4).join('、')+(serials.length>4?' 等 '+serials.length+' 筆':''):'');
   const paragraphs=[
     (rows[0].name||'申請人')+' 您好：',
-    '本館核對 116 年運動場域長期租借登記時，發現有登記資料的手機號碼或姓名相同，想請您協助確認下表所列登記是否由您本人送出。',
+    '本館核對您的長期租借登記資料後，請於 '+correctionNoticeEmailDate(deadline)+'（臺灣時間）前，依下列事項辦理並回覆本信。',
+    ...(checkMembership?[
+      '一、會員資格補正',
+      CORRECTION_EMAIL_MEMBERSHIP_RULE,
+      '下表標示「查無會員資料」的登記，請使用您原先登記的聯絡手機號碼完成台北捷運 GO 會員註冊。完成後，歡迎在同一封回信中告知註冊時使用的手機號碼，以利本館加快審查。',
+      ...CORRECTION_EMAIL_GO_DOWNLOADS,
+      CORRECTION_EMAIL_MEMBERSHIP_EXPIRY,
+      '二、登記資料確認'
+    ]:[]),
     '依登記規定，羽球場及籃球場每位會員每週各限登記 1 個時段，同一天同一時段限登記一種球類。',
-    '請於 '+correctionNoticeEmailDate(deadline)+'（臺灣時間）前回覆本信，註明下表哪些登記是您本人送出。如另有您本人送出的登記，請一併提供登記序號。如有時段衝突或超過登記上限，請註明各組欲保留的登記序號。',
+    '請依下表「補正事項」確認哪些登記是您本人送出，並於回信中註明登記序號。如另有您本人送出的登記，請一併提供序號。如有時段衝突或超過登記上限，請註明各組欲保留的登記序號。',
     '逾期未回覆時，如本館確認為同一人重複登記，將按登記規定保留最早送出的登記，其餘重複登記不具抽籤資格。'
   ];
-  const table=correctionNoticeEmailTable(rows);
-  const asHtml=text=>`<p style="margin:0 0 10px;line-height:1.65;">${escapeHtml(text)}</p>`;
+  const table=correctionNoticeEmailTable(rows,reasonsByRecord);
   return {
     subject,serial:serials[0]||'',
     body:[...paragraphs,table.text,...CORRECTION_EMAIL_SIGNATURE].join('\n\n'),
-    html:paragraphs.map(asHtml).join('')+table.html+CORRECTION_EMAIL_SIGNATURE.map(asHtml).join('')
+    html:paragraphs.map(value=>correctionEmailParagraph(value,/^[一二]、/.test(value))).join('')
+      +table.html+CORRECTION_EMAIL_SIGNATURE.map(value=>correctionEmailParagraph(value)).join('')
   };
 }
 const CORRECTION_EMAIL_TYPES={
@@ -8077,6 +8102,14 @@ const CORRECTION_EMAIL_TYPES={
 };
 function correctionEmailTemplate(kind,templates){
   return templates[kind]??{subject:CORRECTION_EMAIL_SUBJECT,body:CORRECTION_EMAIL_TYPES[kind].body};
+}
+function correctionEmailParagraph(value,heading=false){
+  const lines=value.split(/\r?\n/).map(line=>{
+    const escaped=escapeHtml(line);
+    return /^https:\/\/[^\s<>"']+$/.test(line)?`<a href="${escaped}">${escaped}</a>`:escaped;
+  });
+  return '<p style="margin:0 0 10px;line-height:1.65;">'+(heading?'<strong>':'')
+    +lines.join('<br>')+(heading?'</strong>':'')+'</p>';
 }
 async function loadCorrectionEmailTemplates(){
   const {data,error}=await reviewDbClient().rpc('court_correction_email_templates_v1');
@@ -8105,12 +8138,7 @@ function buildCorrectionEmail(caseData,items,templates){
   const text=[],html=[];
   const paragraph=(value,heading=false)=>{
     text.push(value);
-    const lines=value.split(/\r?\n/).map(line=>{
-      const escaped=escapeHtml(line);
-      return /^https:\/\/[^\s<>"']+$/.test(line)?`<a href="${escaped}">${escaped}</a>`:escaped;
-    });
-    html.push('<p style="margin:0 0 10px;line-height:1.65;">'+(heading?'<strong>':'')
-      +lines.join('<br>')+(heading?'</strong>':'')+'</p>');
+    html.push(correctionEmailParagraph(value,heading));
   };
   const addTable=(rows,reasonsByRecord)=>{
     const table=correctionNoticeEmailTable(rows,reasonsByRecord);
@@ -8265,7 +8293,7 @@ function openRelationNoticeDraft(rows,deadline){
   const download=dialog.querySelector('[data-relation-download]');
   const refresh=()=>{
     const recipient=recipients[select.value];
-    const draft=recipient?buildRelationNoticeEmail(recipient.rows,deadline):null;
+    const draft=recipient?buildRelationNoticeEmail(recipient.rows,deadline,rows):null;
     subject.value=draft?.subject||'';
     body.innerHTML=draft?.html||'';
     message.textContent='';
@@ -8519,7 +8547,7 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
 function renderUnifiedReviewRow(item,index,now,templates){
   const reasons=[...new Set(item.rows.flatMap(row=>qualificationIssueTypes(row)))];
   const relationRows=relationNoticeRows(item);
-  const relationReady=relationRows.some(row=>correctionNoticeEmails([row]).length);
+  const relationReady=relationRows.some(row=>courtIdentityReviewMatches(row).length&&correctionNoticeEmails([row]).length);
   const hasCorrectionDraft=correctionNoticeDraftableTracks(item).length>0;
   const mailUnavailable=item.nameConflict?'請先核對姓名與收件人'
     :!hasCorrectionDraft?(relationReady?'':'目前無補正草稿')
