@@ -8630,6 +8630,9 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
     return view.noticeFilter==='all'||notices.includes(view.noticeFilter);
   });
   const pages=Math.max(1,Math.ceil(filtered.length/40));
+  const registrationCount=new Set(filtered.flatMap(caseData=>caseData.rows
+    .filter(record=>!inScope||inScope.has(String(record.id)))
+    .map(record=>String(record.id)))).size;
   view.page=Math.min(view.page,pages);
   const rows=filtered.slice((view.page-1)*40,view.page*40);
   container.innerHTML=`<section class="panel admin-inner-section unified-review-panel">
@@ -8640,7 +8643,7 @@ function drawUnifiedReviewList(container,cases,templates,feedback){
         <label for="unifiedNoticeFilter">通知進度</label><select id="unifiedNoticeFilter">${options(noticeStatuses,view.noticeFilter)}</select>`}
       <button type="button" class="btn btn-gray btn-compact" id="reloadUnifiedReview">重新載入</button>
       ${recordsFromAnomalyShortcut&&!view.focusId?`<span class="small">異常篩選 ${escapeHtml(currentRecordsScopeLabel())}</span>`:''}
-      <span class="small">共 ${filtered.length} 件案件</span>
+      <span class="small">共 ${registrationCount} 筆登記（合併為 ${filtered.length} 件案件）</span>
     </form>
     <details id="unifiedReviewDeadline" class="unified-review-deadline">
       <summary>統一回覆期限設定<span class="small" id="unifiedDeadlineSummary">${escapeHtml(correctionNoticeDate(view.deadline)||'尚未設定')}</span></summary>
