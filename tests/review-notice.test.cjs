@@ -11,7 +11,7 @@ test('review notice XML keeps print settings before ignored errors and removes i
   const files=new Map([
     ['xl/worksheets/sheet1.xml','<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="2" xml:space="preserve"><c r="A2" xml:space="preserve"><v xml:space="preserve">標題\n合格名單</v></c></row></sheetData><ignoredErrors><ignoredError sqref="A1:E6" numberStoredAsText="1"/></ignoredErrors></worksheet>'],
     ['xl/workbook.xml','<workbook><sheets/></workbook>'],
-    ['[Content_Types].xml','<Types></Types>']
+    ['[Content_Types].xml','<Types><Default Extension="png" ContentType="image/png"/></Types>']
   ]);
   const archive={
     file(name,value){
@@ -39,4 +39,5 @@ test('review notice XML keeps print settings before ignored errors and removes i
   assert.ok(sheet.indexOf('<ignoredErrors>')<sheet.indexOf('<drawing '));
   assert.match(sheet,/&amp;P 頁／共 &amp;N 頁/);
   assert.ok(files.has('xl/media/trtc-logo.png'));
+  assert.equal((files.get('[Content_Types].xml').match(/Extension="png"/g)||[]).length,1);
 });

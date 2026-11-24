@@ -10478,8 +10478,10 @@ async function createReviewNoticeWorkbook(stage,logo){
       <Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/trtc-logo.png"/>
     </Relationships>`);
   const contentTypes=await file.file('[Content_Types].xml').async('string');
+  const imageContentType=/<Default\b[^>]*\bExtension="png"/i.test(contentTypes)
+    ?'':'<Default Extension="png" ContentType="image/png"/>';
   file.file('[Content_Types].xml',contentTypes.replace('</Types>',
-    '<Default Extension="png" ContentType="image/png"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>'));
+    imageContentType+'<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>'));
   return file.generateAsync({type:'uint8array',compression:'DEFLATE'});
 }
 async function exportReviewNotice(button){
