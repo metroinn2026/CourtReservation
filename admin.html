@@ -5886,7 +5886,7 @@ let capacitySettingsLoaded = false;
 let closedSlotSettings = {};
 let capacityVersions = {};
 let systemSettings = {};
-let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', usage:'', day:'', time:'', anomaly:'', lotteryFilter:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
+let recordState = { q:'', location:DEFAULT_LOCATION, venue:'', usage:'', day:'', time:'', anomaly:'', lotteryFilter:'',reviewFilter:'', page:1, perPage:20, sortKey:'registered_at', sortDir:'desc' };
 let recordsFromAnomalyShortcut = false;
 let recordsActionTab = 'filter';
 let selectedRecordIds = new Set();
@@ -7253,7 +7253,7 @@ function renderDashboard(){
     button.onclick=()=>{
       const stage=visibleStages.get(button.dataset.dashboardStageRecords);
       if(!stage)return;
-      Object.assign(recordState,{location:stage.location,venue:stage.venue,day:stage.day,time:stage.time,q:'',usage:'',anomaly:'',lotteryFilter:'',page:1});
+      Object.assign(recordState,{location:stage.location,venue:stage.venue,day:stage.day,time:stage.time,q:'',usage:'',anomaly:'',lotteryFilter:'',reviewFilter:'',page:1});
       recordsActionTab='filter';
       renderPage('records');
     };
@@ -7283,7 +7283,7 @@ function renderDashboard(){
   document.getElementById('dashOpenStages').onclick=()=>renderPage('capacity');
   document.getElementById('dashRegisteredPeople').onclick=()=>{
     recordsActionTab='filter';
-    Object.assign(recordState,{q:'',location:'',venue:'',usage:'',day:'',time:'',anomaly:'',lotteryFilter:'',page:1});
+    Object.assign(recordState,{q:'',location:'',venue:'',usage:'',day:'',time:'',anomaly:'',lotteryFilter:'',reviewFilter:'',page:1});
     renderPage('records');
   };
   document.getElementById('dashDrawDemand').onclick=()=>renderPage('lottery');
@@ -7426,6 +7426,7 @@ function getRecordsInScope(filters){
     if(!matchesRegistrationSlot(r,filters)) return false;
     if(filters.usage && courtUsage(r)!==filters.usage) return false;
     const lotteryStatus=pendingRecordStatusChanges.has(String(r.id))?pendingRecordStatusChanges.get(String(r.id)):r.lottery_status;
+    if(filters.reviewFilter && (!qualificationReviewsLoaded || qualificationState(r)!==filters.reviewFilter))return false;
     const lf=filters.lotteryFilter||'';
     if(lf==='__not_drawn__' && String(lotteryStatus||'').trim())return false;
     if(lf==='__backup__' && !/^候補\d+$/.test(String(lotteryStatus||'')))return false;
@@ -7562,7 +7563,7 @@ function clearRecordFilters(){
   if(recordsFromAnomalyShortcut)Object.assign(correctionNoticeView,{filter:'active',noticeFilter:'all'});
   recordsFromAnomalyShortcut=false;
   Object.assign(recordState,{q:'',location:DEFAULT_LOCATION,venue:'',usage:'',day:'',time:'',
-    anomaly:'',lotteryFilter:'',page:1});
+    anomaly:'',lotteryFilter:'',reviewFilter:'',page:1});
   resetUnifiedReviewSelection();
   selectedRecordIds.clear();
 }
@@ -9323,7 +9324,16 @@ function renderRecordsTable(){
   let html=`<div class="records-table-meta records-table-meta-controls">
     <div class="records-meta-left">
       <span>${filtered.length} 筆</span>
-      <label class="records-inline-control">狀態
+      <label class="records-inline-control">審查狀態
+        <select id="recordsReviewStatusFilter" aria-label="篩選審查狀態" ${qualificationReviewsLoaded?'':'disabled'}>
+          <option value="">全部</option>
+          <option value="qualified">合格</option>
+          <option value="pending">待審查</option>
+          <option value="correction">待補正</option>
+          <option value="invalid">審查不合格</option>
+        </select>
+      </label>
+      <label class="records-inline-control">抽籤狀態
         <select id="recordsLotteryStatusFilter" title="選擇後立即篩選">
           <option value="">全部</option>
           <option value="__not_drawn__">未抽籤</option>
@@ -9354,7 +9364,7 @@ function renderRecordsTable(){
   ${selectedRecordIds.size||pendingRecordStatusChanges.size ? `<div class="records-list-actionbar records-list-actionbar-active">
     <div class="records-list-action-left">
       <select id="listBatchStatus" ${selectedRecordIds.size?'':'disabled'} title="勾選資料後，可一次套用相同狀態">
-        <option value="__none__">變更狀態</option>
+        <option value="__none__">變更抽籤狀態</option>
         <option value="中籤">中籤</option>
         <option value="__rank__">備取</option>
         <option value="放棄">放棄</option>
@@ -9367,7 +9377,7 @@ function renderRecordsTable(){
       <button id="savePendingRecordStatusBtn" class="btn btn-primary btn-compact" ${pendingRecordStatusChanges.size?'':'disabled'}>儲存${pendingRecordStatusChanges.size?`（${pendingRecordStatusChanges.size}）`:''}</button>
     </div>
   </div>` : ''}
-  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:172px;">審查狀態 <button type="button" id="anomalyHelpBtn" title="查看正常／異常分類與資格審查說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:116px;">${sortHeader('會員類型／查核','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
+  <div class="table-wrap records-table-wrap"><table class="records-compact-table"><thead><tr><th style="text-align:center;width:40px;"><input type="checkbox" id="selectPageRecords" ${allPageSelected?'checked':''} title="全選本頁"></th><th style="width:44px;">項次</th><th style="width:76px;">${sortHeader('抽籤狀態','lottery_status')}</th><th style="width:66px;">公布</th><th style="width:172px;">審查狀態 <button type="button" id="anomalyHelpBtn" title="查看正常／異常分類與資格審查說明" style="border:0;background:transparent;color:#0284c7;font-weight:900;cursor:pointer;padding:0 2px;font-size:13px;vertical-align:middle;">ⓘ</button></th><th style="width:120px;">${sortHeader('登記時間','registered_at')}</th><th style="width:72px;">${sortHeader('序號','serial_number')}</th><th style="width:76px;">${sortHeader('姓名','name')}</th><th style="width:116px;">${sortHeader('會員類型／查核','member_type')}</th><th style="width:120px;">身分證字號</th><th style="width:110px;">${sortHeader('手機號碼','phone')}</th><th style="width:190px;">Email</th><th style="width:58px;">場地</th><th style="width:90px;">${sortHeader('使用項目','sport_usage')}</th><th style="width:58px;">${sortHeader('星期','day_of_week')}</th><th style="width:100px;">${sortHeader('時段','time_slot')}</th><th style="width:48px;">時數</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     html+=`<tr><td style="text-align:center;"><input type="checkbox" class="record-check" data-id="${r.id}" ${selectedRecordIds.has(r.id)?'checked':''}></td><td>${start+i+1}</td>
     <td>${recordStatusSelect(r)}</td>
@@ -9420,6 +9430,16 @@ function renderRecordsTable(){
   const saveStatusBtn=document.getElementById('savePendingRecordStatusBtn');
   if(saveStatusBtn) saveStatusBtn.onclick=savePendingRecordStatusChanges;
 
+  const reviewStatusFilter=document.getElementById('recordsReviewStatusFilter');
+  if(reviewStatusFilter){
+    reviewStatusFilter.value=recordState.reviewFilter||'';
+    reviewStatusFilter.onchange=()=>{
+      recordState.reviewFilter=reviewStatusFilter.value;
+      recordState.page=1;
+      selectedRecordIds.clear();
+      renderRecordsWorkspace();
+    };
+  }
   const statusFilter=document.getElementById('recordsLotteryStatusFilter');
   if(statusFilter){
     statusFilter.value=recordState.lotteryFilter||'';
@@ -9809,7 +9829,7 @@ function renderBulkCapacityTable(){
     button.onclick=()=>confirmDiscardCapacityDraft(()=>{
       const slot=button.closest('.capacity-cell').querySelector('.cap-input').dataset;
       Object.assign(recordState,{q:'',location,venue:slot.venue,usage:'',day:slot.day,time:slot.slot,
-        anomaly:'',lotteryFilter:'',page:1});
+        anomaly:'',lotteryFilter:'',reviewFilter:'',page:1});
       recordsActionTab='filter';
       renderPage('records');
     });
