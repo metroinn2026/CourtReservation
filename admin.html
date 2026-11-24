@@ -7626,7 +7626,7 @@ function renderRecordsPage(){
           <summary class="btn btn-gray btn-compact">匯出 ▾</summary>
           <div class="records-export-popover">
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
-            <button id="exportReviewNoticeBtn" type="button" class="records-menu-item" title="依場地、球類、用途、星期及時段匯出公開審查名單">匯出抽籤前審查公告 Excel</button>
+            <button id="exportReviewNoticeBtn" type="button" class="records-menu-item" title="依場地、球類、用途、星期及時段匯出登記合格名單">匯出登記合格名單 Excel</button>
             <button id="exportQualifiedBtn" class="records-menu-item" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">匯入會館會員名冊比對 CSV</button>':''}
@@ -10369,24 +10369,20 @@ async function exportPendingLotteryWorkbook(stages){
   writeOperationLog('匯出SP88各場次合格抽籤名單',{stage_count:exported,excluded_count:excluded,skipped_empty_stages:skipped,columns:['姓名','手機末三碼','序號']});
 }
 
-const REVIEW_NOTICE_TITLE='116年北投會館運動場域長期租借登記審查名單';
+const REVIEW_NOTICE_TITLE='116年北投會館運動場域長期租借抽籤登記合格名單';
 
 function buildReviewNoticeGroups(records){
   const groups=new Map();
   for(const record of records){
+    if(qualificationState(record)!=='qualified')continue;
     const location=recordLocation(record);
     const venue=record.venue_type||'';
     const day=String(record.day_of_week||'').replace(/^週/,'周');
     const time=slotRangeKey(record.time_slot);
     const usage=courtUsage(record);
     const key=JSON.stringify([location,venue,day,time,usage]);
-    if(!groups.has(key))groups.set(key,{location,venue,day,time,usage,rows:[],pending:0,incomplete:0});
+    if(!groups.has(key))groups.set(key,{location,venue,day,time,usage,rows:[],incomplete:0});
     const group=groups.get(key);
-    const state=qualificationState(record);
-    if(state!=='qualified'&&state!=='invalid'){
-      group.pending++;
-      continue;
-    }
     const serial=compactRecordCode(record);
     const name=maskPublicName(record.name);
     const last3=getLotteryPhoneLast3(record);
@@ -10396,7 +10392,7 @@ function buildReviewNoticeGroups(records){
     }
     // 單字姓名整字遮蔽。名單只傳入公開欄位。
     const publicName=Array.from(String(record.name||'').replace(/\s/g,'')).length===1?'○':name;
-    group.rows.push([group.rows.length+1,serial,publicName,last3,state==='qualified'?'審查合格':'審查不合格']);
+    group.rows.push([group.rows.length+1,serial,publicName,last3,'合格']);
   }
   return [...groups.values()].sort((a,b)=>
     a.location.localeCompare(b.location,'zh-Hant')||venueSortValue(a.venue)-venueSortValue(b.venue)||
@@ -10405,14 +10401,16 @@ function buildReviewNoticeGroups(records){
 function reviewNoticeStageLabel(stage){
   return `${locationLabel(stage.location)}・${courtVenueLabel({venue_type:stage.venue})}｜${stage.day.replace(/^周/,'週')} ${stage.time.replace('-','–')}｜用途 ${stage.usage}`;
 }
-async function createReviewNoticeWorkbook(stage){
+async function createReviewNoticeWorkbook(stage,logo){
+  if(!logo)throw Error('公告 LOGO 未載入');
   const wb=XLSX.utils.book_new();
-  const ws=XLSX.utils.aoa_to_sheet([[REVIEW_NOTICE_TITLE],[reviewNoticeStageLabel(stage)],[],
+  const ws=XLSX.utils.aoa_to_sheet([[''],[REVIEW_NOTICE_TITLE],[reviewNoticeStageLabel(stage)],[],
     ['項次','登記序號','姓名','手機末三碼','審查結果'],...stage.rows]);
-  ws['!merges']=[XLSX.utils.decode_range('A1:E1'),XLSX.utils.decode_range('A2:E2')];
+  ws['!merges']=[XLSX.utils.decode_range('A2:E2'),XLSX.utils.decode_range('A3:E3')];
   ws['!cols']=[{wch:8},{wch:14},{wch:16},{wch:15},{wch:17}];
-  ws['!rows']=[{hpt:44},{hpt:35},{hpt:8},{hpt:26},...stage.rows.map(()=>({hpt:22}))];
-  XLSX.utils.book_append_sheet(wb,ws,'審查名單');
+  ws['!rows']=[{hpt:30},{hpt:50},{hpt:35},{hpt:8},{hpt:26},...stage.rows.map(()=>({hpt:22}))];
+  ws.A2.v=REVIEW_NOTICE_TITLE.replace('抽籤登記合格名單','\n抽籤登記合格名單');
+  XLSX.utils.book_append_sheet(wb,ws,'登記合格名單');
 
   // SheetJS Community 保留合併與列高。字型、底色與對齊寫入本工作簿的 OOXML 樣式。
   const file=await JSZip.loadAsync(XLSX.write(wb,{bookType:'xlsx',type:'array',cellStyles:true}));
@@ -10420,18 +10418,57 @@ async function createReviewNoticeWorkbook(stage){
   if(!sheet)throw Error('Excel 結構不完整');
   const font=(size,color,bold=false)=>`<font>${bold?'<b/>':''}<sz val="${size}"/><color rgb="FF${color}"/><name val="Microsoft JhengHei"/></font>`;
   const fill=color=>`<fill><patternFill patternType="solid"><fgColor rgb="FF${color}"/><bgColor indexed="64"/></patternFill></fill>`;
-  const xf=(fontId,fillId,numFmtId=0)=>`<xf numFmtId="${numFmtId}" fontId="${fontId}" fillId="${fillId}" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>`;
-  const fontStyles=[font(11,'172B41'),font(22,'FFFFFF',true),font(17,'153E61',true),font(12,'153E61',true)];
-  const fillStyles=['<fill><patternFill patternType="none"/></fill>','<fill><patternFill patternType="gray125"/></fill>',fill('163C5C'),fill('E7F1FA'),fill('D6E7F6'),fill('F2F6FA')];
-  const cellStyles=[xf(0,0),xf(1,2),xf(2,3),xf(3,4),xf(0,0),xf(0,5),xf(0,0,49),xf(0,5,49)];
+  const xf=(fontId,fillId,numFmtId=0,borderId=0)=>`<xf numFmtId="${numFmtId}" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0" applyBorder="1" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>`;
+  const fontStyles=[font(11,'172B41'),font(18,'222222',true),font(12,'333333',true),font(11,'222222',true)];
+  const fillStyles=['<fill><patternFill patternType="none"/></fill>','<fill><patternFill patternType="gray125"/></fill>',fill('FFFFFF'),fill('FFFFFF'),fill('F2F2F2'),fill('FFFFFF')];
+  const cellStyles=[xf(0,0),xf(1,2),xf(2,3),xf(3,4,0,1),xf(0,0,0,1),xf(0,5,0,1),xf(0,0,49,1),xf(0,5,49,1)];
   file.file('xl/styles.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-    <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4">${fontStyles.join('')}</fonts><fills count="6">${fillStyles.join('')}</fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="8">${cellStyles.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`);
-  const xml=await sheet.async('string');
-  file.file('xl/worksheets/sheet1.xml',xml.replace(/<c\b([^>]*\br="([A-E])(\d+)"[^>]*)>/g,(tag,attrs,column,rowText)=>{
+    <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4">${fontStyles.join('')}</fonts><fills count="6">${fillStyles.join('')}</fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD9D9D9"/></left><right style="thin"><color rgb="FFD9D9D9"/></right><top style="thin"><color rgb="FFD9D9D9"/></top><bottom style="thin"><color rgb="FFD9D9D9"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="8">${cellStyles.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`);
+  let xml=await sheet.async('string');
+  xml=xml.replace(/<c\b([^>]*\br="([A-E])(\d+)"[^>]*)>/g,(tag,attrs,column,rowText)=>{
     const row=Number(rowText);
-    const style=row<=2?row:row===4?3:(['B','D'].includes(column)?6:4)+(row%2===0?1:0);
+    const style=row===1?0:row===2?1:row===3?2:row===5?3:(['B','D'].includes(column)?6:4)+(row%2===0?1:0);
     return `<c${attrs.replace(/\s+s="\d+"/,'')} s="${style}">`;
-  }));
+  });
+  xml=xml.replace(/<sheetPr[\s\S]*?<\/sheetPr>|<sheetPr[^>]*\/>/,'');
+  xml=xml.replace(/<worksheet([^>]*)>/,'<worksheet$1><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>');
+  const footer=escapeHtml(reviewNoticeStageLabel(stage).replaceAll('&','&&'));
+  xml=xml.replace('</worksheet>',`
+    <printOptions horizontalCentered="1"/>
+    <pageMargins left="0.35" right="0.35" top="0.35" bottom="0.6" header="0.2" footer="0.25"/>
+    <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0" firstPageNumber="1" useFirstPageNumber="1"/>
+    <headerFooter><oddFooter>&amp;L&amp;8${footer}&amp;R&amp;9第 &amp;P 頁／共 &amp;N 頁</oddFooter></headerFooter>
+    <drawing r:id="rIdHeaderLogo"/>
+  </worksheet>`);
+  file.file('xl/worksheets/sheet1.xml',xml);
+  const workbook=await file.file('xl/workbook.xml').async('string');
+  file.file('xl/workbook.xml',workbook.replace('</workbook>',`<definedNames>
+    <definedName name="_xlnm.Print_Titles" localSheetId="0">'登記合格名單'!$1:$5</definedName>
+    <definedName name="_xlnm.Print_Area" localSheetId="0">'登記合格名單'!$A$1:$E$${stage.rows.length+5}</definedName>
+  </definedNames></workbook>`));
+  // LOGO 與表頭置於重複列印列，保留原始圖檔比例。
+  file.file('xl/media/trtc-logo.png',logo);
+  file.file('xl/worksheets/_rels/sheet1.xml.rels',`<?xml version="1.0" encoding="UTF-8"?>
+    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+      <Relationship Id="rIdHeaderLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+    </Relationships>`);
+  file.file('xl/drawings/drawing1.xml',`<?xml version="1.0" encoding="UTF-8"?>
+    <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+      <xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+        <xdr:ext cx="1968500" cy="286846"/>
+        <xdr:pic><xdr:nvPicPr><xdr:cNvPr id="1" name="Metro Taipei"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>
+          <xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rIdLogo"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
+          <xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
+        </xdr:pic><xdr:clientData/>
+      </xdr:oneCellAnchor>
+    </xdr:wsDr>`);
+  file.file('xl/drawings/_rels/drawing1.xml.rels',`<?xml version="1.0" encoding="UTF-8"?>
+    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+      <Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/trtc-logo.png"/>
+    </Relationships>`);
+  const contentTypes=await file.file('[Content_Types].xml').async('string');
+  file.file('[Content_Types].xml',contentTypes.replace('</Types>',
+    '<Default Extension="png" ContentType="image/png"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>'));
   return file.generateAsync({type:'uint8array',compression:'DEFLATE'});
 }
 async function exportReviewNotice(button){
@@ -10447,20 +10484,24 @@ async function exportReviewNotice(button){
     await loadQualificationReviews();
     if(!qualificationReviewsLoaded){alert('無法載入審查結果，請確認管理員登入後再試。');return;}
     const groups=buildReviewNoticeGroups(records);
-    const blocked=groups.filter(group=>group.pending||group.incomplete);
-    const ready=groups.filter(group=>!group.pending&&!group.incomplete);
+    if(!groups.length){alert('目前場次範圍沒有登記合格資料可匯出。');return;}
+    const blocked=groups.filter(group=>group.incomplete);
+    const ready=groups.filter(group=>!group.incomplete&&group.rows.length);
     if(blocked.length){
-      const details=blocked.slice(0,8).map(group=>`${reviewNoticeStageLabel(group)}：待審查或補正 ${group.pending} 筆，公告欄位缺漏 ${group.incomplete} 筆`);
-      const message=`${blocked.length} 個場次用途尚未完成審查或有欄位缺漏。\n\n${details.join('\n')}`;
+      const details=blocked.slice(0,8).map(group=>`${reviewNoticeStageLabel(group)}：合格名單欄位缺漏 ${group.incomplete} 筆`);
+      const message=`${blocked.length} 個場次用途的合格名單有欄位缺漏。\n\n${details.join('\n')}`;
       if(!ready.length){alert(message);return;}
       if(!confirm(`${message}\n\n是否只匯出已完成的 ${ready.length} 個場次用途？`))return;
     }
+    const logoResponse=await fetch('/assets/trtc-logo.png');
+    if(!logoResponse.ok)throw Error('公告 LOGO 讀取失敗');
+    const logo=await logoResponse.arrayBuffer();
     const zip=ready.length>1?new JSZip():null;
     const used=new Set();
     let bytes,name;
     for(const group of ready){
-      bytes=await createReviewNoticeWorkbook(group);
-      const basename=`抽籤前審查名單_${safeLotteryStageFileName(group)}_${group.usage}`.replace(/[\\/:*?"<>|]/g,'-');
+      bytes=await createReviewNoticeWorkbook(group,logo);
+      const basename=`抽籤登記合格名單_${safeLotteryStageFileName(group)}_${group.usage}`.replace(/[\\/:*?"<>|]/g,'-');
       name=basename;
       for(let i=2;used.has(name);i++)name=`${basename}_${i}`;
       used.add(name);
@@ -10471,13 +10512,13 @@ async function exportReviewNotice(button){
     const url=URL.createObjectURL(blob);
     const link=document.createElement('a');
     link.href=url;
-    link.download=zip?'抽籤前審查名單_各場次及用途.zip':`${name}.xlsx`;
+    link.download=zip?'抽籤登記合格名單_各場次及用途.zip':`${name}.xlsx`;
     document.body.appendChild(link);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
-    void writeOperationLog('匯出抽籤前審查公告',{workbook_count:ready.length,record_count:ready.reduce((sum,group)=>sum+group.rows.length,0)});
+    void writeOperationLog('匯出抽籤登記合格名單',{workbook_count:ready.length,record_count:ready.reduce((sum,group)=>sum+group.rows.length,0)});
   }catch(error){
     console.error(error);
-    alert('無法產生抽籤前審查名單，請重新整理後再試。');
+    alert('無法產生抽籤登記合格名單，請重新整理後再試。');
   }finally{button.disabled=false;}
 }
 
