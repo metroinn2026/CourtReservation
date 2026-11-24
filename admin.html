@@ -3822,6 +3822,18 @@
   @media(max-width:1000px){.single-limit-grid{grid-template-columns:repeat(2,minmax(120px,1fr));}.cross-limit-row{grid-template-columns:1fr;}.registration-limit-actions{justify-content:flex-start;}}
 </style>
 
+<style id="records-bottom-scrollbar-style">
+.records-bottom-scrollbar{position:fixed;bottom:0;z-index:900;display:flex;align-items:center;gap:8px;box-sizing:border-box;padding:6px 8px;background:#fff;border:1px solid #cbd5e1;border-radius:8px 8px 0 0;box-shadow:0 -3px 12px #0f172a18;}
+.records-bottom-scrollbar[hidden]{display:none;}
+.records-bottom-scrollbar button{flex:none;width:32px;height:28px;border:1px solid #cbd5e1;border-radius:5px;background:#f8fafc;color:#334155;cursor:pointer;}
+.records-bottom-scrollbar button:disabled{opacity:.4;cursor:default;}
+.records-bottom-scrollbar-track{flex:1;min-width:0;height:22px;overflow-x:scroll;overflow-y:hidden;scrollbar-color:#64748b #e2e8f0;scrollbar-width:auto;}
+.records-bottom-scrollbar-track::-webkit-scrollbar{height:16px;}
+.records-bottom-scrollbar-track::-webkit-scrollbar-track{background:#e2e8f0;border-radius:8px;}
+.records-bottom-scrollbar-track::-webkit-scrollbar-thumb{background:#64748b;border:2px solid #e2e8f0;border-radius:8px;}
+@media print{.records-bottom-scrollbar{display:none!important;}}
+</style>
+
 <style id="v35-records-horizontal-scroll-fix">
 /* 登記資料寬表：恢復水平卷軸，不裁切右側欄位。 */
 #recordsWorkspace, #recordsTable { min-width:0; max-width:100%; }
@@ -7020,6 +7032,7 @@ function setActiveNav(page){
   document.getElementById('pageTitle').textContent=title;
 }
 function renderPage(page){
+  if(page!=='records')removeRecordsBottomScrollbar();
   if(['accounts','logs'].includes(page) && currentAdmin?.role!=='super_admin'){ alert('此功能限超級管理員使用'); return; }
   if(page!=='records' && recordsFromAnomalyShortcut) clearRecordFilters();
   currentPage=page; setActiveNav(page);
@@ -9043,6 +9056,7 @@ function renderRecordsWorkspace(){
   if(!box) return;
   refreshRecordAnomalyOptions(undefined,true);
   if(recordsActionTab==='review'){
+    removeRecordsBottomScrollbar();
     void renderUnifiedReviewList(box);
     return;
   }
@@ -9311,6 +9325,68 @@ async function savePendingRecordStatusChanges(){
     alert(`已儲存 ${updated} 筆狀態變更。`);
   });
 }
+let recordsBottomScrollbarCleanup=null;
+let recordsHorizontalOffset=0;
+function removeRecordsBottomScrollbar(){
+  if(recordsBottomScrollbarCleanup)recordsBottomScrollbarCleanup();
+  recordsBottomScrollbarCleanup=null;
+}
+function bindRecordsBottomScrollbar(){
+  const wrap=document.querySelector('#recordsTable .records-table-wrap');
+  if(!wrap)return;
+  const bar=document.createElement('div');
+  bar.className='records-bottom-scrollbar';
+  bar.hidden=true;
+  bar.innerHTML='<button type="button" aria-label="向左捲動清單">◀</button><div class="records-bottom-scrollbar-track" tabindex="0" role="region" aria-label="登記清單左右捲動"><div style="height:1px"></div></div><button type="button" aria-label="向右捲動清單">▶</button>';
+  document.body.appendChild(bar);
+  const track=bar.querySelector('.records-bottom-scrollbar-track');
+  const spacer=track.firstElementChild;
+  const [left,right]=bar.querySelectorAll('button');
+  let frame=0;
+  const syncFromTable=()=>{
+    recordsHorizontalOffset=wrap.scrollLeft;
+    if(Math.abs(track.scrollLeft-wrap.scrollLeft)>1)track.scrollLeft=wrap.scrollLeft;
+    left.disabled=wrap.scrollLeft<=1;
+    right.disabled=wrap.scrollLeft>=wrap.scrollWidth-wrap.clientWidth-1;
+  };
+  const update=()=>{
+    frame=0;
+    const rect=wrap.getBoundingClientRect();
+    const viewportHeight=window.innerHeight;
+    const x=Math.max(0,rect.left),edge=Math.min(document.documentElement.clientWidth,rect.right);
+    bar.hidden=!wrap.isConnected||wrap.scrollWidth<=wrap.clientWidth+1||rect.top>=viewportHeight-48||rect.bottom<=48||edge-x<100;
+    if(bar.hidden)return;
+    bar.style.left=x+'px';
+    bar.style.width=(edge-x)+'px';
+    // Keep the same scroll range even though arrow buttons narrow the extra track.
+    spacer.style.width=(wrap.scrollWidth-wrap.clientWidth+track.clientWidth)+'px';
+    syncFromTable();
+  };
+  const schedule=()=>{if(!frame)frame=requestAnimationFrame(update);};
+  const syncFromTrack=()=>{if(Math.abs(wrap.scrollLeft-track.scrollLeft)>1)wrap.scrollLeft=track.scrollLeft;syncFromTable();};
+  left.onclick=()=>{wrap.scrollLeft-=Math.max(160,wrap.clientWidth*.65);syncFromTable();};
+  right.onclick=()=>{wrap.scrollLeft+=Math.max(160,wrap.clientWidth*.65);syncFromTable();};
+  wrap.scrollLeft=recordsHorizontalOffset;
+  wrap.addEventListener('scroll',syncFromTable,{passive:true});
+  track.addEventListener('scroll',syncFromTrack,{passive:true});
+  window.addEventListener('scroll',schedule,{capture:true,passive:true});
+  window.addEventListener('resize',schedule);
+  const observer=new ResizeObserver(schedule);
+  observer.observe(wrap);
+  if(wrap.firstElementChild)observer.observe(wrap.firstElementChild);
+  recordsBottomScrollbarCleanup=()=>{
+    recordsHorizontalOffset=wrap.scrollLeft;
+    if(frame)cancelAnimationFrame(frame);
+    observer.disconnect();
+    wrap.removeEventListener('scroll',syncFromTable);
+    track.removeEventListener('scroll',syncFromTrack);
+    window.removeEventListener('scroll',schedule,true);
+    window.removeEventListener('resize',schedule);
+    bar.remove();
+  };
+  update();
+}
+
 function renderRecordsTable(){
   const filtered=getFilteredRecords();
   // 以所有已載入的登記資料判斷，不受目前篩選與分頁影響。
@@ -9385,7 +9461,9 @@ function renderRecordsTable(){
     <td>${registrationReviewStatusCell(r)}</td><td>${formatCompactDateTime(r.registered_at)}</td><td><strong title="${escapeHtml(r.serial_number)}">${escapeHtml(compactRecordCode(r))}</strong></td><td>${escapeHtml(r.name)}</td><td>${membershipCheckCell(r)}</td><td>${sensitiveIdCell(r)}</td><td>${adminPhoneCell(r)}${courtSharedPhoneCell(r)}</td><td>${adminEmailCell(r)}</td><td>${escapeHtml(courtVenueLabel(r))}</td><td><span class="tag sport-usage-tag" data-usage="${escapeHtml(courtUsage(r))}">${escapeHtml(courtUsage(r))}</span></td><td>${escapeHtml(r.day_of_week)}</td><td>${escapeHtml(r.time_slot)}${continuousRecordIds.has(r.id)?'<div style="margin-top:4px;"><span class="tag" title="同一會員、場地、星期的相鄰2小時登記；各筆仍獨立審查及抽籤" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;font-size:11px;white-space:nowrap;">連續登記</span></div>':''}</td><td>${recordHours(r)}h</td></tr>`;
   });
   html+=`</tbody></table></div><div class="pager" style="justify-content:flex-end"><div class="pager-controls"><button id="prevPage" class="btn btn-gray">上一頁</button><button id="nextPage" class="btn btn-gray">下一頁</button></div></div>`;
+  removeRecordsBottomScrollbar();
   document.getElementById('recordsTable').innerHTML=html;
+  bindRecordsBottomScrollbar();
   bindIdentityReveal();
   bindPhoneCorrectionButtons(document.getElementById('recordsTable'));
   bindRegistrationLimitButtons(document.getElementById('recordsTable'));
