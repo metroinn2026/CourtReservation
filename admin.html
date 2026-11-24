@@ -7626,8 +7626,7 @@ function renderRecordsPage(){
           <summary class="btn btn-gray btn-compact">匯出 ▾</summary>
           <div class="records-export-popover">
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
-            <button id="exportReviewNoticeBtn" type="button" class="records-menu-item" title="依場地、球類、用途、星期及時段匯出登記合格名單">匯出登記合格名單 Excel</button>
-            <button id="exportQualifiedBtn" class="records-menu-item" title="依目前篩選條件，每場次輸出1個 Excel，僅含遮蔽姓名、手機末三碼及序號">匯出合格抽籤名單 ZIP</button>
+            <button id="exportQualifiedBtn" type="button" class="records-menu-item" title="依目前篩選條件，一次匯出公告用及 SP88 抽籤用合格名單 ZIP">匯出合格名單（公告＋SP88）</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">匯入會館會員名冊比對 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="exportGoCheckMappingBtn" type="button" class="records-menu-item">匯出 Go 會員序號對照 CSV</button><button id="importGoCheckBtn" type="button" class="records-menu-item">匯入 Go 會員查核結果 CSV</button>':''}
@@ -7696,9 +7695,8 @@ function renderRecordsPage(){
   // 異常選項隨欄位更新，登記清單仍在套用篩選後刷新。
 
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
-  const exportReviewNoticeButton=document.getElementById('exportReviewNoticeBtn');
-  exportReviewNoticeButton.onclick=()=>void exportReviewNotice(exportReviewNoticeButton);
-  document.getElementById('exportQualifiedBtn').onclick=()=>exportPendingLotteryWorkbook(getStageGroups(getFilteredRecords()));
+  const exportQualifiedButton=document.getElementById('exportQualifiedBtn');
+  exportQualifiedButton.onclick=()=>void exportReviewNotice(exportQualifiedButton);
   const exportMappingButton=document.getElementById('exportFormRowMappingBtn');
   if(exportMappingButton)exportMappingButton.onclick=()=>void exportFormRowMappingCsv(exportMappingButton);
   const offlineButton=document.getElementById('importOfflineReviewBtn');
@@ -10305,6 +10303,20 @@ function safeLotteryStageFileName(stage){
   const raw=`${locationLabel(stage.location||DEFAULT_LOCATION)}_${stage.venue}_${stage.day}_${String(stage.time||'').replace(/:/g,'')}`;
   return raw.replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,'_').slice(0,90)||'抽籤名單';
 }
+function createSP88Workbook(rows){
+  const ws=XLSX.utils.aoa_to_sheet([['姓名','手機末三碼','序號'],...rows]);
+  ws['!cols']=[{wch:18},{wch:16},{wch:12}];
+  // 末三碼與登記序號使用文字格式，保留前導零。
+  for(let row=2;row<=rows.length+1;row++){
+    for(const col of ['B','C']){
+      const cell=ws[`${col}${row}`];
+      if(cell){cell.t='s';cell.z='@';}
+    }
+  }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'抽籤名單');
+  return XLSX.write(wb,{bookType:'xlsx',type:'array'});
+}
 async function exportPendingLotteryWorkbook(stages){
   if(typeof XLSX==='undefined'||typeof JSZip==='undefined'){
     alert('Excel 或 ZIP 元件尚未載入，請重新整理頁面後再試。');return;
@@ -10344,14 +10356,7 @@ async function exportPendingLotteryWorkbook(stages){
       rows.push([name,last3,serial]);
     }
     if(rows.length!==eligible.length) continue;
-    const ws=XLSX.utils.aoa_to_sheet([['姓名','手機末三碼','序號'],...rows]);
-    ws['!cols']=[{wch:18},{wch:16},{wch:12}];
-    // 指定文字格式：保留末三碼的前導零與六碼登記序號。
-    for(let row=2;row<=rows.length+1;row++){
-      for(const col of ['B','C']){const cell=ws[`${col}${row}`];if(cell){cell.t='s';cell.z='@';}}
-    }
-    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'抽籤名單');
-    const bytes=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    const bytes=createSP88Workbook(rows);
     let basename=safeLotteryStageFileName(stage), name=basename, n=2;
     while(used.has(name)) name=`${basename}_${n++}`;
     used.add(name);zip.file(`${name}.xlsx`,bytes);exported++;
@@ -10482,13 +10487,11 @@ async function exportReviewNotice(button){
     alert('Excel 元件尚未載入，請重新整理後再試。');
     return;
   }
-  const {location,venue,day,time,usage}=recordState;
-  const records=allRecords.filter(r=>matchesRegistrationSlot(r,{location,venue,day,time})&&(!usage||courtUsage(r)===usage));
-  if(!records.length){alert('目前場次範圍沒有登記資料。');return;}
   button.disabled=true;
   try{
     await loadQualificationReviews();
     if(!qualificationReviewsLoaded){alert('無法載入審查結果，請確認管理員登入後再試。');return;}
+    const records=getFilteredRecords();
     const groups=buildReviewNoticeGroups(records);
     if(!groups.length){alert('目前場次範圍沒有登記合格資料可匯出。');return;}
     const blocked=groups.filter(group=>group.incomplete);
@@ -10499,32 +10502,55 @@ async function exportReviewNotice(button){
       if(!ready.length){alert(message);return;}
       if(!confirm(`${message}\n\n是否只匯出已完成的 ${ready.length} 個場次用途？`))return;
     }
+    // 兩種格式共用這份已分場次、用途的公開名單，避免分開匯出時人數不同。
+    const ownersByCode=new Map();
+    for(const record of allRecords){
+      const code=compactRecordCode(record);
+      if(!ownersByCode.has(code))ownersByCode.set(code,new Set());
+      ownersByCode.get(code).add(String(record.serial_number||''));
+    }
+    const errors=[];
+    for(const group of ready){
+      const seen=new Set();
+      for(const row of group.rows){
+        const serial=row[1];
+        if(seen.has(serial)||(ownersByCode.get(serial)?.size||0)>1){
+          errors.push(`${reviewNoticeStageLabel(group)}：序號 ${serial} 重複，請先核對登記資料。`);
+        }
+        seen.add(serial);
+      }
+    }
+    if(errors.length){alert(errors.slice(0,8).join('\n'));return;}
     const logoResponse=await fetch('/assets/trtc-logo.png');
     if(!logoResponse.ok)throw Error('公告 LOGO 讀取失敗');
     const logo=await logoResponse.arrayBuffer();
-    const zip=ready.length>1?new JSZip():null;
+    const zip=new JSZip();
+    const announcement=zip.folder('公告用');
+    const sp88=zip.folder('SP88抽籤用');
     const used=new Set();
-    let bytes,name;
     for(const group of ready){
-      bytes=await createReviewNoticeWorkbook(group,logo);
-      const basename=`抽籤登記合格名單_${safeLotteryStageFileName(group)}_${group.usage}`.replace(/[\\/:*?"<>|]/g,'-');
-      name=basename;
+      const basename=`${safeLotteryStageFileName(group)}_${group.usage}`.replace(/[\\/:*?"<>|]/g,'-');
+      let name=basename;
       for(let i=2;used.has(name);i++)name=`${basename}_${i}`;
       used.add(name);
-      if(zip)zip.file(`${name}.xlsx`,bytes);
+      announcement.file(`${name}.xlsx`,await createReviewNoticeWorkbook(group,logo));
+      sp88.file(`${name}.xlsx`,createSP88Workbook(group.rows.map(row=>[row[2],row[3],row[1]])));
     }
-    const blob=zip?await zip.generateAsync({type:'blob'}):
-      new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
     const url=URL.createObjectURL(blob);
     const link=document.createElement('a');
     link.href=url;
-    link.download=zip?'抽籤登記合格名單_各場次及用途.zip':`${name}.xlsx`;
+    const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Taipei'});
+    link.download=`登記合格名單_公告及SP88_${date}.zip`;
     document.body.appendChild(link);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
-    void writeOperationLog('匯出抽籤登記合格名單',{workbook_count:ready.length,record_count:ready.reduce((sum,group)=>sum+group.rows.length,0)});
+    void writeOperationLog('匯出合格名單（公告及SP88）',{
+      stage_count:ready.length,file_count:ready.length*2,
+      record_count:ready.reduce((sum,group)=>sum+group.rows.length,0)
+    });
   }catch(error){
     console.error(error);
-    alert('無法產生抽籤登記合格名單，請重新整理後再試。');
+    alert('無法產生合格名單，請重新整理後再試。');
   }finally{button.disabled=false;}
 }
 
@@ -10875,13 +10901,22 @@ function renderLotteryPage(){
     }
     const stageRecords=stageKeys.size===1?allRecords.filter(r=>
       [recordLocation(r),r.venue_type,r.day_of_week,r.time_slot].join('|')===[...stageKeys][0]):[];
-    const qualified=stageRecords.filter(isQualifiedForLottery);
+    const allQualified=stageRecords.filter(isQualifiedForLottery);
+    const resultUsages=new Set(valid.map(item=>courtUsage(item.record)));
+    const usageQualified=resultUsages.size===1
+      ?allQualified.filter(record=>resultUsages.has(courtUsage(record))):[];
+    // 以結果序號核對用途與宣告人數，相容分用途及舊版整場次抽籤。
+    const splitByUsage=declared>0&&usageQualified.length===declared&&usageQualified.length<allQualified.length;
+    const qualified=splitByUsage?usageQualified:allQualified;
+    const drawRecords=splitByUsage?stageRecords.filter(record=>resultUsages.has(courtUsage(record))):stageRecords;
+    if(splitByUsage)stageLabel+='｜用途 '+[...resultUsages][0];
     const missing=qualified.filter(r=>!valid.some(v=>v.record.id===r.id));
     // 自動設為未中籤：名單人數必須一致；不依第三方檔案的主題作判斷。
     const match=declared>0 && qualified.length===declared && valid.length<=declared &&
-      stageRecords.every(r=>!r.result_published&&!r.lottery_locked&&!String(r.lottery_status||'').trim());
+      drawRecords.every(r=>!r.result_published&&!r.lottery_locked&&!String(r.lottery_status||'').trim());
     if(!match) skipped.push({row:'-',serial:'',name:'',reason:`自動標記其餘未中籤不可用：檔案宣告參加 ${declared||'未提供'} 人，後台同場次合格 ${qualified.length} 人，或已有結果；仍可選擇只匯入正取及備取`});
-    return {fileName,valid,errors,skipped,stageLabel,totalRows:readCount,sp88:true,declared,qualifiedCount:qualified.length,autoMissing:missing,canSetMissing:match,sourceTitle:title};
+    return {fileName,valid,errors,skipped,stageLabel,totalRows:readCount,sp88:true,declared,qualifiedCount:qualified.length,
+      drawUsage:splitByUsage?[...resultUsages][0]:null,autoMissing:missing,canSetMissing:match,sourceTitle:title};
   }
 
   async function parseLotteryResultFiles(files){
@@ -11017,8 +11052,9 @@ function renderLotteryPage(){
         if(!anchor){alert('缺少場次識別');return;}
         const key=[recordLocation(anchor),anchor.venue_type,anchor.day_of_week,anchor.time_slot].join('|');
         const current=allRecords.filter(r=>[recordLocation(r),r.venue_type,r.day_of_week,r.time_slot].join('|')===key);
-        const eligible=current.filter(isQualifiedForLottery);
-        if(!f.canSetMissing||eligible.length!==f.declared||eligible.some(r=>!items.some(x=>x.record.id===r.id))){alert('後台合格參加名單已變更或不完整，請重新上傳預覽。');return;}
+        const eligible=current.filter(r=>(!f.drawUsage||courtUsage(r)===f.drawUsage)&&isQualifiedForLottery(r));
+        const expectedIds=new Set([...f.valid.map(item=>item.record.id),...f.autoMissing.map(record=>record.id)]);
+        if(!f.canSetMissing||eligible.length!==f.declared||eligible.some(r=>!expectedIds.has(r.id))){alert('後台合格參加名單已變更或不完整，請重新上傳預覽。');return;}
       }
     }
     const message=`本次將更新 <strong>正取／備取 ${batch.totalValid} 人</strong>${extra.length?`，並將其餘 <strong>${extra.length} 人設為「未中籤」</strong>`:'，其他人維持原狀'}。<br><br>結果仍為「未公布」。確定執行？`;
