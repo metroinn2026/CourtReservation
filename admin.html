@@ -7,6 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="/admin-session-policy.js"></script>
   <script src="/vendor/qrcode-generator-1.4.4.js"></script>
   <script src="/admin-mfa.js?v=qr-canvas-2"></script>
@@ -7626,7 +7627,7 @@ function renderRecordsPage(){
           <summary class="btn btn-gray btn-compact">匯出 ▾</summary>
           <div class="records-export-popover">
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
-            <button id="exportQualifiedBtn" type="button" class="records-menu-item" title="依目前篩選條件，一次匯出公告用及 SP88 抽籤用合格名單 ZIP">匯出合格名單（公告＋SP88）</button>
+            <button id="exportQualifiedBtn" type="button" class="records-menu-item" title="依目前篩選條件，一次匯出公告 Excel、公告 PDF 及 SP88 抽籤用合格名單 ZIP">匯出合格名單（公告＋SP88）</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">匯入會館會員名冊比對 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="exportGoCheckMappingBtn" type="button" class="records-menu-item">匯出 Go 會員序號對照 CSV</button><button id="importGoCheckBtn" type="button" class="records-menu-item">匯入 Go 會員查核結果 CSV</button>':''}
@@ -10484,9 +10485,65 @@ async function createReviewNoticeWorkbook(stage,logo){
     imageContentType+'<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>'));
   return file.generateAsync({type:'uint8array',compression:'DEFLATE'});
 }
+async function createReviewNoticePdf(stage,logoImage){
+  const pdf=await PDFLib.PDFDocument.create();
+  pdf.setTitle(REVIEW_NOTICE_TITLE);
+  pdf.setAuthor('北投會館營運管理中心');
+  const width=595.28,height=841.89,margin=36,rowsPerPage=27;
+  const tableWidth=width-margin*2;
+  const columnWidths=[0.10,0.20,0.23,0.23,0.24].map(ratio=>tableWidth*ratio);
+  const pageCount=Math.ceil(stage.rows.length/rowsPerPage);
+  for(let pageIndex=0;pageIndex<pageCount;pageIndex++){
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.ceil(width*3);
+    canvas.height=Math.ceil(height*3);
+    const context=canvas.getContext('2d');
+    if(!context)throw Error('PDF 繪圖元件無法使用');
+    context.scale(3,3);
+    context.fillStyle='#ffffff';
+    context.fillRect(0,0,width,height);
+    context.drawImage(logoImage,margin,25,77.5,11.2932);
+    const text=(value,x,y,maxWidth,size=11,bold=false,align='center')=>{
+      context.font=`${bold?'bold ':''}${size}px "Microsoft JhengHei","Noto Sans TC","Noto Sans CJK TC",sans-serif`;
+      context.fillStyle='#222222';
+      context.textAlign=align;
+      context.textBaseline='middle';
+      context.fillText(String(value),x,y,maxWidth);
+    };
+    text('116年北投會館運動場域長期租借',width/2,65,tableWidth,18,true);
+    text('抽籤登記合格名單',width/2,91,tableWidth,18,true);
+    text(reviewNoticeStageLabel(stage),width/2,125,tableWidth,11,true);
+    const rows=stage.rows.slice(pageIndex*rowsPerPage,(pageIndex+1)*rowsPerPage);
+    const table=[['項次','登記序號','姓名','手機末三碼','審查結果'],...rows];
+    let y=150;
+    for(let rowIndex=0;rowIndex<table.length;rowIndex++){
+      const rowHeight=rowIndex===0?26:22;
+      let x=margin;
+      for(let col=0;col<columnWidths.length;col++){
+        const cellWidth=columnWidths[col];
+        context.fillStyle=rowIndex===0?'#f2f2f2':'#ffffff';
+        context.fillRect(x,y,cellWidth,rowHeight);
+        context.strokeStyle='#d9d9d9';
+        context.lineWidth=0.5;
+        context.strokeRect(x,y,cellWidth,rowHeight);
+        text(table[rowIndex][col],x+cellWidth/2,y+rowHeight/2,cellWidth-10,11,rowIndex===0);
+        x+=cellWidth;
+      }
+      y+=rowHeight;
+    }
+    text(reviewNoticeStageLabel(stage),margin,817,tableWidth-120,8,false,'left');
+    text(`第 ${pageIndex+1} 頁／共 ${pageCount} 頁`,width-margin,817,110,9,false,'right');
+    const image=await pdf.embedPng(canvas.toDataURL('image/png'));
+    pdf.addPage([width,height]).drawImage(image,{x:0,y:0,width,height});
+    canvas.width=canvas.height=0;
+    // 讓大量場次產出時仍可更新畫面。
+    await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  return pdf.save();
+}
 async function exportReviewNotice(button){
-  if(typeof XLSX==='undefined'||typeof JSZip==='undefined'){
-    alert('Excel 元件尚未載入，請重新整理後再試。');
+  if(typeof XLSX==='undefined'||typeof JSZip==='undefined'||typeof PDFLib==='undefined'){
+    alert('Excel 或 PDF 元件尚未載入，請重新整理後再試。');
     return;
   }
   button.disabled=true;
@@ -10526,9 +10583,13 @@ async function exportReviewNotice(button){
     const logoResponse=await fetch('/assets/trtc-logo.png');
     if(!logoResponse.ok)throw Error('公告 LOGO 讀取失敗');
     const logo=await logoResponse.arrayBuffer();
+    const logoImage=await createImageBitmap(new Blob([logo],{type:'image/png'}));
+    await document.fonts.ready;
     const zip=new JSZip();
     const announcement=zip.folder('公告用');
     const sp88=zip.folder('SP88抽籤用');
+    const combinedPdf=await PDFLib.PDFDocument.create();
+    combinedPdf.setTitle(REVIEW_NOTICE_TITLE);
     const used=new Set();
     for(const group of ready){
       const basename=`${safeLotteryStageFileName(group)}_${group.usage}`.replace(/[\\/:*?"<>|]/g,'-');
@@ -10536,8 +10597,15 @@ async function exportReviewNotice(button){
       for(let i=2;used.has(name);i++)name=`${basename}_${i}`;
       used.add(name);
       announcement.file(`${name}.xlsx`,await createReviewNoticeWorkbook(group,logo));
+      const pdfBytes=await createReviewNoticePdf(group,logoImage);
+      announcement.file(`${name}.pdf`,pdfBytes);
+      const stagePdf=await PDFLib.PDFDocument.load(pdfBytes);
+      const pages=await combinedPdf.copyPages(stagePdf,stagePdf.getPageIndices());
+      pages.forEach(page=>combinedPdf.addPage(page));
       sp88.file(`${name}.xlsx`,createSP88Workbook(group.rows.map(row=>[row[2],row[3],row[1]])));
     }
+    logoImage.close();
+    zip.file('公告合格名單_全部場次.pdf',await combinedPdf.save());
     const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
     const url=URL.createObjectURL(blob);
     const link=document.createElement('a');
@@ -10547,7 +10615,7 @@ async function exportReviewNotice(button){
     document.body.appendChild(link);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
     void writeOperationLog('匯出合格名單（公告及SP88）',{
-      stage_count:ready.length,file_count:ready.length*2,
+      stage_count:ready.length,file_count:ready.length*3+1,
       record_count:ready.reduce((sum,group)=>sum+group.rows.length,0)
     });
   }catch(error){
