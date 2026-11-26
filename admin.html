@@ -7642,7 +7642,7 @@ function renderRecordsPage(){
           <div class="records-export-popover">
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
             <button id="exportQualifiedBtn" type="button" class="records-menu-item" title="依目前篩選條件，匯出公告 Excel、PDF 及全部場次合併 PDF">匯出合格公告名單</button>
-            <button id="exportQualifiedSP88Btn" type="button" class="records-menu-item" title="依目前篩選條件，只匯出各場次用途的 SP88 抽籤 Excel ZIP">匯出 SP88 抽籤名單</button>
+            <button id="exportQualifiedSP88Btn" type="button" class="records-menu-item" title="匯出 SP88 Excel ZIP；羽球場同時段不分用途，檔名標示開放名額及合格人數">匯出 SP88 抽籤名單</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">匯入會館會員名冊比對 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="exportGoCheckMappingBtn" type="button" class="records-menu-item">匯出 Go 會員序號對照 CSV</button><button id="importGoCheckBtn" type="button" class="records-menu-item">匯入 Go 會員查核結果 CSV</button>':''}
@@ -10405,6 +10405,30 @@ function safeLotteryStageFileName(stage){
   const raw=`${locationLabel(stage.location||DEFAULT_LOCATION)}_${stage.venue}_${stage.day}_${String(stage.time||'').replace(/:/g,'')}`;
   return raw.replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,'_').slice(0,90)||'抽籤名單';
 }
+// SP88 羽球場共用同一時段的開放名額，不以運動用途拆分抽籤池。
+function sp88StageKey(stage){
+  return JSON.stringify([stage.location||DEFAULT_LOCATION,stage.venue,String(stage.day||'').replace(/^週/,'周'),slotRangeKey(stage.time)]);
+}
+function sp88RecordStageKey(record){
+  return sp88StageKey({location:recordLocation(record),venue:record.venue_type,day:record.day_of_week,time:record.time_slot});
+}
+function sp88QualifiedStageRecords(stage){
+  const key=sp88StageKey(stage);
+  return allRecords.filter(record=>sp88RecordStageKey(record)===key&&isQualifiedForLottery(record));
+}
+function sp88ExportFileName(stage,qualifiedCount,usageLabel=''){
+  const quota=isStageClosed(stage)?0:getStageCapacity(stage);
+  const pool=sp88QualifiedStageRecords(stage);
+  const mixed=new Set(pool.map(courtUsage)).size>1;
+  const count=Number(qualifiedCount);
+  // 籃球的用途順位及羽球混合球種的實際分配仍由承辦依登記規則處理。
+  const decision=!(quota>0)?'未開放請核對':
+    stage.venue==='籃球'&&mixed?'依用途順位':
+    count>quota?'需抽籤':
+    stage.venue==='羽球'&&mixed?'混合球種請核對':'未超額';
+  const usage=usageLabel?'_'+usageLabel:'';
+  return (`${safeLotteryStageFileName(stage)}${usage}_開放${quota}名_合格${count}人_${decision}`).replace(/[\\/:*?"<>|]/g,'-');
+}
 function createSP88Workbook(rows){
   // SP88 會將每一列（含第一列）視為參加者，故專用 Excel 不加入欄位標題。
   const ws=XLSX.utils.aoa_to_sheet(rows);
@@ -10427,6 +10451,7 @@ async function exportPendingLotteryWorkbook(stages){
   await loadQualificationReviews();
   if(!qualificationReviewsLoaded){alert('審查資料尚未成功載入，請先授權並重新整理。');return;}
   if(!stages?.length){alert('目前沒有可以匯出的場次。');return;}
+  if(!capacitySettingsLoaded){alert('名額設定尚未成功載入，請重新整理後再匯出 SP88。');return;}
   // 檢查整份登記資料的短碼唯一性，避免以六碼從抽籤結果回填時誤配。
   const ownersByCode=new Map();
   for(const r of allRecords){
@@ -10446,6 +10471,7 @@ async function exportPendingLotteryWorkbook(stages){
     const eligible=stage.records.filter(isQualifiedForLottery);
     excluded+=stage.records.length-eligible.length;
     if(!eligible.length){skipped++;continue;}
+    if(stage.venue==='羽球'&&sp88QualifiedStageRecords(stage).length!==eligible.length){errors.push(`${stage.venue} ${stage.day} ${stage.time}：羽球場須包含同時段全部合格球種，請核對名單。`);continue;}
     const serials=new Set();
     const rows=[];
     for(const r of [...eligible].sort((a,b)=>String(a.serial_number||'').localeCompare(String(b.serial_number||'')))){
@@ -10460,7 +10486,7 @@ async function exportPendingLotteryWorkbook(stages){
     }
     if(rows.length!==eligible.length) continue;
     const bytes=createSP88Workbook(rows);
-    let basename=safeLotteryStageFileName(stage), name=basename, n=2;
+    let basename=sp88ExportFileName(stage,rows.length,stage.venue==='羽球'?'不分球種':''), name=basename, n=2;
     while(used.has(name)) name=`${basename}_${n++}`;
     used.add(name);zip.file(`${name}.xlsx`,bytes);exported++;
   }
@@ -10479,7 +10505,7 @@ async function exportPendingLotteryWorkbook(stages){
 
 const REVIEW_NOTICE_TITLE='116年北投會館運動場域長期租借抽籤登記合格名單';
 
-function buildReviewNoticeGroups(records){
+function buildReviewNoticeGroups(records,combineBadminton=false){
   const groups=new Map();
   for(const record of records){
     if(qualificationState(record)!=='qualified')continue;
@@ -10487,14 +10513,15 @@ function buildReviewNoticeGroups(records){
     const venue=record.venue_type||'';
     const day=String(record.day_of_week||'').replace(/^週/,'周');
     const time=slotRangeKey(record.time_slot);
-    const usage=courtUsage(record);
+    const actualUsage=courtUsage(record);
+    const usage=combineBadminton&&venue==='羽球'?'不分球種':actualUsage;
     const key=JSON.stringify([location,venue,day,time,usage]);
     if(!groups.has(key))groups.set(key,{location,venue,day,time,usage,rows:[],incomplete:0});
     const group=groups.get(key);
     const serial=compactRecordCode(record);
     const name=maskPublicName(record.name);
     const last3=getLotteryPhoneLast3(record);
-    if(!venue||!days.includes(day)||!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(time)||!usage||usage==='待確認'||!name||!last3||!/^[A-Z0-9]{6}$/.test(serial)){
+    if(!venue||!days.includes(day)||!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(time)||!actualUsage||actualUsage==='待確認'||!name||!last3||!/^[A-Z0-9]{6}$/.test(serial)){
       group.incomplete++;
       continue;
     }
@@ -10660,8 +10687,14 @@ async function exportReviewNotice(button,mode='announcement'){
   try{
     await loadQualificationReviews();
     if(!qualificationReviewsLoaded){alert('無法載入審查結果，請確認管理員登入後再試。');return;}
+    if(sp88Only&&!capacitySettingsLoaded){alert('名額設定尚未成功載入，請重新整理後再匯出 SP88。');return;}
     const records=getFilteredRecords();
-    const groups=buildReviewNoticeGroups(records);
+    const groups=buildReviewNoticeGroups(records,sp88Only);
+    if(sp88Only){
+      // 不可因用途、姓名或其他篩選而只匯出羽球場部分合格人員。
+      const partial=groups.filter(group=>group.venue==='羽球'&&sp88QualifiedStageRecords(group).length!==group.rows.length+group.incomplete);
+      if(partial.length){alert('羽球場同時段各球種須合併抽籤；目前篩選排除了部分合格人員。請清除用途、姓名或其他人員篩選後重新匯出。');return;}
+    }
     if(!groups.length){alert('目前場次範圍沒有登記合格資料可匯出。');return;}
     const blocked=groups.filter(group=>group.incomplete);
     const ready=groups.filter(group=>!group.incomplete&&group.rows.length);
@@ -10671,7 +10704,7 @@ async function exportReviewNotice(button,mode='announcement'){
       if(!ready.length){alert(message);return;}
       if(!confirm(`${message}\n\n是否只匯出已完成的 ${ready.length} 個場次用途？`))return;
     }
-    // 兩個獨立匯出入口共用相同場次、用途分組及公開欄位檢核。
+    // 公告保留用途分組；SP88 羽球場共用同時段抽籤池。兩者沿用公開欄位檢核。
     const ownersByCode=new Map();
     for(const record of allRecords){
       const code=compactRecordCode(record);
@@ -10705,7 +10738,7 @@ async function exportReviewNotice(button,mode='announcement'){
     const used=new Set();
     let completed=0;
     for(const group of ready){
-      const basename=`${safeLotteryStageFileName(group)}_${group.usage}`.replace(/[\\/:*?"<>|]/g,'-');
+      const basename=sp88Only?sp88ExportFileName(group,group.rows.length,group.usage):`${safeLotteryStageFileName(group)}_${group.usage}`.replace(/[\\/:*?"<>|]/g,'-');
       let name=basename;
       for(let i=2;used.has(name);i++)name=`${basename}_${i}`;
       used.add(name);
@@ -11082,7 +11115,7 @@ function renderLotteryPage(){
       if(record.result_published||record.lottery_locked||String(record.lottery_status||'').trim()){
         errors.push({row:idx+1,serial,status,reason:'已有抽籤結果或已發布，請依程序解除鎖定'});return;
       }
-      stageKeys.add([recordLocation(record),record.venue_type,record.day_of_week,record.time_slot].join('|'));
+      stageKeys.add(sp88RecordStageKey(record));
       valid.push({row:idx+1,serial,status,record});
     });
     if(stageKeys.size!==1){errors.push({row:'-',serial:'',status:'',reason:'有效序號未對應到唯一場次，請檢查是否混入其他場次'});}
@@ -11090,17 +11123,19 @@ function renderLotteryPage(){
     if(!valid.length)errors.push({row:'-',serial:'',status:'',reason:'未解析到任何有效正取／備取結果'});
     let stageLabel='';
     if(stageKeys.size===1){
-      const [loc,venue,day,time]=[...stageKeys][0].split('|');
+      const [loc,venue,day,time]=JSON.parse([...stageKeys][0]);
       stageLabel=`${locationLabel(loc)}｜${venue}｜${day}｜${time}`;
     }
     const stageRecords=stageKeys.size===1?allRecords.filter(r=>
-      [recordLocation(r),r.venue_type,r.day_of_week,r.time_slot].join('|')===[...stageKeys][0]):[];
+      sp88RecordStageKey(r)===[...stageKeys][0]):[];
     const allQualified=stageRecords.filter(isQualifiedForLottery);
+    const badmintonPool=stageKeys.size===1&&JSON.parse([...stageKeys][0])[1]==='羽球';
+    if(badmintonPool&&declared!==allQualified.length){errors.push({row:'-',serial:'',status:'',reason:`羽球場須不分球種合併抽籤：檔案宣告 ${declared||'未提供'} 人，後臺同時段合格共 ${allQualified.length} 人，請重新匯出完整名單抽籤。`});}
     const resultUsages=new Set(valid.map(item=>courtUsage(item.record)));
     const usageQualified=resultUsages.size===1
       ?allQualified.filter(record=>resultUsages.has(courtUsage(record))):[];
     // 以結果序號核對用途與宣告人數，相容分用途及舊版整場次抽籤。
-    const splitByUsage=declared>0&&usageQualified.length===declared&&usageQualified.length<allQualified.length;
+    const splitByUsage=!badmintonPool&&declared>0&&usageQualified.length===declared&&usageQualified.length<allQualified.length;
     const qualified=splitByUsage?usageQualified:allQualified;
     const drawRecords=splitByUsage?stageRecords.filter(record=>resultUsages.has(courtUsage(record))):stageRecords;
     if(splitByUsage)stageLabel+='｜用途 '+[...resultUsages][0];
@@ -11244,8 +11279,8 @@ function renderLotteryPage(){
       for(const f of batch.files.filter(x=>x.sp88)){
         const anchor=f.valid[0]?.record;
         if(!anchor){alert('缺少場次識別');return;}
-        const key=[recordLocation(anchor),anchor.venue_type,anchor.day_of_week,anchor.time_slot].join('|');
-        const current=allRecords.filter(r=>[recordLocation(r),r.venue_type,r.day_of_week,r.time_slot].join('|')===key);
+        const key=sp88RecordStageKey(anchor);
+        const current=allRecords.filter(r=>sp88RecordStageKey(r)===key);
         const eligible=current.filter(r=>(!f.drawUsage||courtUsage(r)===f.drawUsage)&&isQualifiedForLottery(r));
         const expectedIds=new Set([...f.valid.map(item=>item.record.id),...f.autoMissing.map(record=>record.id)]);
         if(!f.canSetMissing||eligible.length!==f.declared||eligible.some(r=>!expectedIds.has(r.id))){alert('後台合格參加名單已變更或不完整，請重新上傳預覽。');return;}
