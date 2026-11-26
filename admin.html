@@ -3925,8 +3925,8 @@ body #recordsWorkspace .table-wrap table thead th{background:#f0f4f8!important;c
 body #recordsWorkspace table tbody tr:hover{background:#f8fafc!important}
 body select,body input,body textarea{border-radius:9px!important}
 /* Buttons in filter row distinguish operation instead of all looking primary */
-body #clearRecordFiltersBtn,body #exportBtn,body #exportQualifiedBtn{background:white!important;border:1px solid #cbd7e4!important;color:#33465d!important}
-body #clearRecordFiltersBtn:hover,body #exportBtn:hover,body #exportQualifiedBtn:hover{background:#f3f6fa!important}
+body #clearRecordFiltersBtn,body #exportBtn,body #exportQualifiedBtn,body #exportQualifiedSP88Btn{background:white!important;border:1px solid #cbd7e4!important;color:#33465d!important}
+body #clearRecordFiltersBtn:hover,body #exportBtn:hover,body #exportQualifiedBtn:hover,body #exportQualifiedSP88Btn:hover{background:#f3f6fa!important}
 body #applyFilterBtn{background:var(--ux-accent)!important;color:#fff!important}
 /* Priority is conveyed by warning labels, not every routine 'normal' chip. */
 body .anomaly-text-action{color:#9b3a30!important}
@@ -7641,7 +7641,8 @@ function renderRecordsPage(){
           <summary class="btn btn-gray btn-compact">匯出 ▾</summary>
           <div class="records-export-popover">
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
-            <button id="exportQualifiedBtn" type="button" class="records-menu-item" title="依目前篩選條件，一次匯出公告 Excel、公告 PDF 及 SP88 抽籤用合格名單 ZIP">匯出合格名單（公告＋SP88）</button>
+            <button id="exportQualifiedBtn" type="button" class="records-menu-item" title="依目前篩選條件，匯出公告 Excel、PDF 及全部場次合併 PDF">匯出合格公告名單</button>
+            <button id="exportQualifiedSP88Btn" type="button" class="records-menu-item" title="依目前篩選條件，只匯出各場次用途的 SP88 抽籤 Excel ZIP">匯出 SP88 抽籤名單</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">匯入會館會員名冊比對 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="exportGoCheckMappingBtn" type="button" class="records-menu-item">匯出 Go 會員序號對照 CSV</button><button id="importGoCheckBtn" type="button" class="records-menu-item">匯入 Go 會員查核結果 CSV</button>':''}
@@ -7711,7 +7712,9 @@ function renderRecordsPage(){
 
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
   const exportQualifiedButton=document.getElementById('exportQualifiedBtn');
-  exportQualifiedButton.onclick=()=>void exportReviewNotice(exportQualifiedButton);
+  exportQualifiedButton.onclick=()=>void exportReviewNotice(exportQualifiedButton,'announcement');
+  const exportQualifiedSP88Button=document.getElementById('exportQualifiedSP88Btn');
+  exportQualifiedSP88Button.onclick=()=>void exportReviewNotice(exportQualifiedSP88Button,'sp88');
   const exportMappingButton=document.getElementById('exportFormRowMappingBtn');
   if(exportMappingButton)exportMappingButton.onclick=()=>void exportFormRowMappingCsv(exportMappingButton);
   const offlineButton=document.getElementById('importOfflineReviewBtn');
@@ -10639,12 +10642,20 @@ async function createReviewNoticePdf(stage,logoImage){
   }
   return pdf.save();
 }
-async function exportReviewNotice(button){
-  if(typeof XLSX==='undefined'||typeof JSZip==='undefined'||typeof PDFLib==='undefined'){
-    alert('Excel 或 PDF 元件尚未載入，請重新整理後再試。');
+let reviewNoticeExportBusy=false;
+async function exportReviewNotice(button,mode='announcement'){
+  const sp88Only=mode==='sp88';
+  if(reviewNoticeExportBusy){alert('名單匯出處理中，請待本次匯出完成後再操作。');return;}
+  if(typeof XLSX==='undefined'||typeof JSZip==='undefined'||(!sp88Only&&typeof PDFLib==='undefined')){
+    alert(sp88Only?'Excel 或 ZIP 元件尚未載入，請重新整理後再試。':'Excel、ZIP 或 PDF 元件尚未載入，請重新整理後再試。');
     return;
   }
-  button.disabled=true;
+  reviewNoticeExportBusy=true;
+  const exportButtons=['exportQualifiedBtn','exportQualifiedSP88Btn'].map(id=>document.getElementById(id)).filter(Boolean);
+  const originalLabel=button.textContent;
+  exportButtons.forEach(node=>node.disabled=true);
+  button.textContent='檢核名單中…';
+  let logoImage=null;
   try{
     await loadQualificationReviews();
     if(!qualificationReviewsLoaded){alert('無法載入審查結果，請確認管理員登入後再試。');return;}
@@ -10659,7 +10670,7 @@ async function exportReviewNotice(button){
       if(!ready.length){alert(message);return;}
       if(!confirm(`${message}\n\n是否只匯出已完成的 ${ready.length} 個場次用途？`))return;
     }
-    // 兩種格式共用這份已分場次、用途的公開名單，避免分開匯出時人數不同。
+    // 兩個獨立匯出入口共用相同場次、用途分組及公開欄位檢核。
     const ownersByCode=new Map();
     for(const record of allRecords){
       const code=compactRecordCode(record);
@@ -10678,48 +10689,62 @@ async function exportReviewNotice(button){
       }
     }
     if(errors.length){alert(errors.slice(0,8).join('\n'));return;}
-    const logoResponse=await fetch('/assets/trtc-logo.png');
-    if(!logoResponse.ok)throw Error('公告 LOGO 讀取失敗');
-    const logo=await logoResponse.arrayBuffer();
-    const logoImage=await createImageBitmap(new Blob([logo],{type:'image/png'}));
-    await document.fonts.ready;
     const zip=new JSZip();
-    const announcement=zip.folder('公告用');
-    const sp88=zip.folder('SP88抽籤用');
-    const combinedPdf=await PDFLib.PDFDocument.create();
-    combinedPdf.setTitle(REVIEW_NOTICE_TITLE);
+    let logo=null,combinedPdf=null;
+    if(!sp88Only){
+      const logoResponse=await fetch('/assets/trtc-logo.png');
+      if(!logoResponse.ok)throw Error('公告 LOGO 讀取失敗');
+      logo=await logoResponse.arrayBuffer();
+      logoImage=await createImageBitmap(new Blob([logo],{type:'image/png'}));
+      await document.fonts.ready;
+      combinedPdf=await PDFLib.PDFDocument.create();
+      combinedPdf.setTitle(REVIEW_NOTICE_TITLE);
+    }
+    const output=zip.folder(sp88Only?'SP88抽籤用':'公告用');
     const used=new Set();
+    let completed=0;
     for(const group of ready){
       const basename=`${safeLotteryStageFileName(group)}_${group.usage}`.replace(/[\\/:*?"<>|]/g,'-');
       let name=basename;
       for(let i=2;used.has(name);i++)name=`${basename}_${i}`;
       used.add(name);
-      announcement.file(`${name}.xlsx`,await createReviewNoticeWorkbook(group,logo));
-      const pdfBytes=await createReviewNoticePdf(group,logoImage);
-      announcement.file(`${name}.pdf`,pdfBytes);
-      const stagePdf=await PDFLib.PDFDocument.load(pdfBytes);
-      const pages=await combinedPdf.copyPages(stagePdf,stagePdf.getPageIndices());
-      pages.forEach(page=>combinedPdf.addPage(page));
-      sp88.file(`${name}.xlsx`,createSP88Workbook(group.rows.map(row=>[row[2],row[3],row[1]])));
+      if(sp88Only){
+        output.file(`${name}.xlsx`,createSP88Workbook(group.rows.map(row=>[row[2],row[3],row[1]])));
+      }else{
+        output.file(`${name}.xlsx`,await createReviewNoticeWorkbook(group,logo));
+        const pdfBytes=await createReviewNoticePdf(group,logoImage);
+        output.file(`${name}.pdf`,pdfBytes);
+        const stagePdf=await PDFLib.PDFDocument.load(pdfBytes);
+        const pages=await combinedPdf.copyPages(stagePdf,stagePdf.getPageIndices());
+        pages.forEach(page=>combinedPdf.addPage(page));
+      }
+      completed++;
+      button.textContent=`產製中 ${completed}/${ready.length}`;
+      if(completed%10===0)await new Promise(resolve=>setTimeout(resolve,0));
     }
-    logoImage.close();
-    zip.file('公告合格名單_全部場次.pdf',await combinedPdf.save());
-    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+    if(!sp88Only)zip.file('公告合格名單_全部場次.pdf',await combinedPdf.save());
+    button.textContent='壓縮檔案中…';
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:sp88Only?1:6}});
     const url=URL.createObjectURL(blob);
     const link=document.createElement('a');
     link.href=url;
     const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Taipei'});
-    link.download=`登記合格名單_公告及SP88_${date}.zip`;
+    link.download=sp88Only?`SP88_各場次合格抽籤名單_${date}.zip`:`登記合格名單_公告_${date}.zip`;
     document.body.appendChild(link);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
-    void writeOperationLog('匯出合格名單（公告及SP88）',{
-      stage_count:ready.length,file_count:ready.length*3+1,
+    void writeOperationLog(sp88Only?'匯出SP88各場次合格抽籤名單':'匯出合格公告名單',{
+      stage_count:ready.length,file_count:sp88Only?ready.length:ready.length*2+1,
       record_count:ready.reduce((sum,group)=>sum+group.rows.length,0)
     });
   }catch(error){
     console.error(error);
-    alert('無法產生合格名單，請重新整理後再試。');
-  }finally{button.disabled=false;}
+    alert(sp88Only?'無法產生 SP88 抽籤名單，請重新整理後再試。':'無法產生合格公告名單，請重新整理後再試。');
+  }finally{
+    if(logoImage)logoImage.close();
+    reviewNoticeExportBusy=false;
+    button.textContent=originalLabel;
+    exportButtons.forEach(node=>node.disabled=false);
+  }
 }
 
 function renderLotteryPage(){
