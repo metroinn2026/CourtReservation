@@ -5619,6 +5619,7 @@ async function endAdminSession(reason='signed-out',notify=false){
   if(adminSigningOut)return;
   adminSigningOut=true;
   adminSessionEpoch++;
+  backupSessionClear();
   // Clear any unverified authenticator QR/secret before revoking the session.
   window.CourtAdminMfa?.closeSettings?.();
   courtAuthLoginActive=false;
@@ -10781,6 +10782,148 @@ async function exportReviewNotice(button,mode='announcement'){
   }
 }
 
+let backupDrafts=new Map(),backupBusy=false,backupSelected='';
+function backupStages(){
+ const map=new Map();
+ for(const r of allRecords){
+  const s={location:recordLocation(r),venue:r.venue_type,day:String(r.day_of_week||'').replace(/^週/,'周'),time:slotRangeKey(r.time_slot)};
+  const key=sp88StageKey(s);if(!map.has(key))map.set(key,{...s,key,records:[]});map.get(key).records.push(r);
+ }
+ return [...map.values()].sort((a,b)=>a.location.localeCompare(b.location)||venueSortValue(a.venue)-venueSortValue(b.venue)||daySortValue(a.day)-daySortValue(b.day)||a.time.localeCompare(b.time));
+}
+
+function backupAnalysis(s){
+ const q=s.records.filter(isQualifiedForLottery),pending=s.records.filter(r=>!['qualified','invalid'].includes(qualificationState(r))).length;
+ const quota=isStageClosed(s)?0:getStageCapacity(s),max=capacityMap[s.venue]||0,mixed=s.venue==='羽球'&&new Set(q.map(courtUsage)).size>1;
+ let error='';
+ if(!courtAuthLoginActive||adminSigningOut||!capacitySettingsLoaded||!qualificationReviewsLoaded)error='名額或資格資料未載入';
+ else if(s.records.some(r=>r.result_published||r.lottery_locked||String(r.lottery_status||'').trim()))error='已有結果／鎖定';
+ else if(!Number.isInteger(quota)||quota<1||quota>max)error='未開放或名額異常';
+ else if(pending)error='尚有 '+pending+' 筆待審查';
+ else if(!q.length)error='無合格人員';
+ else if(new Set(q.map(personKey)).size!==q.length||q.some(r=>personKey(r).startsWith('UNVERIFIED:')))error='會員識別待核對';
+ else if(new Set(q.map(compactRecordCode)).size!==q.length||q.some(r=>!/^[A-Z0-9]{6}$/.test(compactRecordCode(r))||!getLotteryPhoneLast3(r)||!maskPublicName(r.name)||courtUsage(r)==='待確認'))error='公開欄位待核對';
+ else if(s.venue==='羽球'&&quota!==3&&q.some(r=>courtUsage(r)!=='羽球'))error='非三面時段有其他球種，請核對';
+ const signature=JSON.stringify([quota,max,s.records.map(r=>[String(r.id),qualificationState(r),personKey(r),compactRecordCode(r),maskPublicName(r.name),getLotteryPhoneLast3(r),courtUsage(r),String(r.lottery_status||''),!!r.lottery_locked,!!r.result_published]).sort((a,b)=>a[0].localeCompare(b[0]))]);
+ return {q,pending,quota,max,mixed,error,signature};
+}
+
+function backupPlan(s,a,n,reason,epoch,operator){
+ if(a.error)throw Error(a.error);
+ if(!Number.isInteger(n)||n<1||n>a.max)throw Error('正取名額超出場地上限');
+ if(n!==a.quota&&!reason.trim())throw Error('調整名額請填寫原因');
+ if(s.venue==='羽球'&&n!==3&&a.q.some(r=>courtUsage(r)!=='羽球'))throw Error('非三面名額涉及其他球種，請先確認場地規則');
+ if(!globalThis.crypto?.getRandomValues)throw Error('安全亂數不可用');
+ const participants=a.q.map(r=>({id:String(r.id),serial:compactRecordCode(r),name:Array.from(String(r.name||'').replace(/\s/g,'')).length===1?'○':maskPublicName(r.name),phone3:getLotteryPhoneLast3(r),usage:courtUsage(r)}));
+ const pools=s.venue==='籃球'?[{label:'籃球',rows:participants.filter(r=>r.usage==='籃球')},{label:'其他球類',rows:participants.filter(r=>r.usage!=='籃球')}]:[{label:'不分球種',rows:[...participants]}];
+ return {key:s.key,location:s.location,venue:s.venue,day:s.day,time:s.time,original:a.quota,requested:n,reason,win:Math.min(n,participants.length),mixed:a.mixed,signature:a.signature,epoch,operator,participants,pools,rows:[],batch:'BACKUP-'+Array.from(globalThis.crypto.getRandomValues(new Uint32Array(2))).map(x=>x.toString(16).padStart(8,'0')).join(''),done:false,committed:false,failed:false,writing:false};
+}
+
+function backupIndex(n){
+ if(n===1)return 0;
+ if(!globalThis.crypto?.getRandomValues||!Number.isInteger(n)||n<1||n>0x100000000)throw Error('安全亂數不可用或範圍異常');
+ const b=new Uint32Array(1),limit=Math.floor(0x100000000/n)*n;do{globalThis.crypto.getRandomValues(b)}while(b[0]>=limit);return b[0]%n;
+}
+
+function backupDrawOne(p){
+ if(p.done)throw Error('已完成');
+ const pool=p.pools.find(x=>x.rows.length);if(!pool)throw Error('抽籤池異常');
+ const before=pool.rows.length,r=pool.rows.splice(backupIndex(before),1)[0],rank=p.rows.length+1;
+ const row={...r,rank,status:rank<=p.win?'正取'+rank:'備取'+(rank-p.win),db:rank<=p.win?'中籤':'候補'+(rank-p.win),pool:pool.label,before,at:new Date().toISOString()};
+ p.rows.push(row);if(p.rows.length===p.participants.length){p.done=true;p.finishedAt=row.at}return row;
+}
+
+function backupValid(p){
+ const ids=new Set(p.participants.map(r=>r.id));
+ return p.done&&p.rows.length===ids.size&&new Set(p.rows.map(r=>r.id)).size===ids.size&&p.rows.every((r,i)=>ids.has(r.id)&&r.rank===i+1&&r.status===(i<p.win?'正取'+(i+1):'備取'+(i+1-p.win))&&r.db===(i<p.win?'中籤':'候補'+(i+1-p.win)))&&(p.venue!=='籃球'||!p.rows.some((r,i)=>r.usage==='籃球'&&p.rows.slice(0,i).some(x=>x.usage!=='籃球')));
+}
+
+function backupDownload(p){
+ if(!backupValid(p)||typeof XLSX==='undefined'){alert('結果未完成或 Excel 元件未載入');return;}
+ const wb=XLSX.utils.book_new(),add=(name,rows,widths)=>{const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=widths.map(wch=>({wch}));XLSX.utils.book_append_sheet(wb,ws,name)};
+ add('抽籤結果',[['順位','抽籤結果','姓名','手機末三碼','登記序號','用途','時間'],...p.rows.map(r=>[r.rank,r.status,r.name,String(r.phone3),String(r.serial),r.usage,r.at])],[8,14,16,16,16,16,28]);
+ add('參加名單',[['姓名','手機末三碼','登記序號','用途'],...p.participants.map(r=>[r.name,String(r.phone3),String(r.serial),r.usage])],[16,16,16,16]);
+ add('抽籤紀錄',[['項目','內容'],['批次',p.batch],['場次',[p.location,p.venue,p.day,p.time].join('｜')],['原名額',p.original],['調整名額',p.requested],['調整原因',p.reason],['開始',p.startedAt],['完成',p.finishedAt],['操作者',p.operator],['狀態',p.committed?'已確認寫入':p.failed?'寫入異常待查核':'尚未確認寫入'],['混合球種',p.mixed?'依同球種分配規則確認':'無'],['規則','備援公開抽籤 V4.1 / 0.2秒']],[24,70]);
+ add('逐筆紀錄',[['順位','時間','抽籤池','抽取前人數','序號','結果'],...p.rows.map(r=>[r.rank,r.at,r.pool,r.before,r.serial,r.status])],[10,28,18,16,16,14]);
+ XLSX.writeFile(wb,safeLotteryStageFileName(p)+'_正取'+p.win+'名_備取'+(p.rows.length-p.win)+'名_'+p.batch+'_'+(p.committed?'已寫入':'待確認')+'.xlsx');
+}
+
+function backupSessionClear(){
+ const d=document.getElementById('backupDialog');if(d){try{d.close()}catch(_){}d.remove()}
+ backupDrafts.clear();backupBusy=false;backupSelected='';
+}
+
+function backupAdmin(){
+ const box=document.getElementById('backupLotteryPanel');if(!box)return;
+ const loc=document.getElementById('backupLoc')?.value||window.currentLotteryLocation||DEFAULT_LOCATION,venue=document.getElementById('backupVenue')?.value||'',esc=escapeHtml;
+ const stages=backupStages().filter(s=>s.location===loc&&(!venue||s.venue===venue)).map(s=>({s,a:backupAnalysis(s),p:backupDrafts.get(s.key)}));
+ const selected=stages.find(x=>x.s.key===backupSelected)||stages.find(x=>!x.a.error)||stages[0];backupSelected=selected?.s.key||'';
+ const state=x=>x.p?.committed?'已寫入':x.p?.failed?'異常待查核':x.p?.done?'待確認':x.a.error||'可抽籤';
+ box.innerHTML='<div class="small">SP88 故障備援｜每0.2秒抽出一位。抽籤結果確認前不修改資料；對外公告另行辦理。</div><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:12px 0"><div><label>場地</label><select id="backupLoc">'+renderLocationOptions(loc,false)+'</select></div><div><label>球類</label><select id="backupVenue"><option value="">全部球類</option>'+venueOrder.map(v=>'<option '+(v===venue?'selected':'')+'>'+esc(v)+'</option>').join('')+'</select></div><div style="flex:1;min-width:270px"><label>場次</label><select id="backupStage" style="width:100%">'+stages.map(x=>'<option value="'+esc(x.s.key)+'" '+(x===selected?'selected':'')+'>'+esc(x.s.venue+'｜'+x.s.day+' '+x.s.time+'｜開放'+x.a.quota+'名／合格'+x.a.q.length+'人｜'+state(x))+'</option>').join('')+'</select></div></div><div id="backupInfo"></div>';
+ document.getElementById('backupLoc').onchange=document.getElementById('backupVenue').onchange=()=>{backupSelected='';backupAdmin()};
+ document.getElementById('backupStage').onchange=e=>{backupSelected=e.target.value;backupAdmin()};
+ const info=document.getElementById('backupInfo');if(!selected){info.textContent='沒有符合條件的場次';return}
+ const {s,a,p}=selected,next=stages.slice(stages.indexOf(selected)+1).find(x=>!x.a.error&&!x.p);
+ info.innerHTML='<div style="margin:8px 0">開放 '+a.quota+' 名　｜　合格 '+a.q.length+' 人　｜　待審 '+a.pending+' 筆　｜　'+esc(state(selected))+'</div>'+(a.mixed?'<div class="msg info">羽球混合球種：共同抽取順位，確認寫入前須確認同球種場地分配。</div>':'')+
+ (!p?'<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap"><div><label>本場正取名額</label><input type="number" id="backupQuota" min="1" max="'+a.max+'" value="'+a.quota+'" style="width:100px"></div><div style="flex:1"><label>名額調整原因（異動必填）</label><input id="backupReason" maxlength="200" placeholder="未調整可留白" style="width:100%"></div><button id="backupOpen" class="btn btn-primary" '+(a.error||backupBusy?'disabled':'')+'>開啟公開投影</button></div><div class="small">其餘合格人員全部備取。</div>':
+ '<div class="msg info">'+esc(p.done?'正取 '+p.win+' 人／備取 '+(p.rows.length-p.win)+' 人｜'+p.batch:'抽籤中斷或尚未完成')+'</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="backupView" class="btn btn-gray" '+(!p.done?'disabled':'')+'>檢視公開結果</button><button id="backupExport" class="btn btn-gray" '+(!p.done?'disabled':'')+'>下載抽籤結果 Excel</button><button id="backupCommit" class="btn btn-primary" '+(!p.done||p.committed||p.failed||p.writing||a.error||backupBusy?'disabled':'')+'>確認寫入抽籤狀態（未公布）</button>'+(next?'<button id="backupNext" class="btn btn-gray">下一個可抽場次</button>':'')+'</div><div class="small">未確認結果暫存本次頁面，請先下載留存；重新整理或登出後不可任意重抽已公開場次。'+(p.failed?'寫入異常，請核對資料庫，禁止直接重試。':'')+'</div>');
+ const bind=(id,fn)=>{const e=document.getElementById(id);if(e)e.onclick=fn};
+ bind('backupOpen',()=>{try{backupProjection(backupPlan(s,a,Number(document.getElementById('backupQuota').value),document.getElementById('backupReason').value.trim(),adminSessionEpoch,currentAdmin?.username||''),false)}catch(e){alert(e.message)}});
+ bind('backupView',()=>backupProjection(p,true));bind('backupExport',()=>backupDownload(p));bind('backupCommit',()=>void backupCommit(p));bind('backupNext',()=>{backupSelected=next.s.key;backupAdmin()});
+}
+
+function backupProjection(p,view){
+ if(document.getElementById('backupDialog')||backupBusy||p.epoch!==adminSessionEpoch||!courtAuthLoginActive||adminSigningOut)return;
+ const d=document.createElement('dialog'),esc=escapeHtml;d.id='backupDialog';d.style.cssText='width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;padding:0;border:0;overflow:hidden;background:#f3f6fa;color:#173b5a';
+ d.innerHTML='<div style="height:100%;display:flex;flex-direction:column;font-family:Microsoft JhengHei,system-ui,sans-serif"><header style="background:#163b5b;color:white;padding:14px 24px;display:flex;justify-content:space-between;align-items:center"><strong style="font-size:24px">北投會館｜116年運動場域長期租借公開抽籤</strong><div><button id="bFull" class="btn btn-gray">全螢幕</button> <button id="bClose" class="btn btn-gray">返回後臺</button></div></header><div style="background:white;padding:12px 24px"><strong style="font-size:clamp(22px,2.7vw,38px)">'+esc(p.venue+'場｜'+p.day.replace('周','週')+' '+p.time.replace('-','–'))+'</strong><div style="font-size:17px">'+esc(p.venue==='籃球'?'籃球優先，其他球類接續備取':'同時段合併抽籤')+(p.mixed?'｜混合球種分配依現行規則確認':'')+'</div><div style="font-size:20px">原開放 '+p.original+' 名　｜　正取 '+p.win+' 名　｜　備取 '+(p.participants.length-p.win)+' 名　｜　合格 '+p.participants.length+' 人</div></div>'+
+ '<div id="bBody" style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px 24px"><section id="bPool" style="background:white;border:1px solid #dae3ed;border-radius:10px;min-height:0;display:flex;flex-direction:column;padding:12px"><strong style="font-size:20px">參加名單</strong><div style="overflow:auto;flex:1"><table style="width:100%;font-size:18px"><thead><tr><th>姓名</th><th>末三碼</th><th>序號</th><th>用途</th><th>狀態</th></tr></thead><tbody>'+p.participants.map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+esc(r.phone3)+'</td><td>'+esc(r.serial)+'</td><td>'+esc(r.usage)+'</td><td data-b-code="'+esc(r.serial)+'">待抽</td></tr>').join('')+'</tbody></table></div></section><section style="background:white;border:1px solid #dae3ed;border-radius:10px;min-height:0;display:flex;flex-direction:column;padding:12px"><strong style="font-size:20px">抽籤結果</strong><div id="bCurrent" style="background:#e9f2fa;padding:12px;text-align:center;font-size:clamp(20px,2.3vw,32px);font-weight:800;margin:8px 0;border-radius:8px">等待開始</div><div id="bScroll" style="overflow:auto;flex:1"><table style="width:100%;font-size:clamp(17px,1.65vw,24px)"><thead><tr><th>順位</th><th>姓名</th><th>末三碼</th><th>序號</th><th>用途</th></tr></thead><tbody id="bRows"></tbody></table></div></section></div><footer style="padding:12px 24px;background:white;display:flex;gap:12px;align-items:center"><div style="flex:1"><div id="bText">尚未抽籤</div><progress id="bProgress" max="'+p.participants.length+'" value="0" style="width:100%;height:12px"></progress></div><button id="bToggle" class="btn btn-gray" hidden>顯示參加名單</button><button id="bDownload" class="btn btn-gray" disabled>下載結果</button><button id="bStart" class="btn btn-primary" '+(view?'hidden':'')+'>開始公開抽籤</button></footer></div>';
+ document.body.append(d);d.showModal();let drawing=false,expanded=false;const el=id=>d.querySelector('#'+id);
+ const cells=new Map([...d.querySelectorAll('[data-b-code]')].map(n=>[n.dataset.bCode,n]));
+ const append=r=>{const tr=document.createElement('tr');tr.innerHTML='<td style="font-weight:800;color:'+(r.rank<=p.win?'#167247':'#274d70')+'">'+esc(r.status)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.phone3)+'</td><td>'+esc(r.serial)+'</td><td>'+esc(r.usage)+'</td>';el('bRows').append(tr);const cell=cells.get(r.serial);if(cell)cell.textContent='已抽出';el('bCurrent').textContent=r.status+'　'+r.name+'　'+r.serial;el('bText').textContent='已抽出 '+r.rank+'／'+p.participants.length+' 人';el('bProgress').value=r.rank;el('bScroll').scrollTop=el('bScroll').scrollHeight};
+ const toggle=x=>{expanded=x;el('bPool').style.display=x?'none':'flex';el('bBody').style.gridTemplateColumns=x?'1fr':'1fr 1fr';el('bToggle').textContent=x?'顯示參加名單':'放大結果名單'};
+ const finish=()=>{el('bCurrent').textContent='本場抽籤完成｜正取 '+p.win+' 人・備取 '+(p.rows.length-p.win)+' 人';el('bText').textContent=p.committed?'結果已確認寫入':'結果尚未寫入，請返回後臺確認';el('bToggle').hidden=false;el('bDownload').disabled=false;el('bStart').hidden=true;toggle(true);el('bScroll').scrollTop=0};
+ const close=()=>{if(drawing)return;try{if(document.fullscreenElement===d)void document.exitFullscreen()}catch(_){}d.close();d.remove();backupAdmin()};
+ el('bClose').onclick=close;d.addEventListener('cancel',e=>{e.preventDefault();close()});el('bFull').onclick=async()=>{try{if(document.fullscreenElement===d)await document.exitFullscreen();else await d.requestFullscreen()}catch(_){alert('請使用 F11 全螢幕')}};
+ el('bToggle').onclick=()=>toggle(!expanded);el('bDownload').onclick=()=>backupDownload(p);
+ if(view){p.rows.forEach(append);finish();return}
+ el('bStart').onclick=async()=>{
+  if(drawing||backupBusy||backupDrafts.has(p.key))return;
+  drawing=true;backupBusy=true;el('bStart').disabled=el('bClose').disabled=true;el('bCurrent').textContent='核對最新合格名單與名額…';
+  try{
+   const ok=await loadAllData();if(ok===false||p.epoch!==adminSessionEpoch||!courtAuthLoginActive||adminSigningOut)throw Error('登入狀態變更');
+   const s=backupStages().find(x=>x.key===p.key),a=s&&backupAnalysis(s);if(!a||a.error||a.signature!==p.signature)throw Error('名單或名額已異動，請返回後臺核對');
+   p.startedAt=new Date().toISOString();backupDrafts.set(p.key,p);
+   while(!p.done){await new Promise(resolve=>setTimeout(resolve,200));if(p.epoch!==adminSessionEpoch||!courtAuthLoginActive||adminSigningOut||!d.isConnected)throw Error('抽籤中斷，請依程序核對');append(backupDrawOne(p))}
+   finish();
+  }catch(e){if(d.isConnected)el('bCurrent').textContent=e.message;if(backupDrafts.has(p.key))p.failed=true;else if(d.isConnected)el('bStart').disabled=false}
+  finally{drawing=false;backupBusy=false;if(d.isConnected)el('bClose').disabled=false}
+ };
+}
+
+async function backupCommit(p){
+ if(!p||p.failed||p.committed||p.writing||backupBusy||!backupValid(p)||p.epoch!==adminSessionEpoch||!courtAuthLoginActive||adminSigningOut)return;
+ if(p.mixed&&!confirm('混合球種：請先確認原始順位及實際場地分配符合現行同球種使用規則。有疑義請取消。'))return;
+ const yes=await confirmModal('確認寫入備援抽籤結果',escapeHtml(p.venue+'｜'+p.day+' '+p.time)+'<br>正取 '+p.win+' 人、備取 '+(p.rows.length-p.win)+' 人。<br>寫入後鎖定，維持未公布。');
+ if(!yes||backupBusy||p.epoch!==adminSessionEpoch||!courtAuthLoginActive||adminSigningOut)return;
+ backupBusy=true;p.writing=true;backupAdmin();let attempted=false,updated=0;
+ try{
+  const ok=await loadAllData();if(ok===false||p.epoch!==adminSessionEpoch||!courtAuthLoginActive||adminSigningOut)throw Error('登入狀態變更');
+  const s=backupStages().find(x=>x.key===p.key),a=s&&backupAnalysis(s);if(!a||a.error||a.signature!==p.signature)throw Error('名單、名額或結果已異動，停止寫入');
+  const groups=new Map();for(const r of p.rows){if(!groups.has(r.db))groups.set(r.db,[]);groups.get(r.db).push(r.id)}
+  attempted=true;
+  for(const [status,ids] of groups){
+   if(p.epoch!==adminSessionEpoch||!courtAuthLoginActive||adminSigningOut)throw Error('登入狀態變更');
+   const {error,data}=await updateAuthorizedRecords(ids,{lottery_status:status,lottery_batch:p.batch,lottery_locked:true,result_published:false,updated_at:new Date().toISOString()},{select:true,expectUnpublished:true,expectUnlocked:true});
+   if(error||!Array.isArray(data)||data.length!==ids.length)throw Error(error?.message||'更新筆數不一致');updated+=data.length;
+  }
+  p.committed=true;
+  await writeOperationLog('備援公開抽籤確認寫入',{batch:p.batch,venue:p.venue,day:p.day,time:p.time,original_quota:p.original,requested_quota:p.requested,quota_reason:p.reason,started_at:p.startedAt,finished_at:p.finishedAt,results:p.rows.map(r=>({rank:r.rank,serial:r.serial,status:r.status,at:r.at,pool:r.pool,before:r.before}))},p.rows.map(r=>r.id));
+  alert('已寫入 '+updated+' 筆，結果維持未公布。');await loadAllData();if(currentPage==='lottery')renderLotteryPage();
+ }catch(e){if(attempted){p.failed=true;await writeOperationLog('備援公開抽籤寫入異常',{batch:p.batch,updated,expected:p.rows.length,error:e.message},p.rows.map(r=>r.id))}alert((attempted?'可能部分寫入 '+updated+' 筆，請下載結果查核，不可重抽。':'尚未寫入。')+'\n'+e.message);if(attempted)await loadAllData()}
+ finally{p.writing=false;backupBusy=false;backupAdmin()}
+}
+window.addEventListener('beforeunload',e=>{if([...backupDrafts.values()].some(p=>!p.committed)){e.preventDefault();e.returnValue='';}});
+
 function renderLotteryPage(){
   const locations=getAdminLocations();
   window.currentLotteryLocation = window.currentLotteryLocation || DEFAULT_LOCATION;
@@ -10832,8 +10975,12 @@ function renderLotteryPage(){
         <div id="dayCheckTable"></div>
       </div>
 
-      <details class="lottery-advanced">
-        <summary>備用工具：系統內建抽籤</summary>
+      <details class="lottery-advanced" id="backupLotteryDetails">
+        <summary>備援抽籤作業（公開投影）</summary>
+        <div id="backupLotteryPanel" style="padding:10px 0"></div>
+      </details>
+      <details class="lottery-advanced" hidden inert style="display:none!important" aria-hidden="true">
+        <summary>舊版內建抽籤（停用）</summary>
         <div class="small" style="margin:8px 0 12px;">目前主要作業仍可採 Excel 電子化抽籤；此區另保留系統內建抽籤工具，供未來或備用情境使用。</div>
         <div class="admin-tabs compact" role="tablist" aria-label="內建抽籤工具">
           <button id="singleLotteryTab" class="admin-tab" role="tab">單一場次抽籤</button>
@@ -12235,7 +12382,9 @@ async function applyPromotionSuggestion(stage){
   });
 
   renderDayCheck();
-  previewBatch();
+  for(const id of ['previewLot','lockLot','runBatchLot']){const b=document.getElementById(id);if(b){b.onclick=null;b.disabled=true;}}
+  backupAdmin();
+  const details=document.getElementById('backupLotteryDetails');if(details)details.open=backupDrafts.size>0;
 }
 
 function getLotteryStatusSummary(records){
