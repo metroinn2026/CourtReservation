@@ -7040,7 +7040,11 @@ function renderPage(page){
   if(page==='dashboard') renderDashboard();
   if(page==='records') renderRecordsPage();
   if(page==='capacity') renderCapacityPage();
-  if(page==='lottery') renderLotteryPage();
+  if(page==='lottery'){
+    const content=document.getElementById('content');
+    if(content)content.innerHTML='<div class="panel"><h3>抽籤作業</h3><div class="small">正在載入場次清單…</div></div>';
+    setTimeout(()=>{if(currentPage!=='lottery')return;try{renderLotteryPage();}catch(e){console.error('抽籤頁面載入失敗',e);if(content)content.innerHTML='<div class="panel"><h3>抽籤作業載入失敗</h3><div class="msg error">'+escapeHtml(e.message||'未知錯誤')+'</div><button id="retryLotteryPage" class="btn btn-primary">重新載入抽籤作業</button></div>';document.getElementById('retryLotteryPage')?.addEventListener('click',()=>renderPage('lottery'));}},0);
+  }
   if(page==='settings') renderSettingsPage();
   if(page==='logs')void refreshAdminOperationLogs();
   if(page==='accounts') renderAccountsPage();
@@ -10971,17 +10975,16 @@ function renderLotteryPage(){
         </div>
       </div>
 
+      <details class="lottery-advanced" id="backupLotteryDetails">
+        <summary>備援抽籤作業（公開投影）</summary>
+        <div id="backupLotteryPanel" style="padding:10px 0"></div>
+      </details>
       <div id="promotionSuggestionPanel"></div>
       <div id="dayCheckPanel">
         <div id="importLotteryPreview"></div>
         <div id="importResultSummary"></div>
         <div id="dayCheckTable"></div>
       </div>
-
-      <details class="lottery-advanced" id="backupLotteryDetails">
-        <summary>備援抽籤作業（公開投影）</summary>
-        <div id="backupLotteryPanel" style="padding:10px 0"></div>
-      </details>
       <details class="lottery-advanced" hidden inert style="display:none!important" aria-hidden="true">
         <summary>舊版內建抽籤（停用）</summary>
         <div class="small" style="margin:8px 0 12px;">目前主要作業仍可採 Excel 電子化抽籤；此區另保留系統內建抽籤工具，供未來或備用情境使用。</div>
@@ -11571,7 +11574,13 @@ async function applyPromotionSuggestion(stage){
     return {location,venue,day,time,records};
   }
 
+  let dayCheckPage=1;
+  const dayCheckPageSize=20;
+  let dayCheckScope='';
+  const dayCheckAnomalyCache=new Map();
+  let dayCheckRecordsRef=null;
   function renderDayCheck(){
+    if(dayCheckRecordsRef!==allRecords){dayCheckRecordsRef=allRecords;dayCheckAnomalyCache.clear();}
     const table=document.getElementById('dayCheckTable');
     if(!table) return;
 
@@ -11608,7 +11617,7 @@ async function applyPromotionSuggestion(stage){
         capacityMap[s.venue] ??
         0
       );
-      const anomalyTypes=[...new Set(s.records.flatMap(r=>getRecordAnomalyTypes(r)))];
+      // 初次進入不執行全場次的昂貴異常比對；承辦可按場次檢查。
 
       let status='待抽籤';
       if(withResult>0 && withResult<s.records.length) status='處理中';
@@ -11620,7 +11629,6 @@ async function applyPromotionSuggestion(stage){
         ...s,
         people,
         capacity:configuredCapacity,
-        anomalyTypes,
         status
       };
     }).sort((a,b)=>{
@@ -11647,6 +11655,11 @@ async function applyPromotionSuggestion(stage){
       return venueSortValue(a.venue_type)-venueSortValue(b.venue_type) || daySortValue(a.day_of_week)-daySortValue(b.day_of_week) || timeSortValue(a.time_slot)-timeSortValue(b.time_slot) || statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status) || String(a.registered_at||'').localeCompare(String(b.registered_at||''));
     });
 
+    const scope=JSON.stringify([location,venue,day,time]);
+    if(scope!==dayCheckScope){dayCheckScope=scope;dayCheckPage=1;dayCheckAnomalyCache.clear();}
+    const pageCount=Math.max(1,Math.ceil(rows.length/dayCheckPageSize));
+    dayCheckPage=Math.max(1,Math.min(dayCheckPage,pageCount));
+    const pageRows=rows.slice((dayCheckPage-1)*dayCheckPageSize,dayCheckPage*dayCheckPageSize);
     const stageLocations=[...new Set(stages.map(s=>s.location).filter(Boolean))]
       .sort((a,b)=>String(a).localeCompare(String(b),'zh-Hant'));
     const stageVenues=[...new Set(stages.map(s=>s.venue).filter(Boolean))]
@@ -11703,7 +11716,7 @@ async function applyPromotionSuggestion(stage){
         </div>
 
         <div class="table-wrap"><table><thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記人數</th><th>正取名額</th><th>抽籤狀態</th><th>異常</th></tr></thead><tbody>
-          ${visibleStages.length ? visibleStages.map(s=>`<tr>
+          ${visibleStages.length ? visibleStages.map((s,idx)=>`<tr>
             <td>${escapeHtml(locationLabel(s.location))}</td>
             <td><strong>${escapeHtml(s.venue)}</strong></td>
             <td>${escapeHtml(s.day)}</td>
@@ -11711,16 +11724,45 @@ async function applyPromotionSuggestion(stage){
             <td>${s.people}</td>
             <td>${s.capacity}</td>
             <td>${statusTag(s.status)}</td>
-            <td>${anomalyText(s.anomalyTypes)}</td>
+            <td><button type="button" class="btn btn-gray day-stage-anomaly" data-stage-index="${idx}">檢查異常</button><span class="day-stage-anomaly-result"></span></td>
           </tr>`).join('') : `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">目前選擇條件沒有場次</td></tr>`}
         </tbody></table></div>
       </div>
       <div class="panel admin-section-card">
         <div class="admin-section-head"><h3>篩選結果清單</h3></div>
+        <div class="small" style="margin-bottom:10px">共 ${rows.length} 筆｜每頁 ${dayCheckPageSize} 筆｜第 ${dayCheckPage} / ${pageCount} 頁。異常可逐筆或逐場檢查，完整資料仍可匯出。</div>
         <div class="table-wrap"><table><thead><tr><th>項次</th><th>抽籤狀態</th><th>公布</th><th>異常</th><th>序號</th><th>姓名</th><th>手機</th><th>後4碼</th><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記時間</th></tr></thead><tbody>
-          ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td>${anomalyTags(r)}</td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(locationLabel(recordLocation(r)))}</td><td>${escapeHtml(r.venue_type||'')}</td><td>${escapeHtml(r.day_of_week||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
+          ${pageRows.map((r,i)=>`<tr><td>${(dayCheckPage-1)*dayCheckPageSize+i+1}</td><td><span class="tag ${r.lottery_status==='中籤'?'green':String(r.lottery_status||'').startsWith('候補')?'warn':'gray'}">${escapeHtml(r.lottery_status||'未抽籤')}</span></td><td>${publishStatusTag(r)}</td><td><button type="button" class="btn btn-gray day-record-anomaly" data-row-index="${i}">檢查</button><span class="day-record-anomaly-result"></span></td><td><strong>${escapeHtml(r.serial_number)}</strong></td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.id_last4||'')}</td><td>${escapeHtml(locationLabel(recordLocation(r)))}</td><td>${escapeHtml(r.venue_type||'')}</td><td>${escapeHtml(r.day_of_week||'')}</td><td>${escapeHtml(r.time_slot)}</td><td>${r.registered_at?new Date(r.registered_at).toLocaleString('zh-TW',{hour12:false}):''}</td></tr>`).join('')}
         </tbody></table></div>
+        <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin-top:12px">
+          <button id="dayCheckPrev" class="btn btn-gray" ${dayCheckPage<=1?'disabled':''}>上一頁</button>
+          <span class="small">第</span><select id="dayCheckPageSelect">${Array.from({length:pageCount},(_,i)=>`<option value="${i+1}" ${dayCheckPage===i+1?'selected':''}>${i+1}</option>`).join('')}</select><span class="small">/ ${pageCount} 頁</span>
+          <button id="dayCheckNext" class="btn btn-gray" ${dayCheckPage>=pageCount?'disabled':''}>下一頁</button>
+        </div>
       </div>`;
+
+    const lookupAnomaly=record=>{
+      const key=String(record.id);
+      if(!dayCheckAnomalyCache.has(key))dayCheckAnomalyCache.set(key,getRecordAnomalyTypes(record));
+      return dayCheckAnomalyCache.get(key);
+    };
+    table.querySelectorAll('.day-stage-anomaly').forEach(btn=>btn.onclick=()=>{
+      const stage=visibleStages[Number(btn.dataset.stageIndex)];
+      if(!stage)return;
+      btn.disabled=true;btn.textContent='檢查中…';
+      setTimeout(()=>{
+        if(!btn.isConnected)return;
+        try{btn.nextElementSibling.innerHTML=anomalyText([...new Set(stage.records.flatMap(lookupAnomaly))]);btn.hidden=true;}
+        catch(e){console.error(e);btn.textContent='重新檢查';btn.disabled=false;}
+      },0);
+    });
+    table.querySelectorAll('.day-record-anomaly').forEach(btn=>btn.onclick=()=>{
+      const record=pageRows[Number(btn.dataset.rowIndex)];if(!record)return;
+      try{btn.nextElementSibling.innerHTML=anomalyText(lookupAnomaly(record));btn.hidden=true;}catch(e){console.error(e);alert('無法完成異常檢查，請重新整理。');}
+    });
+    document.getElementById('dayCheckPrev').onclick=()=>{dayCheckPage--;renderDayCheck();};
+    document.getElementById('dayCheckNext').onclick=()=>{dayCheckPage++;renderDayCheck();};
+    document.getElementById('dayCheckPageSelect').onchange=e=>{dayCheckPage=Number(e.target.value)||1;renderDayCheck();};
 
     const stageLocationSelect=document.getElementById('stageListLocationFilter');
     const stageVenueSelect=document.getElementById('stageListVenueFilter');
