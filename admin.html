@@ -10406,10 +10406,11 @@ function safeLotteryStageFileName(stage){
   return raw.replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,'_').slice(0,90)||'抽籤名單';
 }
 function createSP88Workbook(rows){
-  const ws=XLSX.utils.aoa_to_sheet([['姓名','手機末三碼','序號'],...rows]);
+  // SP88 會將每一列（含第一列）視為參加者，故專用 Excel 不加入欄位標題。
+  const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:18},{wch:16},{wch:12}];
-  // 末三碼與登記序號使用文字格式，保留前導零。
-  for(let row=2;row<=rows.length+1;row++){
+  // 第一列即為有效參加者；末三碼與登記序號維持文字格式，保留前導零。
+  for(let row=1;row<=rows.length;row++){
     for(const col of ['B','C']){
       const cell=ws[`${col}${row}`];
       if(cell){cell.t='s';cell.z='@';}
