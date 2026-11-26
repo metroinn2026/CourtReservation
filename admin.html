@@ -5363,6 +5363,10 @@ body .ux-review-edit{align-items:end}
   #adminMenuToggle:focus-visible,#adminMenuClose:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   #adminMenuToggle,#adminMenuClose,#adminMenuBackdrop,.mobile-nav-options{display:none}
   .admin-page-heading{display:flex;align-items:center;gap:10px;min-width:0}
+  #app #lotteryQuickNav{display:inline-flex!important;align-items:center;justify-content:center;white-space:nowrap;min-width:80px;flex-shrink:0}
+  #app #lotteryNav{display:block!important;visibility:visible!important}
+  @media(min-width:861px){#app #adminSidebar{display:flex!important;min-width:0;overflow-y:auto}}
+  @media(max-width:480px){#app .admin-page-heading{gap:6px}#app #lotteryQuickNav{min-width:0;padding:6px 8px!important;font-size:12px!important}}
   @media(max-width:860px){
     #app .topbar{padding:0 12px!important;gap:8px}
     #app .topbar-right{gap:8px;flex-shrink:0}
@@ -5518,7 +5522,7 @@ body .ux-review-edit{align-items:end}
         <button data-page="dashboard" class="active">作業總覽</button>
         <button data-page="records">登記資料</button>
         <button data-page="capacity">名額設定</button>
-        <button data-page="lottery">抽籤作業</button>
+        <button type="button" id="lotteryNav" data-page="lottery">抽籤作業</button>
         <button data-page="settings">文字設定</button>
         <button data-page="logs" id="logsNav" style="display:none">操作紀錄</button>
         <button data-page="accounts" id="accountsNav">帳號權限</button>
@@ -5531,6 +5535,7 @@ body .ux-review-edit{align-items:end}
         <div class="admin-page-heading">
           <button id="adminMenuToggle" type="button" class="btn btn-gray" aria-label="開啟功能選單" aria-expanded="false" aria-controls="adminSidebar">☰</button>
           <h2 id="pageTitle">作業總覽</h2>
+          <button type="button" id="lotteryQuickNav" class="btn btn-primary btn-compact" style="white-space:nowrap;flex-shrink:0" title="直接進入抽籤作業">抽籤作業</button>
         </div>
         <div class="topbar-right">
           <div class="admin-font-control" aria-label="文字大小">
@@ -6675,7 +6680,8 @@ async function enterApp(){
   document.getElementById('logsNav').style.display=isSuperAdmin?'':'none';
   if((await loadAllData())===false)return;
   if(!courtAuthLoginActive||adminSigningOut)return;
-  renderPage('dashboard');
+  const requestedPage=new URL(location.href).searchParams.get('page');
+  renderPage(requestedPage==='lottery'?'lottery':'dashboard');
 }
 function logout(){void endAdminSession('manual',false);}
 
@@ -13757,6 +13763,12 @@ function initAdminNavigation(){
       if(wasOpen)window.scrollTo(0,0);
     };
   });
+  const lotteryQuickNav=document.getElementById('lotteryQuickNav');
+  if(lotteryQuickNav)lotteryQuickNav.onclick=()=>{
+    if(!courtAuthLoginActive||adminSigningOut||!currentAdmin)return;
+    setOpen(false);
+    renderPage('lottery');
+  };
   mobile.addEventListener('change',syncLayout);
   syncLayout();
 }
