@@ -10962,6 +10962,84 @@ async function backupCommit(p){
 }
 window.addEventListener('beforeunload',e=>{if([...backupDrafts.values()].some(p=>!p.committed)){e.preventDefault();e.returnValue='';}});
 
+// 免抽籤核定：僅補上空白結果，不覆蓋既有結果，也不發布。
+let exemptApprovalBusy=false;
+function buildExemptApprovalPlan(stage,evaluation){
+  const evaluated=evaluation||stage.records.map(r=>({r,state:qualificationReviewsLoaded?qualificationState(r):'pending'}));
+  const qualified=evaluated.filter(x=>x.state==='qualified').map(x=>x.r);
+  const pending=evaluated.filter(x=>!['qualified','invalid'].includes(x.state)).length;
+  const capacity=getStageCapacity(stage),closed=isStageClosed(stage);
+  const blank=r=>['','未抽籤'].includes(String(r.lottery_status||'').trim());
+  const targets=qualified.filter(blank);
+  let reason='';
+  if(!qualificationReviewsLoaded||!capacitySettingsLoaded)reason='名額或資格資料尚未載入';
+  else if(closed||!Number.isInteger(capacity)||capacity<1||capacity>(capacityMap[stage.venue]||0))reason='場次未開放或名額設定異常';
+  else if(pending)reason=`尚有 ${pending} 筆待審查或補正`;
+  else if(!qualified.length)reason='無合格登記';
+  else if(qualified.length>capacity)reason='合格登記超過正取名額，須辦理抽籤';
+  else if(new Set(qualified.map(personKey)).size!==qualified.length||qualified.some(r=>personKey(r).startsWith('UNVERIFIED:')))reason='同場次會員識別重複或未確認，請先核對';
+  else if(stage.records.some(r=>r.result_published))reason='已有公布結果，請另行核對';
+  else if(evaluated.some(x=>x.state!=='qualified'&&!blank(x.r)))reason='不合格登記仍有抽籤結果，請先核對';
+  else if(qualified.some(r=>!blank(r)&&r.lottery_status!=='中籤'))reason='已有備取、未中籤或其他結果，請另行核對';
+  else if(targets.some(r=>r.lottery_locked))reason='待核定登記已鎖定，請先核對';
+  else if(qualified.some(r=>courtUsage(r)==='待確認'))reason='使用用途尚待確認';
+  else if(stage.venue==='羽球'&&new Set(qualified.map(courtUsage)).size>1)reason='同時段有不同使用球類，請先確認可保留名單';
+  else if(stage.venue==='羽球'&&capacity!==3&&qualified.some(r=>courtUsage(r)!=='羽球'))reason='非三面場次涉及其他球類，請先確認場地規則';
+  else if(!targets.length)reason='合格登記已全部有正取結果';
+  const key=sp88StageKey(stage);
+  const signature=JSON.stringify([key,capacity,closed,evaluated.map(({r,state})=>[String(r.id),state,personKey(r),courtUsage(r),String(r.lottery_status||''),!!r.lottery_locked,!!r.result_published]).sort((a,b)=>a[0].localeCompare(b[0]))]);
+  return {stage,key,qualified,targets,capacity,reason,signature};
+}
+async function approveExemptStages(keys){
+  if(exemptApprovalBusy)return;
+  if(!courtAuthLoginActive||adminSigningOut){alert('請先登入管理員帳號。');return;}
+  if(backupBusy||[...backupDrafts.values()].some(p=>!p.committed)){alert('請先完成或取消尚未寫入的備援抽籤結果，再核定免抽籤場次。');return;}
+  exemptApprovalBusy=true;
+  const epoch=adminSessionEpoch;
+  const authorized=()=>courtAuthLoginActive&&!adminSigningOut&&adminSessionEpoch===epoch;
+  const wanted=new Set(keys);
+  let attempted=false,updatedIds=[],batchId='',expected=0;
+  try{
+    if(await loadAllData()===false||!authorized())throw Error('資料重新載入失敗，請重新整理後再試。');
+    const plans=backupStages().filter(s=>wanted.has(sp88StageKey(s))).map(s=>buildExemptApprovalPlan(s));
+    if(plans.length!==wanted.size)throw Error('場次資料已異動，請重新篩選。');
+    const ready=plans.filter(p=>!p.reason),skipped=plans.filter(p=>p.reason);
+    if(!ready.length){alert('目前沒有可核定的免抽籤場次。\n'+skipped.map(p=>`${p.stage.venue} ${p.stage.day} ${p.stage.time}：${p.reason}`).join('\n'));return;}
+    expected=ready.reduce((sum,p)=>sum+p.targets.length,0);
+    const esc=escapeHtml;
+    const detail=p=>`${esc(locationLabel(p.stage.location))}｜${esc(p.stage.venue)}｜${esc(p.stage.day)}｜${esc(p.stage.time)}`;
+    const preview=`<p>將核定 ${ready.length} 場、${expected} 筆合格登記為正取，結果維持未公布。</p><div style="max-height:50vh;overflow:auto"><table style="width:100%"><thead><tr><th>場次</th><th>名額</th><th>本次核定名單</th></tr></thead><tbody>${ready.map(p=>`<tr><td>${detail(p)}</td><td>${p.capacity}</td><td>${p.targets.map(r=>`${esc(compactRecordCode(r))} ${esc(r.name)}`).join('<br>')}</td></tr>`).join('')}</tbody></table>${skipped.length?`<p>以下 ${skipped.length} 場不處理：</p>${skipped.map(p=>`<div>${detail(p)}：${esc(p.reason)}</div>`).join('')}`:''}</div>`;
+    if(!await confirmModal('確認免抽籤場次核定正取',preview))return;
+    if(!authorized())throw Error('登入狀態已變更，已停止核定。');
+    if(await loadAllData()===false||!authorized())throw Error('無法確認最新資料，已停止核定。');
+    const latest=new Map(backupStages().map(s=>[sp88StageKey(s),s]));
+    const checked=ready.map(p=>{
+      const stage=latest.get(p.key),plan=stage&&buildExemptApprovalPlan(stage);
+      if(!plan||plan.reason||plan.signature!==p.signature)throw Error('預覽後名單、資格、名額或結果已異動，請重新預覽後再核定。');
+      return plan;
+    });
+    batchId=`exempt-approval-${Date.now()}`;
+    for(const p of checked){
+      if(!authorized())throw Error('登入狀態已變更');
+      const ids=p.targets.map(r=>r.id);
+      attempted=true;
+      const {data,error}=await updateAuthorizedRecords(ids,{lottery_status:'中籤',lottery_locked:true,lottery_batch:batchId,result_published:false,updated_at:new Date().toISOString()},{select:true,expectUnpublished:true,expectUnlocked:true});
+      const returned=Array.isArray(data)?data:[];
+      updatedIds.push(...returned.map(r=>r.id).filter(Boolean));
+      if(error||returned.length!==ids.length||returned.some(r=>!ids.includes(r.id)))throw Error(error?.message||'更新筆數不一致，請核對目前結果');
+    }
+    await writeOperationLog('免抽籤場次核定正取',{batch_id:batchId,stage_count:checked.length,total:updatedIds.length,skipped_count:skipped.length,stages:checked.map(p=>({location:p.stage.location,venue_type:p.stage.venue,day_of_week:p.stage.day,time_slot:p.stage.time,capacity:p.capacity,serial_numbers:p.targets.map(compactRecordCode),count:p.targets.length}))},updatedIds);
+    alert(`已核定 ${checked.length} 場、${updatedIds.length} 筆正取，結果維持未公布。`);
+  }catch(e){
+    console.error(e);
+    if(attempted)await writeOperationLog('免抽籤場次核定異常',{batch_id:batchId,confirmed_count:updatedIds.length,expected_count:expected,error:e.message},updatedIds);
+    alert((attempted?`核定過程未全部完成，已確認更新 ${updatedIds.length} 筆。請重新核對清單後再處理。\n`:'尚未核定。\n')+e.message);
+  }finally{
+    exemptApprovalBusy=false;
+    if(authorized()){await loadAllData();if(currentPage==='lottery')renderLotteryPage();}
+  }
+}
+
 function renderLotteryPage(){
   const locations=getAdminLocations();
   window.currentLotteryLocation = window.currentLotteryLocation || DEFAULT_LOCATION;
@@ -11642,17 +11720,13 @@ async function applyPromotionSuggestion(stage){
     });
 
     const stages=Object.values(stageMap).map(s=>{
-      const qualified=[];
-      let pendingCount=0;
-      if(qualificationReviewsLoaded)s.records.forEach(r=>{
-        const state=qualificationState(r);
-        if(state==='qualified')qualified.push(r);
-        else if(state!=='invalid')pendingCount++;
-      });
+      const evaluated=s.records.map(r=>({r,state:qualificationReviewsLoaded?qualificationState(r):'pending'}));
+      const qualified=evaluated.filter(x=>x.state==='qualified').map(x=>x.r);
+      const pendingCount=evaluated.filter(x=>!['qualified','invalid'].includes(x.state)).length;
       const capacity=getStageCapacity(s);
       const progress=summarizeLotteryStageProgress({qualified,pendingCount,
         people:countRegistrationPeople(qualified),capacity,closed:isStageClosed(s),loaded:qualificationReviewsLoaded});
-      return {...s,people:countRegistrationPeople(s.records),capacity,...progress};
+      return {...s,people:countRegistrationPeople(s.records),capacity,...progress,exemptPlan:buildExemptApprovalPlan(s,evaluated)};
     }).sort((a,b)=>{
       const locCmp=String(a.location).localeCompare(String(b.location),'zh-Hant');
       if(locCmp!==0) return locCmp;
@@ -11741,8 +11815,13 @@ async function applyPromotionSuggestion(stage){
           <div class="stage-list-filter-count">顯示 <strong>${visibleStages.length}</strong> / ${stages.length} 個場次</div>
         </div>
 
-        <div class="table-wrap"><table><thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記人數</th><th>合格人數</th><th>正取名額</th><th>場次處理狀態</th><th>合格登記結果</th><th>處理說明</th><th>異常</th></tr></thead><tbody>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0">
+          <button type="button" id="approveVisibleExemptStages" class="btn btn-primary" ${exemptApprovalBusy||!visibleStages.some(s=>!s.exemptPlan.reason)?'disabled':''}>核定目前篩選的免抽籤場次</button>
+          <span class="small">可核定 ${visibleStages.filter(s=>!s.exemptPlan.reason).length} 場；確認名單後設為正取，結果維持未公布。</span>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>操作</th><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記人數</th><th>合格人數</th><th>正取名額</th><th>場次處理狀態</th><th>合格登記結果</th><th>處理說明</th><th>異常</th></tr></thead><tbody>
           ${visibleStages.length ? visibleStages.map((s,idx)=>`<tr>
+            <td>${s.progress==='exempt_pending'?`<button type="button" class="btn btn-primary approve-exempt-stage" data-stage-index="${idx}" ${exemptApprovalBusy||s.exemptPlan.reason?'disabled':''} title="${escapeHtml(s.exemptPlan.reason||'預覽並核定本場合格登記為正取')}">核定正取</button>${s.exemptPlan.reason?`<div class="small" style="max-width:200px;white-space:normal">${escapeHtml(s.exemptPlan.reason)}</div>`:''}`:'—'}</td>
             <td>${escapeHtml(locationLabel(s.location))}</td>
             <td><strong>${escapeHtml(s.venue)}</strong></td>
             <td>${escapeHtml(s.day)}</td>
@@ -11754,7 +11833,7 @@ async function applyPromotionSuggestion(stage){
             <td>${s.withResult}／${s.qualifiedCount} 筆</td>
             <td>${escapeHtml(s.reason)}</td>
             <td><button type="button" class="btn btn-gray day-stage-anomaly" data-stage-index="${idx}">檢查異常</button><span class="day-stage-anomaly-result"></span></td>
-          </tr>`).join('') : `<tr><td colspan="11" style="text-align:center;color:#64748b;padding:24px;">目前選擇條件沒有場次</td></tr>`}
+          </tr>`).join('') : `<tr><td colspan="12" style="text-align:center;color:#64748b;padding:24px;">目前選擇條件沒有場次</td></tr>`}
         </tbody></table></div>
       </div>
       <div class="panel admin-section-card">
@@ -11770,6 +11849,11 @@ async function applyPromotionSuggestion(stage){
         </div>
       </div>`;
 
+    document.getElementById('approveVisibleExemptStages').onclick=()=>approveExemptStages(visibleStages.filter(s=>s.progress==='exempt_pending').map(s=>sp88StageKey(s)));
+    table.querySelectorAll('.approve-exempt-stage').forEach(btn=>btn.onclick=()=>{
+      const stage=visibleStages[Number(btn.dataset.stageIndex)];
+      if(stage)void approveExemptStages([sp88StageKey(stage)]);
+    });
     const lookupAnomaly=record=>{
       const key=String(record.id);
       if(!dayCheckAnomalyCache.has(key))dayCheckAnomalyCache.set(key,getRecordAnomalyTypes(record));

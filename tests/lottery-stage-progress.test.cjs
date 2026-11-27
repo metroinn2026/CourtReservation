@@ -25,6 +25,7 @@ assert.equal(progress([row('unknown')]).withResult,0);
 const nodes=new Map();
 const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',innerHTML:'',querySelectorAll:()=>[]});return nodes.get(id);};
 const context=vm.createContext({window:{},document:{getElementById:node},Map,Set,console,
+exemptApprovalBusy:false,buildExemptApprovalPlan:()=>({reason:'fixture'}),sp88StageKey:s=>s.venue,
 DEFAULT_LOCATION:'北投會館',qualificationReviewsLoaded:true,
 allRecords:[
 {id:'a',location:'北投會館',venue_type:'羽球',day_of_week:'周六',time_slot:'10:00-11:59',state:'qualified',lottery_status:'中籤',result_published:false},
