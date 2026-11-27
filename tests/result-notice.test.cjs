@@ -12,7 +12,8 @@ function context(extra={}){
  getLotteryPhoneLast3:r=>r.phone.slice(-3),slotRangeKey:t=>t.replace('11:59','12:00'),days:['周一','周二'],
  venueSortValue:v=>v==='羽球'?0:1,daySortValue:d=>d==='周一'?1:2,locationLabel:x=>x,courtVenueLabel:r=>r.venue_type,
  escapeHtml:s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'),...extra});
- vm.runInContext(impl,ctx);return ctx;
+ const display=source.slice(source.indexOf('const resultAdjustmentHistory=new Map();'),source.indexOf('async function loadResultAdjustmentHistory('));
+ vm.runInContext(display+impl,ctx);return ctx;
 }
 const r=(serial,status,extra={})=>({serial_number:serial,lottery_status:status,name:'王小明',phone:'0912345007',venue_type:'羽球',day_of_week:'周一',time_slot:'10:00-12:00',...extra});
 test('result announcement includes only qualified winners/waitlist with masked public fields',()=>{
@@ -78,4 +79,9 @@ test('different days and times remain separate despite combining usages',()=>{
  const ctx=context();const records=[r('ABC001','中籤'),r('ABC002','候補1',{usage:'其他球類'}),r('ABC003','中籤',{day_of_week:'周二'}),r('ABC004','中籤',{time_slot:'12:00-14:00'})];
  assert.equal(ctx.buildReviewNoticeGroups(records,false,true).length,3);
  assert.equal(ctx.buildReviewNoticeGroups(records).length,4);
+});
+test('result announcement discloses promoted winner while retaining standby numeric order',()=>{
+ const c=context();vm.runInContext("resultAdjustmentHistory.set('record1',[{version:1,original_status:'候補2',after_status:'中籤',action:'promoted'}]);",c);
+ const groups=c.buildReviewNoticeGroups([r('ABC010','候補10'),r('ABC002','中籤',{id:'record1'}),r('ABC003','候補3')],false,true);
+ assert.equal(groups[0].rows[0][4],'正取（遞補）');assert.equal(groups[0].rows[1][4],'備取3');assert.equal(groups[0].rows[2][4],'備取10');
 });
