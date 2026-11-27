@@ -5851,6 +5851,9 @@ async function deleteCourtRecords(ids){
  return {error:null};
 }
 async function updateAuthorizedRecords(ids,changes,options={}){
+ if(changes.lottery_status==='中籤'&&allRecords.some(r=>ids.map(String).includes(String(r.id))&&/^候補[1-9]\d*$/.test(String(r.lottery_status||'')))&&!String(options.promotionReason||'').trim()){
+   return {data:[],error:new Error('備取轉正取須附遞補說明，請使用「抽籤作業 → 更多 → 遞補建議」填寫原因。')};
+ }
  if(!courtAuthLoginActive) return {data:[],error:new Error('請先完成 Supabase Auth 管理員登入')};
  if(/^(中籤|候補\d+)$/.test(changes.lottery_status||'')&&allRecords.some(r=>ids.map(String).includes(String(r.id))&&membershipReviewIssue(r))){
    return {data:[],error:new Error('包含會員資格尚待審查的登記，請先確認會員查核結果。')};
@@ -6576,6 +6579,76 @@ function buildAnomalySummary(records=allRecords,{pendingOnly=false}={}){
   }
   return {total:affectedIds.size,affectedIds,typesFound,hasNormal,patterns:patterns.filter(pattern=>pattern.recordIds.size)};
 }
+// 抽籤後檢核與登記資格分開；只提出提醒，不自動改動中籤結果。
+function lotteryTimesOverlap(a,b){
+  if(String(a.day_of_week||'').replace(/^週/,'周')!==String(b.day_of_week||'').replace(/^週/,'周'))return false;
+  const range=r=>{const m=slotRangeKey(r.time_slot).match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);return m?[+m[1]*60+(+m[2]),+m[3]*60+(+m[4])]:null;};
+  const x=range(a),y=range(b);return !!x&&!!y&&x[0]<y[1]&&y[0]<x[1];
+}
+function lotteryWinnerRelation(a,b){
+  const x=personKey(a),y=personKey(b);
+  if(x===y&&!x.startsWith('UNVERIFIED:'))return '同會員識別';
+  const name=r=>String(r.name||'').replace(/\s/g,'').toLowerCase();
+  const phone=r=>normalizePhone(r.phone);
+  return name(a)&&name(a)===name(b)&&phone(a)&&phone(a)===phone(b)?'姓名及手機相同，待確認是否同一人':'';
+}
+function lotteryResultStageGroups(records){
+  const map=new Map();
+  for(const r of records){
+    const stage={location:recordLocation(r),venue:r.venue_type,day:String(r.day_of_week||'').replace(/^週/,'周'),time:slotRangeKey(r.time_slot)};
+    const key=sp88StageKey(stage);if(!map.has(key))map.set(key,{...stage,key,records:[]});map.get(key).records.push(r);
+  }
+  return [...map.values()];
+}
+function buildLotteryResultChecks(records=allRecords){
+  const winners=records.filter(r=>r.lottery_status==='中籤'),cross=[],suspected=[],usage=[];
+  for(let i=0;i<winners.length;i++)for(let j=i+1;j<winners.length;j++){
+    const a=winners[i],b=winners[j];
+    if(recordLocation(a)===recordLocation(b)&&a.venue_type===b.venue_type)continue;
+    if(!lotteryTimesOverlap(a,b))continue;
+    const relation=lotteryWinnerRelation(a,b);if(!relation)continue;
+    (relation==='同會員識別'?cross:suspected).push({records:[a,b],reason:relation});
+  }
+  for(const stage of lotteryResultStageGroups(records)){
+    if(stage.venue!=='羽球')continue;
+    const selected=stage.records.filter(r=>r.lottery_status==='中籤');if(!selected.length)continue;
+    const capacity=getStageCapacity(stage),usages=new Set(selected.map(courtUsage));
+    let reason='';
+    if((capacity===1||capacity===2)&&selected.some(r=>courtUsage(r)!=='羽球'))reason='1或2面場次僅供羽球用途，正取含其他用途';
+    else if(usages.size>1)reason='同時段正取使用用途不同，須確認本場保留用途';
+    if(reason)usage.push({...stage,records:stage.records.filter(r=>r.lottery_status==='中籤'||/^候補\d+$/.test(String(r.lottery_status||''))),reason});
+  }
+  return {cross,suspected,usage};
+}
+function renderLotteryResultCheckSummary(){
+  const c=buildLotteryResultChecks();
+  return `<div style="border-top:1px solid #e2e8f0;margin-top:16px;padding-top:16px"><h4 style="margin:0 0 8px">抽籤後結果檢核</h4><div class="small">已公布及未公布的正取均納入檢查；只提示衝突，由承辦確認保留結果及遞補原因。</div>${[['cross','同一人同時段跨場地中籤',c.cross.length,'組衝突'],['suspected','疑似同一人同時段跨場地中籤',c.suspected.length,'組待確認'],['usage','羽球正取用途衝突',c.usage.length,'個場次']].map(([key,label,count,unit])=>`<div class="anomaly-flat-row"><div class="anomaly-flat-type">${label}</div><div class="anomaly-flat-count">${count} ${unit}</div><div class="anomaly-flat-detail">${key==='suspected'?'姓名及手機均相同，會員識別不同，須由承辦確認。':key==='usage'?'檢查同時段用途一致性及1、2面場次限制。':'依會員識別及重疊使用時間檢查，不以共用手機直接認定同一人。'}</div><button type="button" class="btn btn-gray btn-compact" data-lottery-check="${key}" ${count?'':'disabled'}>查看</button></div>`).join('')}</div>`;
+}
+function bindLotteryResultCheckActions(root=document){
+  root.querySelectorAll('[data-lottery-check]').forEach(btn=>btn.onclick=()=>showLotteryResultChecks(btn.dataset.lotteryCheck));
+}
+function openLotteryResultStage(record){
+  window.currentLotteryLocation=recordLocation(record);
+  window.stageListLocationFilter='';window.stageListVenueFilter='';window.stageListDayFilter='';window.stageListProgressFilter='';
+  renderPage('lottery');
+  const values={dayCheckLocation:recordLocation(record),dayCheckVenue:record.venue_type,dayCheckDay:record.day_of_week,dayCheckTime:record.time_slot};
+  for(const [id,value] of Object.entries(values)){
+    const el=document.getElementById(id);if(!el)continue;
+    if(id==='dayCheckTime'&&![...el.options].some(o=>o.value===value)){const option=document.createElement('option');option.value=value;option.textContent=value;el.appendChild(option);}
+    el.value=value;
+  }
+  document.getElementById('refreshLotteryContext')?.click();
+  document.getElementById('dayCheckTable')?.scrollIntoView({block:'start'});
+}
+function showLotteryResultChecks(kind){
+  const checks=buildLotteryResultChecks(),items=checks[kind]||[];
+  const labels={cross:'同一人同時段跨場地中籤',suspected:'疑似同一人同時段跨場地中籤',usage:'羽球正取用途衝突'};
+  const links=[];
+  const html=items.map((item,index)=>`<section style="margin-bottom:20px"><h4>${index+1}. ${escapeHtml(item.reason)}</h4><div class="table-wrap"><table><thead><tr><th>序號</th><th>姓名</th><th>會員類別</th><th>手機末三碼</th><th>場次</th><th>使用用途</th><th>抽籤結果</th><th>公布</th><th>處理</th></tr></thead><tbody>${[...item.records].sort((a,b)=>statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status)).map(r=>{const link=links.push(r)-1;return `<tr><td>${escapeHtml(compactRecordCode(r))}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(memberIdentityType(r))}</td><td>${escapeHtml(getLotteryPhoneLast3(r))}</td><td>${escapeHtml(locationLabel(recordLocation(r)))} ${escapeHtml(r.venue_type)} ${escapeHtml(r.day_of_week)} ${escapeHtml(r.time_slot)}</td><td>${escapeHtml(courtUsage(r))}</td><td>${escapeHtml(r.lottery_status==='中籤'?'正取':String(r.lottery_status).replace('候補','備取'))}</td><td>${r.result_published?'已公布':'未公布'}</td><td><button type="button" class="btn btn-primary" data-result-stage="${link}">前往場次</button></td></tr>`;}).join('')}</tbody></table></div></section>`).join('');
+  const dialog=showCourtDetailsDialog(labels[kind]||'抽籤後結果檢核',`<p>請先確認保留場次或使用用途，再依備取順位處理；每次遞補須填寫原因。資格合格不代表可同時取得衝突場次。</p>${html||'目前無此類衝突。'}`);
+  dialog.querySelectorAll('[data-result-stage]').forEach(btn=>btn.onclick=()=>{dialog.close();openLotteryResultStage(links[Number(btn.dataset.resultStage)]);});
+}
+
 function renderAnomalyCenter(summary){
   const rows=summary?.patterns.map(pattern=>`
     <div class="anomaly-flat-row">
@@ -6600,6 +6673,7 @@ function renderAnomalyCenter(summary){
     <div class="panel admin-section-card dashboard-anomaly-card anomaly-center-clean" id="anomalyCenter">
       <div class="admin-section-head"><h3>異常檢核中心</h3></div>
       ${contents}
+      ${renderLotteryResultCheckSummary()}
     </div>`;
 }
 
@@ -7340,6 +7414,7 @@ function renderDashboard(){
   const anomalyCard=document.getElementById('dashAnomalyCard');
   if(anomalyCard) anomalyCard.onclick=()=>document.getElementById('anomalyCenter')?.scrollIntoView({behavior:'smooth',block:'start'});
 
+  bindLotteryResultCheckActions();
   document.querySelectorAll('#anomalyCenter .anomaly-text-action').forEach(button=>button.onclick=()=>{
     openDashboardAnomalyReview(button.dataset.anomaly);
   });
@@ -9345,7 +9420,7 @@ async function savePendingRecordStatusChanges(){
       const {error,data}=await updateAuthorizedRecords([item.id],payload,{single:true,select:true,expectUnpublished:true});
       if(error || data?.length!==1){
         console.error(error);
-        alert(`儲存失敗：${item.record?.name||item.id}，請重新整理後確認資料狀態。`);
+        alert(`儲存失敗：${item.record?.name||item.id}。${error?.message||'請重新整理後確認資料狀態。'}`);
         return;
       }
       updated++;
@@ -10131,7 +10206,7 @@ async function updateRecordLotteryStatus(recordId, status){
   const {error}=await updateAuthorizedRecords([recordId],payload,{single:true,select:false});
   if(error){
     console.error(error);
-    alert('更新抽籤狀態失敗');
+    alert('更新抽籤狀態失敗：'+(error.message||'請重新載入後再試。'));
     return false;
   }
   await writeOperationLog('變更抽籤狀態', {
@@ -11122,6 +11197,7 @@ function renderLotteryPage(){
         <summary>備援抽籤作業（公開投影）</summary>
         <div id="backupLotteryPanel" style="padding:10px 0"></div>
       </details>
+      <div class="panel admin-section-card" id="lotteryResultChecksPanel">${renderLotteryResultCheckSummary()}</div>
       <div id="promotionSuggestionPanel"></div>
       <div id="dayCheckPanel">
         <div id="importLotteryPreview"></div>
@@ -11329,6 +11405,7 @@ function renderLotteryPage(){
     exportToCsv(records);
   };
   document.getElementById('promotionSuggestionBtn').onclick=renderPromotionSuggestions;
+  bindLotteryResultCheckActions();
   document.getElementById('importLotteryResultBtn').onclick=()=>{
     document.getElementById('importLotteryFile').click();
   };
@@ -11607,39 +11684,78 @@ function renderLotteryPage(){
 
 
 function getPromotionSuggestions(){
-  return getStageGroups().map(stage=>{
-    if(stage.records.some(r=>r.result_published)) return null;
+  const allWinners=allRecords.filter(r=>r.lottery_status==='中籤');
+  return lotteryResultStageGroups(allRecords).map(stage=>{
+    if(stage.records.some(r=>r.result_published)||isStageClosed(stage)||!qualificationReviewsLoaded||!capacitySettingsLoaded)return null;
     const winners=stage.records.filter(r=>r.lottery_status==='中籤');
-    const waitlist=stage.records.filter(r=>/^候補\d+$/.test(String(r.lottery_status||''))).sort((a,b)=>Number(String(a.lottery_status).replace('候補',''))-Number(String(b.lottery_status).replace('候補','')));
+    const waitlist=stage.records.filter(r=>/^候補[1-9]\d*$/.test(String(r.lottery_status||''))).sort((a,b)=>Number(a.lottery_status.slice(2))-Number(b.lottery_status.slice(2)));
     const abandoned=stage.records.filter(r=>r.lottery_status==='放棄');
-    const capacity=getStageCapacity(stage);
-    const vacancies=Math.max(0,capacity-winners.length);
-    if(!abandoned.length || !waitlist.length || vacancies<=0) return null;
-    return {...stage,capacity,winners,waitlist,abandoned,promote:waitlist.slice(0,vacancies)};
+    const capacity=getStageCapacity(stage),vacancies=Math.max(0,capacity-winners.length);
+    if(!waitlist.length||!vacancies)return null;
+    let blocked='';
+    const usages=new Set(winners.map(courtUsage));
+    if(stage.records.some(r=>!['qualified','invalid'].includes(qualificationState(r))))blocked='本場仍有資格待審查或補正';
+    else if(stage.records.some(r=>isQualifiedForLottery(r)&&['','未抽籤'].includes(String(r.lottery_status||'').trim())))blocked='抽籤結果尚未完整，請先確認原始結果';
+    else if(new Set(waitlist.map(r=>r.lottery_status)).size!==waitlist.length)blocked='原備取順位重複，請先核對抽籤結果';
+    else if(winners.some(r=>!isQualifiedForLottery(r)))blocked='現有正取資格待確認';
+    else if(stage.venue==='羽球'&&usages.size>1)blocked='正取用途混合，請先確認保留用途';
+    else if(stage.venue==='羽球'&&capacity===3&&!winners.length)blocked='本場尚無正取，請先確認本場保留用途';
+    const requiredUsage=stage.venue==='羽球'?(capacity<3?'羽球':[...usages][0]):null;
+    if(stage.venue==='羽球'&&capacity<3&&winners.some(r=>courtUsage(r)!=='羽球'))blocked='1或2面場次正取含非羽球用途';
+    const eligible=[],skipped=[];
+    for(const r of waitlist){
+      let reason='';
+      if(!isQualifiedForLottery(r))reason='資格尚未合格';
+      else if(requiredUsage&&courtUsage(r)!==requiredUsage)reason='與本場使用用途不同';
+      else if(allWinners.some(w=>String(w.id)!==String(r.id)&&lotteryTimesOverlap(r,w)&&lotteryWinnerRelation(r,w)))reason='同時段已有同一會員或疑似同一人的正取，須先確認';
+      else if(eligible.some(e=>lotteryWinnerRelation(r,e)))reason='本次遞補名單會員識別重複或疑似同一人';
+      if(reason)skipped.push({record:r,reason});else eligible.push(r);
+    }
+    // 不越過尚待確認身分／資格的較前順位；用途不同則可明列原因後略過。
+    const firstUnresolved=skipped.find(x=>x.reason!=='與本場使用用途不同');
+    const promote=blocked?[]:eligible.filter(r=>!firstUnresolved||Number(r.lottery_status.slice(2))<Number(firstUnresolved.record.lottery_status.slice(2))).slice(0,vacancies);
+    if(!promote.length&&!blocked)blocked=firstUnresolved?'較前順位尚待確認，暫停遞補':'無符合本場用途的合格備取';
+    const signature=JSON.stringify([sp88StageKey(stage),capacity,requiredUsage,blocked,stage.records.map(r=>[String(r.id),qualificationState(r),r.lottery_status,!!r.result_published,personKey(r),courtUsage(r)]).sort((a,b)=>a[0].localeCompare(b[0])),promote.map(r=>String(r.id)),skipped.map(x=>[String(x.record.id),x.reason])]);
+    return {...stage,capacity,winners,waitlist,abandoned,promote,skipped,blocked,signature};
   }).filter(Boolean);
 }
 function renderPromotionSuggestions(){
-  const panel=document.getElementById('promotionSuggestionPanel'); if(!panel) return;
+  const panel=document.getElementById('promotionSuggestionPanel');if(!panel)return;
   const items=getPromotionSuggestions();
-  if(!items.length){panel.innerHTML='<div class="msg info">目前沒有需要遞補的場次。若有中籤者放棄，請先將該筆狀態改為「放棄」，系統才會提出遞補建議。</div>';return;}
-  panel.innerHTML=`<div class="panel"><h3>候補遞補建議</h3><div class="msg info">系統只提出建議，不會自動變更。確認後才會將候補依順位遞補，並重新整理後續候補順位。</div><div class="promotion-list">${items.map((s,i)=>`<div class="promotion-item"><strong>${escapeHtml(locationLabel(s.location))}｜${escapeHtml(s.venue)}｜${escapeHtml(s.day)}｜${escapeHtml(s.time)}</strong><div class="small" style="margin-top:4px;">放棄 ${s.abandoned.length} 人｜目前中籤 ${s.winners.length}/${s.capacity}｜建議遞補：${s.promote.map(r=>`${escapeHtml(r.name)}（${escapeHtml(r.lottery_status)}）`).join('、')}</div><button class="btn btn-primary apply-promotion" data-index="${i}" style="margin-top:8px;">確認遞補</button></div>`).join('')}</div></div>`;
-  document.querySelectorAll('.apply-promotion').forEach(btn=>btn.onclick=()=>applyPromotionSuggestion(items[Number(btn.dataset.index)]));
+  if(!items.length){panel.innerHTML='<div class="msg info">目前沒有可提出遞補建議的場次。請先確認場次備取資料、正取缺額及審查狀態，再重新載入。</div>';return;}
+  panel.innerHTML=`<div class="panel"><h3>備取遞補建議</h3><div class="msg info">每次遞補須填寫原因，確認後保留原備取順位及異動紀錄，結果維持未公布。</div>${items.map((s,i)=>`<div class="promotion-item"><strong>${escapeHtml(locationLabel(s.location))}｜${escapeHtml(s.venue)}｜${escapeHtml(s.day)}｜${escapeHtml(s.time)}</strong><div class="small">目前正取 ${s.winners.length}/${s.capacity}｜建議遞補：${s.promote.map(r=>`${escapeHtml(compactRecordCode(r))} ${escapeHtml(r.name)}（${escapeHtml(r.lottery_status.replace('候補','備取'))}／${escapeHtml(courtUsage(r))}）`).join('、')||'暫無'}${s.blocked?`<br>${escapeHtml(s.blocked)}`:''}${s.skipped.length?'<br>'+s.skipped.map(x=>`${escapeHtml(compactRecordCode(x.record))}：${escapeHtml(x.reason)}`).join('<br>'):''}</div><label for="promotionReason${i}">遞補原因／附註（必填）</label><textarea id="promotionReason${i}" maxlength="1000" placeholder="例如：原正取○○○○○○同時段跨場地中籤，確認保留另一場次，本場由備取順位遞補。" style="width:100%;min-height:72px"></textarea><button type="button" class="btn btn-primary apply-promotion" data-index="${i}" ${s.blocked?'disabled':''}>預覽並確認遞補</button></div>`).join('')}</div>`;
+  panel.querySelectorAll('.apply-promotion').forEach(btn=>btn.onclick=()=>applyPromotionSuggestion(items[Number(btn.dataset.index)],document.getElementById('promotionReason'+btn.dataset.index)?.value||''));
 }
-async function applyPromotionSuggestion(stage){
-  if(!stage) return;
-  const ok=await confirmModal('確認候補遞補',`確定依候補順位遞補 ${stage.promote.length} 人嗎？<br><br>${escapeHtml(stage.venue)}｜${escapeHtml(stage.day)}｜${escapeHtml(stage.time)}<br><br>此動作不會自動發布結果。`); if(!ok)return;
-  const promotedIds=new Set(stage.promote.map(r=>String(r.id)));
-  const remaining=stage.waitlist.filter(r=>!promotedIds.has(String(r.id)));
-  const updates=[];
-  stage.promote.forEach(r=>updates.push({id:r.id,status:'中籤'}));
-  remaining.forEach((r,i)=>updates.push({id:r.id,status:`候補${i+1}`}));
-  for(const u of updates){
-    const {error}=await updateAuthorizedRecords([u.id],{lottery_status:u.status,lottery_locked:true,result_published:false,updated_at:new Date().toISOString()},{single:true,select:false});
-    if(error){console.error(error);alert('遞補更新失敗，請重新整理後確認。');return;}
+let promotionWriteBusy=false;
+async function applyPromotionSuggestion(stage,note){
+  if(promotionWriteBusy||!stage)return;
+  note=String(note||'').trim();if(!note){alert('請填寫遞補原因／附註。');return;}
+  if(note.length>1000){alert('遞補說明請勿超過1000字。');return;}
+  promotionWriteBusy=true;const epoch=adminSessionEpoch,updatedIds=[];
+  const authorized=()=>courtAuthLoginActive&&!adminSigningOut&&epoch===adminSessionEpoch;
+  let attempted=false;
+  try{
+    if(!authorized()||await loadAllData()===false)throw Error('請重新登入並載入資料。');
+    const find=()=>getPromotionSuggestions().find(s=>sp88StageKey(s)===sp88StageKey(stage));
+    let fresh=find();if(!fresh||fresh.blocked||fresh.signature!==stage.signature)throw Error('名單或遞補條件已變更，請重新預覽。');
+    const names=fresh.promote.map(r=>`${escapeHtml(compactRecordCode(r))} ${escapeHtml(r.name)}：${escapeHtml(r.lottery_status.replace('候補','備取'))} → 正取`).join('<br>');
+    if(!await confirmModal('確認備取遞補',`${escapeHtml(fresh.venue)}｜${escapeHtml(fresh.day)}｜${escapeHtml(fresh.time)}<br>${names}<br><br>遞補說明：${escapeHtml(note)}<br><br>結果維持未公布，其他備取保留原順位。`))return;
+    if(!authorized()||await loadAllData()===false)throw Error('登入或資料狀態已變更。');
+    fresh=find();if(!fresh||fresh.blocked||fresh.signature!==stage.signature)throw Error('確認期間資料已變更，請重新預覽。');
+    const changes=fresh.promote.map(r=>({id:r.id,serial_number:compactRecordCode(r),before_status:r.lottery_status,after_status:'中籤',usage:courtUsage(r)}));
+    attempted=true;
+    const {data,error}=await updateAuthorizedRecords(changes.map(x=>x.id),{lottery_status:'中籤',lottery_locked:true,result_published:false,updated_at:new Date().toISOString()},{select:true,expectUnpublished:true,promotionReason:note});
+    updatedIds.push(...(Array.isArray(data)?data:[]).map(r=>r.id));
+    if(error||updatedIds.length!==changes.length)throw Error(error?.message||'更新筆數不一致');
+    await writeOperationLog('確認候補遞補',{location:fresh.location,venue_type:fresh.venue,day_of_week:fresh.day,time_slot:fresh.time,promoted_count:changes.length,reason:note,changes,skipped:fresh.skipped.map(x=>({serial_number:compactRecordCode(x.record),reason:x.reason}))},updatedIds);
+    alert(`已完成 ${updatedIds.length} 人遞補，說明已記錄，結果維持未公布。`);
+  }catch(e){
+    if(attempted)await writeOperationLog('備取遞補異常',{reason:note,error:e.message,confirmed_count:updatedIds.length},updatedIds);
+    alert((attempted?'遞補未全部完成，請核對目前結果。\n':'尚未遞補。\n')+e.message);
+  }finally{
+    promotionWriteBusy=false;
+    if(authorized()){await loadAllData();if(currentPage==='lottery'){renderLotteryPage();renderPromotionSuggestions();}}
   }
-  await writeOperationLog('確認候補遞補',{venue_type:stage.venue,day_of_week:stage.day,time_slot:stage.time,promoted_count:stage.promote.length},updates.map(x=>x.id));
-  alert(`已完成 ${stage.promote.length} 人遞補，結果尚未發布。`);
-  await loadAllData(); renderLotteryPage(); setTimeout(renderPromotionSuggestions,0);
 }
 
   async function confirmLotteryImport(parsed){
