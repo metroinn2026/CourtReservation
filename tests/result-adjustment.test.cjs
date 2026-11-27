@@ -37,5 +37,5 @@ test('restore uses immutable original status and requires existing correction hi
  const a=r('A','未中籤'),c=ctx([a]);assert.throws(()=>c.planResultAdjustment(a,'original','','復原'),/沒有結果調整/);c.hist.set('A',[{version:1,original_status:'候補5',after_status:'未中籤',action:'usage_excluded'}]);assert.equal(c.planResultAdjustment(a,'original','','復原').changes[0].after,'候補5');
 });
 test('history is cleared on sign-out and feature is present in review workspace',()=>{
- assert(src.includes("data-review-mode=\"results\""));assert(src.includes("rpc('court_adjust_results_v1'"));assert(src.includes('resultAdjustmentHistory.clear();resultAdjustmentHistoryLoaded=false;'));assert(src.includes('結果調整／紀錄'));
+ assert(src.includes("data-review-mode=\"results\""));assert(src.includes("rpc('court_adjust_stage_results_v1'"));assert(src.includes('resultAdjustmentHistory.clear();resultAdjustmentHistoryLoaded=false;'));assert(src.includes('結果調整／紀錄'));
 });

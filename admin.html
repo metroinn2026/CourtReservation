@@ -6223,7 +6223,7 @@ async function loadResultAdjustmentHistory(client,isCurrent=()=>true){
 }
 function resultAdjustmentButton(record){
   if(!String(record.lottery_status||'').trim()&&!resultAdjustmentHistory.has(String(record.id)))return '';
-  return `<button type="button" class="court-phone-relations" data-result-adjust-id="${escapeHtml(String(record.id))}">結果調整／紀錄</button>`;
+  return `<button type="button" class="court-phone-relations" data-result-adjust-id="${escapeHtml(String(record.id))}">整場結果調整／紀錄</button>`;
 }
 function bindResultAdjustmentButtons(root){root.querySelectorAll('[data-result-adjust-id]').forEach(button=>button.onclick=()=>openResultAdjustmentForRecord(button.dataset.resultAdjustId));}
 function openResultAdjustmentForRecord(id){
@@ -6262,59 +6262,168 @@ function planResultAdjustment(record,action,replacementId,note){
   }
   return {reason,changes,payload:changes.map(({id,action,expected_status,expected_updated_at,expected_version})=>({id,action,expected_status,expected_updated_at,expected_version}))};
 }
+function resultAdjustmentActions(record){
+  const actions=record.lottery_status==='中籤'?['usage_excluded','time_excluded','withdrawn']:/^候補[1-9]\d*$/.test(String(record.lottery_status||''))?['promoted']:[];
+  if(resultAdjustmentHistory.get(String(record.id))?.some(h=>h.version>0))actions.push('original');
+  return actions;
+}
+function stageAdjustmentAfter(record,action){
+  if(!resultAdjustmentActions(record).includes(action))throw Error(`${compactRecordCode(record)} 的調整選項已變更，請重新載入。`);
+  return action==='promoted'?'中籤':action==='withdrawn'?'放棄':action==='original'?resultOriginalStatus(record):'未中籤';
+}
+function stageAdjustmentSnapshot(records){
+  return records.map(r=>({id:String(r.id),expected_status:r.lottery_status??'',expected_updated_at:r.updated_at??null,expected_version:resultAdjustmentHistory.get(String(r.id))?.[0]?.version||0}));
+}
+function planStageResultAdjustment(records,actions,note){
+  const reason=String(note||'').trim();if(!reason||reason.length>1500)throw Error('請填寫本場調整原因／附註（1500字內）。');
+  if(!resultAdjustmentHistoryLoaded||!qualificationReviewsLoaded||!capacitySettingsLoaded)throw Error('資格、名額或結果紀錄尚未載入。');
+  if(!records.length||records.length>500)throw Error('場次名單不完整或超過500筆。');
+  const key=sp88RecordStageKey(records[0]);
+  if(records.some(r=>sp88RecordStageKey(r)!==key))throw Error('整批調整限同一場次。');
+  const ids=new Set(records.map(r=>String(r.id))),full=allRecords.filter(r=>sp88RecordStageKey(r)===key);
+  if(full.length!==records.length||full.some(r=>!ids.has(String(r.id))))throw Error('場次名單已增減，請重新載入。');
+  if(records.some(r=>r.result_published))throw Error('本場有已公布結果，請先取消公布後再整場調整。');
+  const entries=actions instanceof Map?[...actions]:Object.entries(actions||{});
+  const waitRanks=records.filter(r=>/^候補[1-9]\d*$/.test(String(r.lottery_status||''))).map(r=>r.lottery_status);
+  if(new Set(waitRanks).size!==waitRanks.length)throw Error('本場備取順位重複，請先核對原始抽籤結果。');
+  const changes=entries.filter(([,action])=>action).map(([id,action])=>{
+    const r=records.find(x=>String(x.id)===String(id));if(!r)throw Error('調整名單含其他場次或不存在的登記。');
+    return {...stageAdjustmentSnapshot([r])[0],record:r,action,after:stageAdjustmentAfter(r,action)};
+  });
+  if(!changes.length)throw Error('請先在本場名單選擇要調整的結果。');
+  if(new Set(changes.map(c=>c.id)).size!==changes.length)throw Error('調整序號重複。');
+  const simulated=allRecords.map(r=>{const change=changes.find(c=>c.id===String(r.id));return change?{...r,lottery_status:change.after}:r;});
+  const anchor=records[0],stage={location:recordLocation(anchor),venue:anchor.venue_type,day:anchor.day_of_week,time:anchor.time_slot};
+  const capacity=getStageCapacity(stage),winners=simulated.filter(r=>sp88RecordStageKey(r)===key&&r.lottery_status==='中籤');
+  if(isStageClosed(stage)||!Number.isInteger(capacity)||capacity<1||winners.length>capacity)throw Error('場次未開放或本場調整後正取超過名額。');
+  if(stage.venue==='羽球'&&((capacity<3&&winners.some(r=>courtUsage(r)!=='羽球'))||new Set(winners.map(courtUsage)).size>1))throw Error('本場調整後正取用途仍不一致，請在同一張表一併調整其他用途的原正取。');
+  for(const r of winners){
+    if(!isQualifiedForLottery(r))throw Error(`${compactRecordCode(r)} 資格尚未確認合格。`);
+    if(simulated.some(p=>String(p.id)!==String(r.id)&&p.lottery_status==='中籤'&&lotteryTimesOverlap(r,p)&&lotteryWinnerRelation(r,p)))throw Error(`${compactRecordCode(r)} 同時段已有其他正取或疑似同一人，請先確認保留場次。`);
+  }
+  for(const change of changes.filter(c=>c.action==='promoted')){
+    const r=change.record;
+    const prior=simulated.filter(p=>sp88RecordStageKey(p)===key&&/^候補[1-9]\d*$/.test(String(p.lottery_status||''))&&Number(p.lottery_status.slice(2))<Number(r.lottery_status.slice(2))&&(stage.venue!=='羽球'||courtUsage(p)===courtUsage(r)));
+    if(prior.length)throw Error(`尚有較前順位 ${prior.map(p=>originalLotteryLabel(p.lottery_status)+' '+compactRecordCode(p)).join('、')}，請在本場一併確認並依順位遞補。`);
+  }
+  return {reason,changes,payload:changes.map(({id,action,expected_status,expected_updated_at,expected_version})=>({id,action,expected_status,expected_updated_at,expected_version})),stageExpected:{records:stageAdjustmentSnapshot(records),capacity},capacity,winnerCount:winners.length,vacancies:capacity-winners.length};
+}
+function proposeStageUsageAdjustment(records,usage){
+  if(!records.length||records[0].venue_type!=='羽球')throw Error('用途建議僅適用羽球場。');
+  if(!usage)throw Error('請先選擇本場保留用途。');
+  const anchor=records[0],capacity=getStageCapacity({location:recordLocation(anchor),venue:anchor.venue_type,day:anchor.day_of_week,time:anchor.time_slot});
+  if(capacity<3&&usage!=='羽球')throw Error('1或2面場次僅供羽球用途。');
+  if(records.some(r=>r.result_published))throw Error('本場已有公布結果，請先取消公布。');
+  const actions=new Map(),warnings=[];
+  const kept=records.filter(r=>r.lottery_status==='中籤'&&courtUsage(r)===usage);
+  records.filter(r=>r.lottery_status==='中籤'&&courtUsage(r)!==usage).forEach(r=>actions.set(String(r.id),'usage_excluded'));
+  const peers=allRecords.filter(r=>r.lottery_status==='中籤'&&!actions.has(String(r.id)));
+  const candidates=records.filter(r=>/^候補[1-9]\d*$/.test(String(r.lottery_status||''))&&courtUsage(r)===usage).sort((a,b)=>Number(a.lottery_status.slice(2))-Number(b.lottery_status.slice(2)));
+  let needed=Math.max(0,capacity-kept.length);
+  for(const candidate of candidates){
+    if(!needed)break;
+    if(!isQualifiedForLottery(candidate)||peers.some(p=>String(p.id)!==String(candidate.id)&&lotteryTimesOverlap(candidate,p)&&lotteryWinnerRelation(candidate,p))){warnings.push(`${compactRecordCode(candidate)} 為較前備取，資格或同時段正取尚待確認，已停止後續自動建議。`);break;}
+    actions.set(String(candidate.id),'promoted');peers.push(candidate);needed--;
+  }
+  if(needed)warnings.push(`本場仍有 ${needed} 個正取名額未補足，請核對符合用途的備取名單。`);
+  return {actions,warnings,reason:`本時段限同一球類使用，確認採「${usage}」用途；其他用途原正取調整為未獲分配，並依原備取順位遞補。`};
+}
+function buildResultAdjustmentStages(scope,filter='all',focusId=''){
+  const checks=buildLotteryResultChecks(),issues=new Set([...checks.cross,...checks.suspected,...checks.usage].flatMap(x=>x.records.map(r=>String(r.id))));
+  const focus=allRecords.find(r=>String(r.id)===String(focusId)),focusKey=focus&&sp88RecordStageKey(focus);
+  const allowed=new Set(scope.map(sp88RecordStageKey));
+  return lotteryResultStageGroups(allRecords).filter(s=>focusKey?s.key===focusKey:allowed.has(s.key)).map(s=>{
+    const rows=s.records.filter(r=>r.lottery_status||resultAdjustmentHistory.has(String(r.id))),winners=s.records.filter(r=>r.lottery_status==='中籤'),waitlist=s.records.filter(r=>/^候補[1-9]\d*$/.test(String(r.lottery_status||'')));
+    const capacity=getStageCapacity(s),issue=s.records.some(r=>issues.has(String(r.id))),changed=s.records.some(r=>resultAdjustmentHistory.get(String(r.id))?.some(h=>h.version>0));
+    return {...s,rows,winners,waitlist,capacity,issue,changed,vacant:winners.length<capacity&&waitlist.length>0};
+  }).filter(s=>s.rows.length&&(focusKey||filter==='all'||filter==='issues'&&(s.issue||s.vacant)||filter==='changed'&&s.changed)).sort((a,b)=>String(a.location).localeCompare(String(b.location),'zh-Hant')||venueSortValue(a.venue)-venueSortValue(b.venue)||daySortValue(a.day)-daySortValue(b.day)||timeSortValue(a.time)-timeSortValue(b.time));
+}
+
 let resultAdjustmentRequest=0;
-async function renderResultAdjustmentList(container){
-  const request=++resultAdjustmentRequest;
-  container.innerHTML='<p class="small">正在讀取抽籤結果與調整紀錄…</p>';
-  const epoch=adminSessionEpoch;
+async function renderResultAdjustmentList(container,feedback=''){
+  const request=++resultAdjustmentRequest,epoch=adminSessionEpoch;
+  container.innerHTML='<p class="small">正在讀取場次與結果調整紀錄…</p>';
   await loadResultAdjustmentHistory(reviewDbClient(),()=>courtAuthLoginActive&&!adminSigningOut&&epoch===adminSessionEpoch);
   if(!container.isConnected||request!==resultAdjustmentRequest)return;
   if(!resultAdjustmentHistoryLoaded){container.innerHTML='<p>無法讀取結果調整紀錄，請重新載入。</p>';return;}
-  const checks=buildLotteryResultChecks(),issueIds=new Set([...checks.cross,...checks.suspected,...checks.usage].flatMap(x=>x.records.map(r=>String(r.id))));
-  const records=(resultAdjustmentFocusId?allRecords.filter(r=>String(r.id)===resultAdjustmentFocusId):getFilteredRecords()).filter(r=>r.lottery_status||resultAdjustmentHistory.has(String(r.id)))
-    .filter(r=>resultAdjustmentFocusId||resultAdjustmentFilter==='all'||resultAdjustmentFilter==='issues'&&issueIds.has(String(r.id))||resultAdjustmentFilter==='changed'&&resultAdjustmentHistory.get(String(r.id))?.some(h=>h.version>0))
-    .sort((a,b)=>sp88RecordStageKey(a).localeCompare(sp88RecordStageKey(b),'zh-Hant')||statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status));
-  const pages=Math.max(1,Math.ceil(records.length/40));resultAdjustmentPage=Math.max(1,Math.min(resultAdjustmentPage,pages));
-  const visible=records.slice((resultAdjustmentPage-1)*40,resultAdjustmentPage*40);
-  container.innerHTML=`<section class="panel admin-inner-section"><div class="admin-section-head"><h3>抽籤結果調整</h3></div><p class="small">保留首次留存的原始結果及歷次調整；資格審查結果不變。調整原因必填，原正取與遞補可一次確認，結果維持未公布。</p><div class="ux-review-toolbar"><select id="resultAdjustmentFilter">${[['issues','待確認衝突'],['changed','已調整紀錄'],['all','全部抽籤結果']].map(([v,label])=>`<option value="${v}" ${resultAdjustmentFilter===v?'selected':''}>${label}</option>`).join('')}</select><button type="button" class="btn btn-gray" id="resultAdjustmentReload">重新載入</button>${resultAdjustmentFocusId?'<button type="button" class="btn btn-gray" id="resultAdjustmentBack">返回全部案件</button>':''}<span class="small">共 ${records.length} 筆｜第 ${resultAdjustmentPage}/${pages} 頁</span></div><div class="table-wrap"><table><thead><tr><th>姓名／序號</th><th>場次／使用用途</th><th>原始結果</th><th>目前核定結果</th><th>操作</th></tr></thead><tbody>${visible.map((r,i)=>`<tr><td>${escapeHtml(r.name)}<br>${escapeHtml(compactRecordCode(r))}</td><td>${escapeHtml(correctionNoticeSlot(r))}<br>用途：${escapeHtml(courtUsage(r))}</td><td>${escapeHtml(originalLotteryLabel(resultOriginalStatus(r)))}</td><td>${escapeHtml(resultStatusLabel(r))}${r.result_published?'<br>已公布':''}</td><td><button type="button" class="btn btn-primary" data-adjust-expand="${i}">展開處理</button></td></tr><tr hidden id="resultAdjustDetail${i}"><td colspan="5"></td></tr>`).join('')||'<tr><td colspan="5">目前沒有符合條件的結果；可改選「全部抽籤結果」。</td></tr>'}</tbody></table></div><div class="pager"><button type="button" class="btn btn-gray" id="resultAdjustmentPrev" ${resultAdjustmentPage===1?'disabled':''}>上一頁</button><button type="button" class="btn btn-gray" id="resultAdjustmentNext" ${resultAdjustmentPage===pages?'disabled':''}>下一頁</button></div></section>`;
-  container.querySelector('#resultAdjustmentFilter').onchange=e=>{resultAdjustmentFocusId='';resultAdjustmentFilter=e.target.value;resultAdjustmentPage=1;void renderResultAdjustmentList(container);};
-  container.querySelector('#resultAdjustmentReload').onclick=async()=>{if(await loadAllData()!==false)void renderResultAdjustmentList(container);};
-  const back=container.querySelector('#resultAdjustmentBack');if(back)back.onclick=()=>{resultAdjustmentFocusId='';resultAdjustmentPage=1;void renderResultAdjustmentList(container);};
-  container.querySelector('#resultAdjustmentPrev').onclick=()=>{resultAdjustmentPage--;void renderResultAdjustmentList(container);};
-  container.querySelector('#resultAdjustmentNext').onclick=()=>{resultAdjustmentPage++;void renderResultAdjustmentList(container);};
+  const stages=buildResultAdjustmentStages(getFilteredRecords(),resultAdjustmentFilter,resultAdjustmentFocusId),pages=Math.max(1,Math.ceil(stages.length/20));
+  resultAdjustmentPage=Math.max(1,Math.min(resultAdjustmentPage,pages));const visible=stages.slice((resultAdjustmentPage-1)*20,resultAdjustmentPage*20);
+  container.innerHTML=`<section class="panel admin-inner-section"><div class="admin-section-head"><h3>抽籤結果調整（依場次）</h3></div><p class="small">展開一個場次，即可在同一張表更正全部正備取；整場預覽、一次儲存。姓名或用途篩選只用來找場次，展開後仍顯示本場完整名單。</p>${feedback?`<p role="status" class="msg ok">${escapeHtml(feedback)}</p>`:''}<div class="ux-review-toolbar"><select id="resultAdjustmentFilter">${[['issues','待確認衝突／正取不足'],['changed','已調整場次'],['all','全部抽籤場次']].map(([v,label])=>`<option value="${v}" ${resultAdjustmentFilter===v?'selected':''}>${label}</option>`).join('')}</select><button type="button" class="btn btn-gray" id="resultAdjustmentReload">重新載入</button>${resultAdjustmentFocusId?'<button type="button" class="btn btn-gray" id="resultAdjustmentBack">返回場次清單</button>':''}<span class="small">共 ${stages.length} 場｜第 ${resultAdjustmentPage}/${pages} 頁</span></div><div class="table-wrap"><table><thead><tr><th>場次</th><th>正取／名額</th><th>備取</th><th>待確認事項</th><th>操作</th></tr></thead><tbody>${visible.map((s,i)=>`<tr><td>${escapeHtml(locationLabel(s.location))}｜${escapeHtml(courtVenueLabel({venue_type:s.venue}))}<br>${escapeHtml(s.day)} ${escapeHtml(s.time)}</td><td>${s.winners.length}／${s.capacity}</td><td>${s.waitlist.length} 筆</td><td>${[s.issue?'正取用途或時段衝突':'',s.vacant?'正取不足':'',s.changed?'已有調整紀錄':''].filter(Boolean).join('、')||'—'}</td><td><button type="button" class="btn btn-primary" data-adjust-expand="${i}">展開整場處理</button></td></tr><tr hidden id="resultAdjustDetail${i}"><td colspan="5"></td></tr>`).join('')||'<tr><td colspan="5">目前沒有符合條件的場次，可改選「全部抽籤場次」。</td></tr>'}</tbody></table></div><div class="pager"><button type="button" class="btn btn-gray" id="resultAdjustmentPrev" ${resultAdjustmentPage===1?'disabled':''}>上一頁</button><button type="button" class="btn btn-gray" id="resultAdjustmentNext" ${resultAdjustmentPage===pages?'disabled':''}>下一頁</button></div></section>`;
+  const canLeave=()=>![...container.querySelectorAll('[data-stage-dirty="true"]')].length||confirm('本場尚有未儲存的調整，確定放棄草稿並切換嗎？');
+  container.querySelector('#resultAdjustmentFilter').onchange=e=>{if(!canLeave()){e.target.value=resultAdjustmentFilter;return;}resultAdjustmentFocusId='';resultAdjustmentFilter=e.target.value;resultAdjustmentPage=1;void renderResultAdjustmentList(container);};
+  container.querySelector('#resultAdjustmentReload').onclick=async()=>{if(canLeave()&&await loadAllData()!==false)void renderResultAdjustmentList(container);};
+  const back=container.querySelector('#resultAdjustmentBack');if(back)back.onclick=()=>{if(!canLeave())return;resultAdjustmentFocusId='';resultAdjustmentPage=1;void renderResultAdjustmentList(container);};
+  container.querySelector('#resultAdjustmentPrev').onclick=()=>{if(canLeave()){resultAdjustmentPage--;void renderResultAdjustmentList(container);}};
+  container.querySelector('#resultAdjustmentNext').onclick=()=>{if(canLeave()){resultAdjustmentPage++;void renderResultAdjustmentList(container);}};
   container.querySelectorAll('[data-adjust-expand]').forEach(button=>button.onclick=()=>{
-    const i=Number(button.dataset.adjustExpand),row=container.querySelector('#resultAdjustDetail'+i);row.hidden=!row.hidden;
-    if(!row.hidden)renderResultAdjustmentEditor(row.querySelector('td'),visible[i],container);
+    const i=Number(button.dataset.adjustExpand),row=container.querySelector('#resultAdjustDetail'+i),host=row.querySelector('td');
+    if(row.hidden){
+      if(!canLeave())return;
+      container.querySelectorAll('tr[id^="resultAdjustDetail"]').forEach(other=>{if(other!==row){other.hidden=true;other.querySelector('td').innerHTML='';}});
+      container.querySelectorAll('[data-adjust-expand]').forEach(other=>{if(other!==button)other.textContent='展開整場處理';});
+    }
+    if(!row.hidden&&host.querySelector('[data-stage-dirty="true"]')&&!confirm('本場尚有未儲存的調整，確定放棄草稿並收合嗎？'))return;
+    row.hidden=!row.hidden;button.textContent=row.hidden?'展開整場處理':'收合場次';
+    if(!row.hidden)renderStageResultAdjustmentEditor(host,visible[i].records,container);else host.innerHTML='';
   });
   if(resultAdjustmentFocusId&&visible.length)container.querySelector('[data-adjust-expand]')?.click();
 }
 function renderResultAdjustmentEditor(host,record,listContainer){
-  const history=resultAdjustmentHistory.get(String(record.id))||[],sameStage=allRecords.filter(r=>sp88RecordStageKey(r)===sp88RecordStageKey(record));
-  const waitlist=sameStage.filter(r=>/^候補[1-9]\d*$/.test(String(r.lottery_status||''))).sort((a,b)=>statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status));
-  const actions=record.lottery_status==='中籤'?['usage_excluded','time_excluded','withdrawn']:/^候補[1-9]\d*$/.test(String(record.lottery_status||''))?['promoted']:[];
-  if(history.some(h=>h.version>0))actions.push('original');
-  host.innerHTML=`<div class="panel"><h4>登記基本資料</h4><p>${escapeHtml(record.name)}｜${escapeHtml(memberIdentityType(record))}｜識別末四碼 ${escapeHtml(memberIdentifierLast4(record))}｜手機 ${escapeHtml(record.phone)}<br>${escapeHtml(correctionNoticeSlot(record))}｜用途 ${escapeHtml(courtUsage(record))}</p><p>原始結果（首次留存）：${escapeHtml(originalLotteryLabel(resultOriginalStatus(record)))} → 目前核定：${escapeHtml(resultStatusLabel(record))}</p>${record.result_published?'<p>本筆已公布，請先取消公布後再調整。</p>':`<form data-result-adjust-form><label>調整結果<select name="action" required><option value="">請選擇</option>${actions.map(action=>`<option value="${action}">${RESULT_ADJUSTMENT_LABELS[action]||'復原首次留存結果'}</option>`).join('')}</select></label><label data-result-replacement hidden>同場備取連動遞補<select name="replacement"><option value="">本次不連動遞補</option>${waitlist.map(r=>`<option value="${escapeHtml(String(r.id))}" ${isQualifiedForLottery(r)?'':'disabled'}>${escapeHtml(originalLotteryLabel(r.lottery_status))}｜${escapeHtml(compactRecordCode(r))}｜${escapeHtml(r.name)}｜${escapeHtml(courtUsage(r))}${isQualifiedForLottery(r)?'':'（資格待確認）'}</option>`).join('')}</select></label><label>調整原因／附註（必填）<textarea name="reason" required maxlength="1500" rows="3" style="width:100%" placeholder="請說明適用規定、保留場次、用途或民眾回覆情形。">${escapeHtml(resultAdjustmentDraftReason)}</textarea></label><button type="submit" class="btn btn-primary">預覽並儲存調整</button></form>`}<p data-result-message role="status"></p><h4>歷次調整紀錄</h4><div class="table-wrap"><table><thead><tr><th>時間</th><th>調整前</th><th>調整後</th><th>原因</th><th>承辦人</th></tr></thead><tbody>${history.filter(h=>h.version>0).map(h=>`<tr><td>${escapeHtml(correctionNoticeDate(h.changed_at))}</td><td>${escapeHtml((()=>{const prior=history.find(p=>p.version===h.version-1&&p.after_status===h.before_status);return prior&&RESULT_ADJUSTMENT_LABELS[prior.action]||originalLotteryLabel(h.before_status);})())}</td><td>${escapeHtml(RESULT_ADJUSTMENT_LABELS[h.action]||originalLotteryLabel(h.after_status))}</td><td>${escapeHtml(h.reason)}</td><td>${escapeHtml(h.admin_label)}</td></tr>`).join('')||'<tr><td colspan="5">尚無調整紀錄。</td></tr>'}</tbody></table></div><h4>同場次正備取對照</h4><div class="table-wrap"><table><thead><tr><th>序號</th><th>姓名</th><th>使用用途</th><th>原始結果</th><th>目前核定</th></tr></thead><tbody>${sameStage.filter(r=>r.lottery_status==='中籤'||/^候補\d+$/.test(String(r.lottery_status||''))||latestResultAdjustment(r)).sort((a,b)=>statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status)).map(r=>`<tr><td>${escapeHtml(compactRecordCode(r))}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(courtUsage(r))}</td><td>${escapeHtml(originalLotteryLabel(resultOriginalStatus(r)))}</td><td>${escapeHtml(resultStatusLabel(r))}</td></tr>`).join('')}</tbody></table></div></div>`;
+  renderStageResultAdjustmentEditor(host,allRecords.filter(r=>sp88RecordStageKey(r)===sp88RecordStageKey(record)),listContainer);
+}
+function renderStageResultAdjustmentEditor(host,records,listContainer){
+  const anchor=records[0];if(!anchor)return;
+  const stage={location:recordLocation(anchor),venue:anchor.venue_type,day:anchor.day_of_week,time:anchor.time_slot},capacity=getStageCapacity(stage),published=records.some(r=>r.result_published);
+  const rows=records.filter(r=>r.lottery_status||resultAdjustmentHistory.has(String(r.id))).sort((a,b)=>statusSortValue(resultOriginalStatus(a))-statusSortValue(resultOriginalStatus(b))||String(a.serial_number).localeCompare(String(b.serial_number)));
+  const history=records.flatMap(r=>(resultAdjustmentHistory.get(String(r.id))||[]).filter(h=>h.version>0).map(h=>({...h,record:r}))).sort((a,b)=>String(b.changed_at).localeCompare(String(a.changed_at))||String(a.batch_id).localeCompare(String(b.batch_id)));
+  const usages=[...new Set(rows.map(courtUsage))].filter(Boolean),winnerUsages=[...new Set(rows.filter(r=>r.lottery_status==='中籤').map(courtUsage))];
+  const preferred=capacity<3?'羽球':winnerUsages.length===1?winnerUsages[0]:'';
+  const usageOptions=[...new Set(['羽球',...usages])].filter(u=>u!=='待確認');
+  host.innerHTML=`<div class="panel" data-stage-editor data-stage-dirty="false"><h4 style="margin:0 0 8px">${escapeHtml(locationLabel(stage.location))}｜${escapeHtml(courtVenueLabel({venue_type:stage.venue}))}｜${escapeHtml(stage.day)} ${escapeHtml(stage.time)}</h4><p class="small">正取名額 ${capacity} 名。原始結果與備取順位會保留；可在下表一次調整多筆，再整場確認。</p>${published?'<p class="msg info">本場有已公布結果，請先取消公布後再整場調整。</p>':''}<form data-stage-result-form>${stage.venue==='羽球'&&!published?`<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:12px"><label>本場保留用途<select data-stage-usage><option value="">請選擇</option>${usageOptions.map(u=>`<option value="${escapeHtml(u)}" ${u===preferred?'selected':''} ${capacity<3&&u!=='羽球'?'disabled':''}>${escapeHtml(u)}</option>`).join('')}</select></label><button type="button" class="btn btn-gray" data-stage-suggest>依用途帶入調整建議</button><span class="small">僅帶入草稿，不會直接儲存。</span></div>`:''}<div class="msg info" data-stage-summary></div><label>本場調整原因／附註（必填）<textarea name="reason" required maxlength="1500" rows="2" style="width:100%" ${published?'disabled':''} placeholder="說明保留用途、時段衝突或民眾放棄情形；本次整場異動會共用此說明。">${escapeHtml(resultAdjustmentDraftReason)}</textarea></label><div style="display:flex;gap:8px;margin:10px 0"><button type="submit" class="btn btn-primary" ${published?'disabled':''}>預覽並整場儲存</button><button type="button" class="btn btn-gray" data-stage-reset ${published?'disabled':''}>清除本場草稿</button></div><p data-stage-message role="status"></p><div class="table-wrap" style="max-height:55vh;overflow:auto"><table style="min-width:920px"><thead style="position:sticky;top:0;z-index:1;background:#f1f5f9"><tr><th>登記序號</th><th>姓名／會員／手機</th><th>使用用途</th><th>原始結果</th><th>目前核定</th><th>本次調整</th><th>調整後預覽</th></tr></thead><tbody>${rows.map((r,i)=>`<tr data-stage-row="${i}"><td>${escapeHtml(compactRecordCode(r))}</td><td>${escapeHtml(r.name)}<div class="small">${escapeHtml(memberIdentityType(r))}｜${escapeHtml(r.phone||'—')}</div></td><td>${escapeHtml(courtUsage(r))}</td><td>${escapeHtml(originalLotteryLabel(resultOriginalStatus(r)))}</td><td>${escapeHtml(resultStatusLabel(r))}</td><td><select data-stage-result-id="${escapeHtml(String(r.id))}" style="min-width:210px" ${published||!resultAdjustmentActions(r).length?'disabled':''}><option value="">維持目前結果</option>${resultAdjustmentActions(r).map(action=>`<option value="${action}">${RESULT_ADJUSTMENT_LABELS[action]||'復原首次留存結果'}</option>`).join('')}</select></td><td data-stage-after="${i}">${escapeHtml(resultStatusLabel(r))}</td></tr>`).join('')}</tbody></table></div></form><details style="margin-top:16px"><summary>本場歷次調整紀錄（${history.length} 筆）</summary><div class="table-wrap"><table><thead><tr><th>時間</th><th>序號／姓名</th><th>調整前</th><th>調整後</th><th>原因</th><th>承辦人</th></tr></thead><tbody>${history.map(h=>`<tr><td>${escapeHtml(correctionNoticeDate(h.changed_at))}</td><td>${escapeHtml(compactRecordCode(h.record))} ${escapeHtml(h.record.name)}</td><td>${escapeHtml((()=>{const prior=(resultAdjustmentHistory.get(String(h.record.id))||[]).find(p=>p.version===h.version-1&&p.after_status===h.before_status);return prior&&RESULT_ADJUSTMENT_LABELS[prior.action]||originalLotteryLabel(h.before_status);})())}</td><td>${escapeHtml(RESULT_ADJUSTMENT_LABELS[h.action]||originalLotteryLabel(h.after_status))}</td><td>${escapeHtml(h.reason)}</td><td>${escapeHtml(h.admin_label)}</td></tr>`).join('')||'<tr><td colspan="6">尚無調整紀錄。</td></tr>'}</tbody></table></div></details></div>`;
   resultAdjustmentDraftReason='';
-  const form=host.querySelector('[data-result-adjust-form]');if(!form)return;
-  const message=host.querySelector('[data-result-message]');
-  form.elements.action.onchange=()=>{const linked=['usage_excluded','time_excluded','withdrawn'].includes(form.elements.action.value);host.querySelector('[data-result-replacement]').hidden=!linked;if(!linked)form.elements.replacement.value='';};
-  form.onsubmit=async event=>{
-    event.preventDefault();const button=form.querySelector('button');if(button.disabled)return;
-    button.disabled=true;const epoch=adminSessionEpoch;
-    const authorized=()=>courtAuthLoginActive&&!adminSigningOut&&epoch===adminSessionEpoch;
+  const form=host.querySelector('[data-stage-result-form]'),message=host.querySelector('[data-stage-message]'),editor=host.querySelector('[data-stage-editor]');
+  const selects=[...form.querySelectorAll('[data-stage-result-id]')],readActions=()=>new Map(selects.filter(s=>s.value).map(s=>[s.dataset.stageResultId,s.value]));
+  const update=()=>{
+    const actions=readActions();let after=records.filter(r=>r.lottery_status==='中籤').length;
+    rows.forEach((r,i)=>{
+      const action=actions.get(String(r.id)),next=action?stageAdjustmentAfter(r,action):r.lottery_status;
+      if(action)after+=(next==='中籤'?1:0)-(r.lottery_status==='中籤'?1:0);
+      const cell=host.querySelector(`[data-stage-after="${i}"]`);cell.textContent=action?RESULT_ADJUSTMENT_LABELS[action]||originalLotteryLabel(next):resultStatusLabel(r);
+      host.querySelector(`[data-stage-row="${i}"]`).style.background=action?'#fff7ed':'';
+    });
+    host.querySelector('[data-stage-summary]').textContent=`目前正取 ${records.filter(r=>r.lottery_status==='中籤').length} 名 → 調整後 ${after}／${capacity} 名｜本次變更 ${actions.size} 筆${after<capacity?`｜尚缺 ${capacity-after} 名`:after>capacity?'｜超過名額，請修正':''}`;
+    editor.dataset.stageDirty=actions.size?'true':'false';
+  };
+  selects.forEach(select=>select.onchange=()=>{message.textContent='';update();});update();
+  form.querySelector('[data-stage-reset]').onclick=()=>{if(readActions().size&&!confirm('確定清除本場尚未儲存的結果草稿嗎？'))return;selects.forEach(s=>s.value='');message.textContent='已清除結果草稿，資料庫未變更。';update();};
+  const suggest=form.querySelector('[data-stage-suggest]');if(suggest)suggest.onclick=()=>{
+    if(readActions().size&&!confirm('已有手動調整草稿，確定改用本場用途產生新的建議嗎？'))return;
     try{
-      const plan=planResultAdjustment(record,form.elements.action.value,form.elements.replacement.value,form.elements.reason.value);
-      const preview=plan.changes.map(c=>`${escapeHtml(compactRecordCode(c.record))} ${escapeHtml(c.record.name)}：${escapeHtml(resultStatusLabel(c.record))} → ${escapeHtml(RESULT_ADJUSTMENT_LABELS[c.action]||originalLotteryLabel(c.after))}`).join('<br>');
-      if(!await confirmModal('確認抽籤結果調整',`${preview}<br><br>調整說明：${escapeHtml(plan.reason)}<br><br>儲存後維持未公布，兩筆連動調整會一起儲存。`))return;
+      const proposal=proposeStageUsageAdjustment(records,form.querySelector('[data-stage-usage]').value);
+      selects.forEach(s=>s.value=proposal.actions.get(s.dataset.stageResultId)||'');
+      if(!form.elements.reason.value.trim())form.elements.reason.value=proposal.reason;
+      message.textContent=proposal.warnings.join(' ')||'已帶入本場調整草稿，請核對下表後按「預覽並整場儲存」。';update();
+    }catch(e){message.textContent=e.message;}
+  };
+  let busy=false;
+  form.onsubmit=async event=>{
+    event.preventDefault();if(busy||published)return;busy=true;
+    const enabled=[...form.querySelectorAll('button,select,textarea')].filter(e=>!e.disabled);enabled.forEach(e=>e.disabled=true);
+    const epoch=adminSessionEpoch,authorized=()=>courtAuthLoginActive&&!adminSigningOut&&epoch===adminSessionEpoch;
+    try{
+      const plan=planStageResultAdjustment(records,readActions(),form.elements.reason.value);
+      const preview=`<p>${escapeHtml(stage.venue)}｜${escapeHtml(stage.day)} ${escapeHtml(stage.time)}<br>調整 ${plan.changes.length} 筆，調整後正取 ${plan.winnerCount}／${plan.capacity} 名${plan.vacancies?`，尚缺 ${plan.vacancies} 名`:''}。</p><div style="max-height:45vh;overflow:auto"><table><thead><tr><th>序號／姓名</th><th>用途</th><th>調整前</th><th>調整後</th></tr></thead><tbody>${plan.changes.map(c=>`<tr><td>${escapeHtml(compactRecordCode(c.record))} ${escapeHtml(c.record.name)}</td><td>${escapeHtml(courtUsage(c.record))}</td><td>${escapeHtml(resultStatusLabel(c.record))}</td><td>${escapeHtml(RESULT_ADJUSTMENT_LABELS[c.action]||originalLotteryLabel(c.after))}</td></tr>`).join('')}</tbody></table></div><p>本場說明：${escapeHtml(plan.reason)}</p><p>全部異動一次儲存；任一筆驗證失敗，整批均不儲存。結果維持未公布。</p>`;
+      if(!await confirmModal('確認整場結果調整',preview))return;
       if(!authorized())throw Error('登入狀態已變更，請重新登入。');
-      const {data,error}=await reviewDbClient().rpc('court_adjust_results_v1',{p_changes:plan.payload,p_reason:plan.reason});
+      message.textContent='正在一次儲存本場調整…';
+      const {data,error}=await reviewDbClient().rpc('court_adjust_stage_results_v1',{p_changes:plan.payload,p_reason:plan.reason,p_stage_expected:plan.stageExpected});
       if(error)throw error;
       if(data?.updated_count!==plan.changes.length)throw Error('更新筆數不符，請重新載入確認。');
-      message.textContent='已儲存結果調整，正在重新比對…';
       if(await loadAllData()===false||!authorized())return;
-      await renderResultAdjustmentList(listContainer);
-    }catch(error){message.textContent='無法儲存：'+(error?.message||'請重新載入後再試。');}
-    finally{button.disabled=false;}
+      resultAdjustmentFocusId=String(anchor.id);
+      await renderResultAdjustmentList(listContainer,`已一次儲存本場 ${plan.changes.length} 筆結果調整，維持未公布。`);
+    }catch(error){message.textContent='未能完成整場儲存：'+(error?.message||'請重新載入後再試。')+' 草稿仍保留在本頁。';}
+    finally{busy=false;enabled.forEach(e=>e.disabled=false);}
   };
 }
 
