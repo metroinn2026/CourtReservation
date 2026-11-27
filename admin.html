@@ -1046,6 +1046,11 @@
     flex-direction:column;
     gap:6px;
   }
+  #dayCheckTable #stageListProgressFilter{
+    width:280px!important;
+    min-width:230px!important;
+    max-width:100%;
+  }
   .stage-list-filter-field label{
     font-size:11.5px;
     font-weight:900;
@@ -6965,6 +6970,26 @@ function renderRegistrationLimitEditor(){
   };
 }
 function stageKeyFromRecord(r){ return `${recordLocation(r)}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`; }
+// 場次進度僅依合格登記計算；不寫入抽籤結果或公布狀態。
+function summarizeLotteryStageProgress({qualified, pendingCount, people, capacity, closed, loaded}){
+  const total=qualified.length;
+  const withResult=qualified.filter(r=>{const value=String(r.lottery_status||'').trim();return value==='中籤'||value==='未中籤'||value==='放棄'||/^候補[1-9]\d*$/.test(value);}).length;
+  const published=qualified.filter(r=>r.result_published===true).length;
+  const base={qualifiedCount:total,qualifiedPeople:people,withResult,published};
+  const result=(progress,status,reason)=>({...base,progress,status,reason});
+  if(!loaded)return result('review','待資格確認','資格審查資料尚未載入');
+  if(pendingCount)return result('review','待資格確認',`尚有 ${pendingCount} 筆待審查或補正`);
+  if(!total)return result('empty','無合格登記','無合格登記，不列入待處理場次');
+  if(closed)return result('review','待確認','場次未開放，請確認場次設定');
+  if(!Number.isFinite(capacity)||capacity<=0)return result('review','待確認','正取名額尚未設定');
+  if(withResult<total){
+    const needsDraw=people>capacity;
+    return result(needsDraw?'draw_pending':'exempt_pending',needsDraw?'需抽籤、尚未完成':'免抽籤、待核定正取',`合格 ${people} 人／名額 ${capacity} 人；${withResult ? `已有結果 ${withResult}／${total} 筆，尚缺 ${total-withResult} 筆` : needsDraw?'尚無抽籤結果':'合格人數未超過名額，尚待核定正取'}`);
+  }
+  if(published===total)return result('published','已公布',`合格 ${total} 筆結果均已公布`);
+  return result('ready','已完成、待公布',`合格 ${total} 筆結果已齊，尚有 ${total-published} 筆未公布`);
+}
+
 function getStageGroups(records=allRecords){
   const map={};
   records.forEach(r=>{
@@ -11576,7 +11601,7 @@ async function applyPromotionSuggestion(stage){
       if(location && recordLocation(r)!==location) return false;
       if(venue && r.venue_type!==venue) return false;
       if(day && r.day_of_week!==day) return false;
-      if(time && r.time_slot!==time) return false;
+      if(time && slotRangeKey(r.time_slot)!==slotRangeKey(time)) return false;
       return true;
     });
     return {location,venue,day,time,records};
@@ -11603,7 +11628,7 @@ async function applyPromotionSuggestion(stage){
     const stageMap={};
     records.forEach(r=>{
       const loc=recordLocation(r);
-      const key=`${loc}|${r.venue_type||''}|${r.day_of_week||''}|${r.time_slot||''}`;
+      const key=`${loc}|${r.venue_type||''}|${String(r.day_of_week||'').replace(/^週/,'周')}|${slotRangeKey(r.time_slot)}`;
       if(!stageMap[key]){
         stageMap[key]={
           location:loc,
@@ -11617,28 +11642,17 @@ async function applyPromotionSuggestion(stage){
     });
 
     const stages=Object.values(stageMap).map(s=>{
-      const people=new Set(s.records.map(r=>`${normalizePhone(r.phone)}|${r.id_last4||''}`)).size;
-      const withResult=s.records.filter(r=>String(r.lottery_status||'').trim()).length;
-      const published=s.records.filter(r=>r.result_published).length;
-      const configuredCapacity=Number(
-        capacitySettings[settingKey(s.venue,s.day,s.time)] ??
-        capacityMap[s.venue] ??
-        0
-      );
-      // 初次進入不執行全場次的昂貴異常比對；承辦可按場次檢查。
-
-      let status='待抽籤';
-      if(withResult>0 && withResult<s.records.length) status='處理中';
-      if(withResult===s.records.length && withResult>0){
-        status=published===s.records.length ? '已公布' : '已完成';
-      }
-
-      return {
-        ...s,
-        people,
-        capacity:configuredCapacity,
-        status
-      };
+      const qualified=[];
+      let pendingCount=0;
+      if(qualificationReviewsLoaded)s.records.forEach(r=>{
+        const state=qualificationState(r);
+        if(state==='qualified')qualified.push(r);
+        else if(state!=='invalid')pendingCount++;
+      });
+      const capacity=getStageCapacity(s);
+      const progress=summarizeLotteryStageProgress({qualified,pendingCount,
+        people:countRegistrationPeople(qualified),capacity,closed:isStageClosed(s),loaded:qualificationReviewsLoaded});
+      return {...s,people:countRegistrationPeople(s.records),capacity,...progress};
     }).sort((a,b)=>{
       const locCmp=String(a.location).localeCompare(String(b.location),'zh-Hant');
       if(locCmp!==0) return locCmp;
@@ -11647,27 +11661,11 @@ async function applyPromotionSuggestion(stage){
         || timeSortValue(a.time)-timeSortValue(b.time);
     });
 
-    const statusTag=(s)=>{
-      if(s==='已公布') return '<span class="tag green">已公布</span>';
-      if(s==='已完成') return '<span class="tag blue">已完成</span>';
-      if(s==='處理中') return '<span class="tag warn">處理中</span>';
-      return '<span class="tag gray">待抽籤</span>';
-    };
+    const statusTag=(stage)=>`<span class="tag ${stage.progress==='published'?'green':stage.progress==='ready'?'blue':['draw_pending','exempt_pending','review'].includes(stage.progress)?'warn':'gray'}">${escapeHtml(stage.status)}</span>`;
     const anomalyText=(types)=>types.length
       ? types.map(t=>`<span class="tag warn" style="margin:2px 4px 2px 0;display:inline-block;">${escapeHtml(t)}</span>`).join('')
       : '<span class="tag gray">正常</span>';
 
-    const rows=[...records].sort((a,b)=>{
-      const locCmp=recordLocation(a).localeCompare(recordLocation(b),'zh-Hant');
-      if(locCmp!==0) return locCmp;
-      return venueSortValue(a.venue_type)-venueSortValue(b.venue_type) || daySortValue(a.day_of_week)-daySortValue(b.day_of_week) || timeSortValue(a.time_slot)-timeSortValue(b.time_slot) || statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status) || String(a.registered_at||'').localeCompare(String(b.registered_at||''));
-    });
-
-    const scope=JSON.stringify([location,venue,day,time]);
-    if(scope!==dayCheckScope){dayCheckScope=scope;dayCheckPage=1;dayCheckAnomalyCache.clear();}
-    const pageCount=Math.max(1,Math.ceil(rows.length/dayCheckPageSize));
-    dayCheckPage=Math.max(1,Math.min(dayCheckPage,pageCount));
-    const pageRows=rows.slice((dayCheckPage-1)*dayCheckPageSize,dayCheckPage*dayCheckPageSize);
     const stageLocations=[...new Set(stages.map(s=>s.location).filter(Boolean))]
       .sort((a,b)=>String(a).localeCompare(String(b),'zh-Hant'));
     const stageVenues=[...new Set(stages.map(s=>s.venue).filter(Boolean))]
@@ -11678,6 +11676,7 @@ async function applyPromotionSuggestion(stage){
     if(window.stageListLocationFilter===undefined) window.stageListLocationFilter='';
     if(window.stageListVenueFilter===undefined) window.stageListVenueFilter='';
     if(window.stageListDayFilter===undefined) window.stageListDayFilter='';
+    if(window.stageListProgressFilter===undefined) window.stageListProgressFilter='';
 
     if(window.stageListLocationFilter && !stageLocations.includes(window.stageListLocationFilter)) window.stageListLocationFilter='';
     if(window.stageListVenueFilter && !stageVenues.includes(window.stageListVenueFilter)) window.stageListVenueFilter='';
@@ -11686,8 +11685,21 @@ async function applyPromotionSuggestion(stage){
     const visibleStages=stages.filter(s=>
       (!window.stageListLocationFilter || s.location===window.stageListLocationFilter) &&
       (!window.stageListVenueFilter || s.venue===window.stageListVenueFilter) &&
-      (!window.stageListDayFilter || s.day===window.stageListDayFilter)
+      (!window.stageListDayFilter || s.day===window.stageListDayFilter) &&
+      (!window.stageListProgressFilter || s.progress===window.stageListProgressFilter)
     );
+
+    const rows=visibleStages.flatMap(s=>s.records).sort((a,b)=>{
+      const locCmp=recordLocation(a).localeCompare(recordLocation(b),'zh-Hant');
+      if(locCmp!==0) return locCmp;
+      return venueSortValue(a.venue_type)-venueSortValue(b.venue_type) || daySortValue(a.day_of_week)-daySortValue(b.day_of_week) || timeSortValue(a.time_slot)-timeSortValue(b.time_slot) || statusSortValue(a.lottery_status)-statusSortValue(b.lottery_status) || String(a.registered_at||'').localeCompare(String(b.registered_at||''));
+    });
+    const scope=JSON.stringify([location,venue,day,time,window.stageListLocationFilter,window.stageListVenueFilter,window.stageListDayFilter,window.stageListProgressFilter]);
+    if(scope!==dayCheckScope){dayCheckScope=scope;dayCheckPage=1;}
+    const pageCount=Math.max(1,Math.ceil(rows.length/dayCheckPageSize));
+    dayCheckPage=Math.max(1,Math.min(dayCheckPage,pageCount));
+    const pageRows=rows.slice((dayCheckPage-1)*dayCheckPageSize,dayCheckPage*dayCheckPageSize);
+
 
     table.innerHTML=`
       <div class="panel admin-section-card">
@@ -11718,22 +11730,31 @@ async function applyPromotionSuggestion(stage){
             </select>
           </div>
 
+          <div class="stage-list-filter-field" style="min-width:230px">
+            <label for="stageListProgressFilter">場次處理狀態</label>
+            <select id="stageListProgressFilter">
+              ${[['','全部處理狀態'],['draw_pending','需抽籤、尚未完成'],['exempt_pending','免抽籤、待核定正取'],['ready','已完成、待公布'],['published','已公布'],['review','待資格或設定確認'],['empty','無合格登記']].map(([v,label])=>`<option value="${v}" ${window.stageListProgressFilter===v?'selected':''}>${label}${v?`（${stages.filter(s=>s.progress===v).length} 場）`:''}</option>`).join('')}
+            </select>
+          </div>
           <button type="button" id="clearStageListFilters" class="btn btn-gray">全部顯示</button>
 
           <div class="stage-list-filter-count">顯示 <strong>${visibleStages.length}</strong> / ${stages.length} 個場次</div>
         </div>
 
-        <div class="table-wrap"><table><thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記人數</th><th>正取名額</th><th>抽籤狀態</th><th>異常</th></tr></thead><tbody>
+        <div class="table-wrap"><table><thead><tr><th>場地</th><th>球類</th><th>星期</th><th>時段</th><th>登記人數</th><th>合格人數</th><th>正取名額</th><th>場次處理狀態</th><th>合格登記結果</th><th>處理說明</th><th>異常</th></tr></thead><tbody>
           ${visibleStages.length ? visibleStages.map((s,idx)=>`<tr>
             <td>${escapeHtml(locationLabel(s.location))}</td>
             <td><strong>${escapeHtml(s.venue)}</strong></td>
             <td>${escapeHtml(s.day)}</td>
             <td>${escapeHtml(s.time)}</td>
             <td>${s.people}</td>
+            <td>${qualificationReviewsLoaded?s.qualifiedPeople:'—'}</td>
             <td>${s.capacity}</td>
-            <td>${statusTag(s.status)}</td>
+            <td>${statusTag(s)}</td>
+            <td>${s.withResult}／${s.qualifiedCount} 筆</td>
+            <td>${escapeHtml(s.reason)}</td>
             <td><button type="button" class="btn btn-gray day-stage-anomaly" data-stage-index="${idx}">檢查異常</button><span class="day-stage-anomaly-result"></span></td>
-          </tr>`).join('') : `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">目前選擇條件沒有場次</td></tr>`}
+          </tr>`).join('') : `<tr><td colspan="11" style="text-align:center;color:#64748b;padding:24px;">目前選擇條件沒有場次</td></tr>`}
         </tbody></table></div>
       </div>
       <div class="panel admin-section-card">
@@ -11775,7 +11796,9 @@ async function applyPromotionSuggestion(stage){
     const stageLocationSelect=document.getElementById('stageListLocationFilter');
     const stageVenueSelect=document.getElementById('stageListVenueFilter');
     const stageDaySelect=document.getElementById('stageListDayFilter');
+    const stageProgressSelect=document.getElementById('stageListProgressFilter');
     const clearStageFilters=document.getElementById('clearStageListFilters');
+    if(stageProgressSelect)stageProgressSelect.onchange=()=>{window.stageListProgressFilter=stageProgressSelect.value||'';renderDayCheck();};
 
     if(stageLocationSelect) stageLocationSelect.onchange=()=>{
       window.stageListLocationFilter=stageLocationSelect.value || '';
@@ -11793,6 +11816,7 @@ async function applyPromotionSuggestion(stage){
       window.stageListLocationFilter='';
       window.stageListVenueFilter='';
       window.stageListDayFilter='';
+      window.stageListProgressFilter='';
       renderDayCheck();
     };
   }
