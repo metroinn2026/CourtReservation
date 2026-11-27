@@ -11269,7 +11269,9 @@ function renderLotteryPage(){
       if(String(record.phone||'').slice(-3)!==phone3){errors.push({row:idx+1,serial,status,reason:'手機末三碼與登記資料不一致'});return;}
       const surname=Array.from(String(record.name||'').trim())[0]||'';
       const importedSurname=Array.from(masked)[0]||'';
-      if(!surname || surname!==importedSurname){errors.push({row:idx+1,serial,status,reason:'姓名第一字（姓）與登記資料不一致'});return;}
+      // 舊版匯出會將單字姓名完整遮成「○」；僅限此情形相容，序號及手機末三碼仍須通過核對。
+      const legacySingleCharacterMask=Array.from(String(record.name||'').trim()).length===1&&masked==='○';
+      if(!surname || (surname!==importedSurname&&!legacySingleCharacterMask)){errors.push({row:idx+1,serial,status,reason:'姓名第一字（姓）與登記資料不一致'});return;}
       if(!isQualifiedForLottery(record)){errors.push({row:idx+1,serial,status,reason:'此登記尚未確認資格合格'});return;}
       if(record.result_published||record.lottery_locked||String(record.lottery_status||'').trim()){
         errors.push({row:idx+1,serial,status,reason:'已有抽籤結果或已發布，請依程序解除鎖定'});return;
