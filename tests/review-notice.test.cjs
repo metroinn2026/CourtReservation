@@ -5,7 +5,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 test('review notice XML keeps print settings before ignored errors and removes invalid whitespace attributes',async()=>{
-  const admin=fs.readFileSync(path.join(__dirname,'..','admin.html'),'utf8');
+  const admin=fs.readFileSync(process.env.COURT_ADMIN_SOURCE||path.join(__dirname,'..','admin.html'),'utf8');
   const start=admin.indexOf('async function createReviewNoticeWorkbook(');
   const end=admin.indexOf('async function exportReviewNotice(',start);
   const files=new Map([
@@ -21,7 +21,7 @@ test('review notice XML keeps print settings before ignored errors and removes i
     generateAsync:async()=>new Uint8Array([1])
   };
   const sandbox={
-    REVIEW_NOTICE_TITLE:'登記合格名單',reviewNoticeStageLabel:()=> '週一 08:00–10:00',
+    REVIEW_NOTICE_TITLE:'登記合格名單',reviewNoticeDocumentTitle:()=> '登記合格名單',reviewNoticeColumnLabel:()=> '審查結果',reviewNoticeStageLabel:()=> '週一 08:00–10:00',
     escapeHtml:s=>s,
     XLSX:{utils:{
       book_new:()=>({}),aoa_to_sheet:()=>({A2:{}}),decode_range:()=>({}),

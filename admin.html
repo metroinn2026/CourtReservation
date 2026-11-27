@@ -7678,6 +7678,7 @@ function renderRecordsPage(){
           <div class="records-export-popover">
             <button id="exportBtn" class="records-menu-item">匯出目前名單</button>
             <button id="exportQualifiedBtn" type="button" class="records-menu-item" title="依目前篩選條件，匯出公告 Excel、PDF 及全部場次合併 PDF">匯出合格公告名單</button>
+            <button id="exportLotteryResultsBtn" type="button" class="records-menu-item" title="依目前篩選匯出正取、備取公告 Excel、各場次 PDF 及合併 PDF；包含已核定但未公布的結果">匯出正取備取公告名單</button>
             <button id="exportQualifiedSP88Btn" type="button" class="records-menu-item" title="匯出 SP88 Excel ZIP；羽球場同時段不分用途，檔名標示開放名額及合格人數">匯出 SP88 抽籤名單</button>
             ${currentAdmin?.role==='super_admin'?'<button id="exportFormRowMappingBtn" type="button" class="records-menu-item" title="原始 Excel 列號、後台序號與完整紀錄識別碼對照；不含完整身分證字號">匯出原始表單序號對照 CSV</button>':''}
             ${currentAdmin?.role==='super_admin'?'<button id="importOfflineReviewBtn" type="button" class="records-menu-item">匯入會館會員名冊比對 CSV</button>':''}
@@ -7749,6 +7750,8 @@ function renderRecordsPage(){
   document.getElementById('exportBtn').onclick=()=>exportToCsv(getFilteredRecords());
   const exportQualifiedButton=document.getElementById('exportQualifiedBtn');
   exportQualifiedButton.onclick=()=>void exportReviewNotice(exportQualifiedButton,'announcement');
+  const exportLotteryResultsButton=document.getElementById('exportLotteryResultsBtn');
+  exportLotteryResultsButton.onclick=()=>void exportReviewNotice(exportLotteryResultsButton,'results');
   const exportQualifiedSP88Button=document.getElementById('exportQualifiedSP88Btn');
   exportQualifiedSP88Button.onclick=()=>void exportReviewNotice(exportQualifiedSP88Button,'sp88');
   const exportMappingButton=document.getElementById('exportFormRowMappingBtn');
@@ -10541,10 +10544,21 @@ async function exportPendingLotteryWorkbook(stages){
 
 const REVIEW_NOTICE_TITLE='116年北投會館運動場域長期租借抽籤登記合格名單';
 
-function buildReviewNoticeGroups(records,combineBadminton=false){
+const RESULT_NOTICE_TITLE='116年北投會館運動場域長期租借正取及備取名單';
+function reviewNoticeDocumentTitle(stage){return stage.noticeType==='results'?RESULT_NOTICE_TITLE:REVIEW_NOTICE_TITLE;}
+function reviewNoticeColumnLabel(stage){return stage.noticeType==='results'?'抽籤結果':'審查結果';}
+function publicLotteryResult(status){
+  const value=String(status||'').trim();
+  if(value==='中籤')return {label:'正取',rank:0};
+  const match=value.match(/^候補([1-9]\d*)$/);
+  return match?{label:`備取${Number(match[1])}`,rank:Number(match[1])}:null;
+}
+function buildReviewNoticeGroups(records,combineBadminton=false,resultsOnly=false){
   const groups=new Map();
   for(const record of records){
     if(qualificationState(record)!=='qualified')continue;
+    const result=resultsOnly?publicLotteryResult(record.lottery_status):null;
+    if(resultsOnly&&!result)continue;
     const location=recordLocation(record);
     const venue=record.venue_type||'';
     const day=String(record.day_of_week||'').replace(/^週/,'周');
@@ -10552,7 +10566,7 @@ function buildReviewNoticeGroups(records,combineBadminton=false){
     const actualUsage=courtUsage(record);
     const usage=combineBadminton&&venue==='羽球'?'不分球種':actualUsage;
     const key=JSON.stringify([location,venue,day,time,usage]);
-    if(!groups.has(key))groups.set(key,{location,venue,day,time,usage,rows:[],incomplete:0});
+    if(!groups.has(key))groups.set(key,{location,venue,day,time,usage,noticeType:resultsOnly?'results':'qualified',rows:[],incomplete:0});
     const group=groups.get(key);
     const serial=compactRecordCode(record);
     const name=maskPublicName(record.name);
@@ -10563,7 +10577,14 @@ function buildReviewNoticeGroups(records,combineBadminton=false){
     }
     // 單字姓名整字遮蔽。名單只傳入公開欄位。
     const publicName=Array.from(String(record.name||'').replace(/\s/g,'')).length===1?'○':name;
-    group.rows.push([group.rows.length+1,serial,publicName,last3,'合格']);
+    group.rows.push([group.rows.length+1,serial,publicName,last3,resultsOnly?result.label:'合格']);
+  }
+  if(resultsOnly)for(const group of groups.values()){
+    group.rows.sort((a,b)=>{
+      const rank=row=>row[4]==='正取'?0:Number(row[4].slice(2));
+      return rank(a)-rank(b)||a[1].localeCompare(b[1]);
+    });
+    group.rows.forEach((row,index)=>row[0]=index+1);
   }
   return [...groups.values()].sort((a,b)=>
     a.location.localeCompare(b.location,'zh-Hant')||venueSortValue(a.venue)-venueSortValue(b.venue)||
@@ -10574,14 +10595,16 @@ function reviewNoticeStageLabel(stage){
 }
 async function createReviewNoticeWorkbook(stage,logo){
   if(!logo)throw Error('公告 LOGO 未載入');
+  const title=reviewNoticeDocumentTitle(stage);
+  const sheetName=stage.noticeType==='results'?'正取備取名單':'登記合格名單';
   const wb=XLSX.utils.book_new();
-  const ws=XLSX.utils.aoa_to_sheet([[''],[REVIEW_NOTICE_TITLE],[reviewNoticeStageLabel(stage)],[],
-    ['項次','登記序號','姓名','手機末三碼','審查結果'],...stage.rows]);
+  const ws=XLSX.utils.aoa_to_sheet([[''],[title],[reviewNoticeStageLabel(stage)],[],
+    ['項次','登記序號','姓名','手機末三碼',reviewNoticeColumnLabel(stage)],...stage.rows]);
   ws['!merges']=[XLSX.utils.decode_range('A2:E2'),XLSX.utils.decode_range('A3:E3')];
   ws['!cols']=[{wch:8},{wch:14},{wch:16},{wch:15},{wch:17}];
   ws['!rows']=[{hpt:30},{hpt:50},{hpt:35},{hpt:8},{hpt:26},...stage.rows.map(()=>({hpt:22}))];
-  ws.A2.v=REVIEW_NOTICE_TITLE.replace('抽籤登記合格名單','\n抽籤登記合格名單');
-  XLSX.utils.book_append_sheet(wb,ws,'登記合格名單');
+  ws.A2.v=title.replace(stage.noticeType==='results'?'正取及備取名單':'抽籤登記合格名單',stage.noticeType==='results'?'\n正取及備取名單':'\n抽籤登記合格名單');
+  XLSX.utils.book_append_sheet(wb,ws,sheetName);
 
   // SheetJS Community 保留合併與列高。字型、底色與對齊寫入本工作簿的 OOXML 樣式。
   const file=await JSZip.loadAsync(XLSX.write(wb,{bookType:'xlsx',type:'array',cellStyles:true}));
@@ -10620,8 +10643,8 @@ async function createReviewNoticeWorkbook(stage,logo){
   file.file('xl/worksheets/sheet1.xml',xml);
   const workbook=await file.file('xl/workbook.xml').async('string');
   file.file('xl/workbook.xml',workbook.replace('</workbook>',`<definedNames>
-    <definedName name="_xlnm.Print_Titles" localSheetId="0">'登記合格名單'!$1:$5</definedName>
-    <definedName name="_xlnm.Print_Area" localSheetId="0">'登記合格名單'!$A$1:$E$${stage.rows.length+5}</definedName>
+    <definedName name="_xlnm.Print_Titles" localSheetId="0">'${sheetName}'!$1:$5</definedName>
+    <definedName name="_xlnm.Print_Area" localSheetId="0">'${sheetName}'!$A$1:$E$${stage.rows.length+5}</definedName>
   </definedNames></workbook>`));
   // LOGO 與表頭置於重複列印列，保留原始圖檔比例。
   file.file('xl/media/trtc-logo.png',logo);
@@ -10652,7 +10675,7 @@ async function createReviewNoticeWorkbook(stage,logo){
 }
 async function createReviewNoticePdf(stage,logoImage){
   const pdf=await PDFLib.PDFDocument.create();
-  pdf.setTitle(REVIEW_NOTICE_TITLE);
+  pdf.setTitle(reviewNoticeDocumentTitle(stage));
   pdf.setAuthor('北投會館營運管理中心');
   const width=595.28,height=841.89,margin=36,rowsPerPage=27;
   const tableWidth=width-margin*2;
@@ -10676,10 +10699,10 @@ async function createReviewNoticePdf(stage,logoImage){
       context.fillText(String(value),x,y,maxWidth);
     };
     text('116年北投會館運動場域長期租借',width/2,65,tableWidth,18,true);
-    text('抽籤登記合格名單',width/2,91,tableWidth,18,true);
+    text(stage.noticeType==='results'?'正取及備取名單':'抽籤登記合格名單',width/2,91,tableWidth,18,true);
     text(reviewNoticeStageLabel(stage),width/2,125,tableWidth,11,true);
     const rows=stage.rows.slice(pageIndex*rowsPerPage,(pageIndex+1)*rowsPerPage);
-    const table=[['項次','登記序號','姓名','手機末三碼','審查結果'],...rows];
+    const table=[['項次','登記序號','姓名','手機末三碼',reviewNoticeColumnLabel(stage)],...rows];
     let y=150;
     for(let rowIndex=0;rowIndex<table.length;rowIndex++){
       const rowHeight=rowIndex===0?26:22;
@@ -10708,14 +10731,15 @@ async function createReviewNoticePdf(stage,logoImage){
 }
 let reviewNoticeExportBusy=false;
 async function exportReviewNotice(button,mode='announcement'){
-  const sp88Only=mode==='sp88';
+  const sp88Only=mode==='sp88',resultsOnly=mode==='results';
+  const exportLabel=resultsOnly?'正取備取公告名單':'合格公告名單';
   if(reviewNoticeExportBusy){alert('名單匯出處理中，請待本次匯出完成後再操作。');return;}
   if(typeof XLSX==='undefined'||typeof JSZip==='undefined'||(!sp88Only&&typeof PDFLib==='undefined')){
     alert(sp88Only?'Excel 或 ZIP 元件尚未載入，請重新整理後再試。':'Excel、ZIP 或 PDF 元件尚未載入，請重新整理後再試。');
     return;
   }
   reviewNoticeExportBusy=true;
-  const exportButtons=['exportQualifiedBtn','exportQualifiedSP88Btn'].map(id=>document.getElementById(id)).filter(Boolean);
+  const exportButtons=['exportQualifiedBtn','exportQualifiedSP88Btn','exportLotteryResultsBtn'].map(id=>document.getElementById(id)).filter(Boolean);
   const originalLabel=button.textContent;
   exportButtons.forEach(node=>node.disabled=true);
   button.textContent='檢核名單中…';
@@ -10725,18 +10749,19 @@ async function exportReviewNotice(button,mode='announcement'){
     if(!qualificationReviewsLoaded){alert('無法載入審查結果，請確認管理員登入後再試。');return;}
     if(sp88Only&&!capacitySettingsLoaded){alert('名額設定尚未成功載入，請重新整理後再匯出 SP88。');return;}
     const records=getFilteredRecords();
-    const groups=buildReviewNoticeGroups(records,sp88Only);
+    if(resultsOnly&&records.some(r=>publicLotteryResult(r.lottery_status)&&qualificationState(r)!=='qualified')){alert('正取或備取資料中仍有資格未合格的登記，請先確認審查結果再匯出。');return;}
+    const groups=buildReviewNoticeGroups(records,sp88Only,resultsOnly);
     if(sp88Only){
       // 不可因用途、姓名或其他篩選而只匯出羽球場部分合格人員。
       const partial=groups.filter(group=>group.venue==='羽球'&&sp88QualifiedStageRecords(group).length!==group.rows.length+group.incomplete);
       if(partial.length){alert('羽球場同時段各球種須合併抽籤；目前篩選排除了部分合格人員。請清除用途、姓名或其他人員篩選後重新匯出。');return;}
     }
-    if(!groups.length){alert('目前場次範圍沒有登記合格資料可匯出。');return;}
+    if(!groups.length){alert(resultsOnly?'目前篩選範圍沒有已核定的正取或備取資料可匯出。':'目前場次範圍沒有登記合格資料可匯出。');return;}
     const blocked=groups.filter(group=>group.incomplete);
     const ready=groups.filter(group=>!group.incomplete&&group.rows.length);
     if(blocked.length){
-      const details=blocked.slice(0,8).map(group=>`${reviewNoticeStageLabel(group)}：合格名單欄位缺漏 ${group.incomplete} 筆`);
-      const message=`${blocked.length} 個場次用途的合格名單有欄位缺漏。\n\n${details.join('\n')}`;
+      const details=blocked.slice(0,8).map(group=>`${reviewNoticeStageLabel(group)}：${exportLabel}欄位缺漏 ${group.incomplete} 筆`);
+      const message=`${blocked.length} 個場次用途的${exportLabel}有欄位缺漏。\n\n${details.join('\n')}`;
       if(!ready.length){alert(message);return;}
       if(!confirm(`${message}\n\n是否只匯出已完成的 ${ready.length} 個場次用途？`))return;
     }
@@ -10768,7 +10793,7 @@ async function exportReviewNotice(button,mode='announcement'){
       logoImage=await createImageBitmap(new Blob([logo],{type:'image/png'}));
       await document.fonts.ready;
       combinedPdf=await PDFLib.PDFDocument.create();
-      combinedPdf.setTitle(REVIEW_NOTICE_TITLE);
+      combinedPdf.setTitle(resultsOnly?RESULT_NOTICE_TITLE:REVIEW_NOTICE_TITLE);
     }
     const output=zip.folder(sp88Only?'SP88抽籤用':'公告用');
     const used=new Set();
@@ -10792,23 +10817,23 @@ async function exportReviewNotice(button,mode='announcement'){
       button.textContent=`產製中 ${completed}/${ready.length}`;
       if(completed%10===0)await new Promise(resolve=>setTimeout(resolve,0));
     }
-    if(!sp88Only)zip.file('公告合格名單_全部場次.pdf',await combinedPdf.save());
+    if(!sp88Only)zip.file(resultsOnly?'公告正取備取名單_全部場次.pdf':'公告合格名單_全部場次.pdf',await combinedPdf.save());
     button.textContent='壓縮檔案中…';
     const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:sp88Only?1:6}});
     const url=URL.createObjectURL(blob);
     const link=document.createElement('a');
     link.href=url;
     const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Taipei'});
-    link.download=sp88Only?`SP88_各場次合格抽籤名單_${date}.zip`:`登記合格名單_公告_${date}.zip`;
+    link.download=sp88Only?`SP88_各場次合格抽籤名單_${date}.zip`:resultsOnly?`正取備取名單_公告_${date}.zip`:`登記合格名單_公告_${date}.zip`;
     document.body.appendChild(link);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
-    void writeOperationLog(sp88Only?'匯出SP88各場次合格抽籤名單':'匯出合格公告名單',{
+    void writeOperationLog(sp88Only?'匯出SP88各場次合格抽籤名單':`匯出${exportLabel}`,{
       stage_count:ready.length,file_count:sp88Only?ready.length:ready.length*2+1,
       record_count:ready.reduce((sum,group)=>sum+group.rows.length,0)
     });
   }catch(error){
     console.error(error);
-    alert(sp88Only?'無法產生 SP88 抽籤名單，請重新整理後再試。':'無法產生合格公告名單，請重新整理後再試。');
+    alert(sp88Only?'無法產生 SP88 抽籤名單，請重新整理後再試。':`無法產生${exportLabel}，請重新整理後再試。`);
   }finally{
     if(logoImage)logoImage.close();
     reviewNoticeExportBusy=false;
