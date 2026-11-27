@@ -21,6 +21,7 @@ test('review notice XML keeps print settings before ignored errors and removes i
     generateAsync:async()=>new Uint8Array([1])
   };
   const sandbox={
+    reviewNoticeHeaders:()=>['項次','登記序號','姓名','手機末三碼','審查結果'],
     REVIEW_NOTICE_TITLE:'登記合格名單',reviewNoticeDocumentTitle:()=> '登記合格名單',reviewNoticeColumnLabel:()=> '審查結果',reviewNoticeStageLabel:()=> '週一 08:00–10:00',
     escapeHtml:s=>s,
     XLSX:{utils:{
