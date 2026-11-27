@@ -6343,14 +6343,15 @@ function buildResultAdjustmentStages(scope,filter='all',focusId=''){
   const checks=buildLotteryResultChecks(),issues=new Set([...checks.cross,...checks.suspected,...checks.usage].flatMap(x=>x.records.map(r=>String(r.id))));
   const focus=allRecords.find(r=>String(r.id)===String(focusId)),focusKey=focus&&sp88RecordStageKey(focus);
   const allowed=new Set(scope.map(sp88RecordStageKey));
+  const categoryKeys=['cross','suspected','usage'].includes(filter)?new Set(checks[filter].flatMap(item=>item.records.map(sp88RecordStageKey))):null;
   return lotteryResultStageGroups(allRecords).filter(s=>focusKey?s.key===focusKey:allowed.has(s.key)).map(s=>{
     const rows=s.records.filter(r=>r.lottery_status||resultAdjustmentHistory.has(String(r.id))),winners=s.records.filter(r=>r.lottery_status==='中籤'),waitlist=s.records.filter(r=>/^候補[1-9]\d*$/.test(String(r.lottery_status||'')));
     const capacity=getStageCapacity(s),issue=s.records.some(r=>issues.has(String(r.id))),changed=s.records.some(r=>resultAdjustmentHistory.get(String(r.id))?.some(h=>h.version>0));
     return {...s,rows,winners,waitlist,capacity,issue,changed,vacant:winners.length<capacity&&waitlist.length>0};
-  }).filter(s=>s.rows.length&&(focusKey||filter==='all'||filter==='issues'&&(s.issue||s.vacant)||filter==='changed'&&s.changed)).sort((a,b)=>String(a.location).localeCompare(String(b.location),'zh-Hant')||venueSortValue(a.venue)-venueSortValue(b.venue)||daySortValue(a.day)-daySortValue(b.day)||timeSortValue(a.time)-timeSortValue(b.time));
+  }).filter(s=>s.rows.length&&(focusKey||filter==='all'||categoryKeys?.has(s.key)||filter==='issues'&&(s.issue||s.vacant)||filter==='changed'&&s.changed)).sort((a,b)=>String(a.location).localeCompare(String(b.location),'zh-Hant')||venueSortValue(a.venue)-venueSortValue(b.venue)||daySortValue(a.day)-daySortValue(b.day)||timeSortValue(a.time)-timeSortValue(b.time));
 }
 
-let resultAdjustmentRequest=0;
+let resultAdjustmentRequest=0,resultAdjustmentScrollPending=false;
 async function renderResultAdjustmentList(container,feedback=''){
   const request=++resultAdjustmentRequest,epoch=adminSessionEpoch;
   container.innerHTML='<p class="small">正在讀取場次與結果調整紀錄…</p>';
@@ -6359,7 +6360,7 @@ async function renderResultAdjustmentList(container,feedback=''){
   if(!resultAdjustmentHistoryLoaded){container.innerHTML='<p>無法讀取結果調整紀錄，請重新載入。</p>';return;}
   const stages=buildResultAdjustmentStages(getFilteredRecords(),resultAdjustmentFilter,resultAdjustmentFocusId),pages=Math.max(1,Math.ceil(stages.length/20));
   resultAdjustmentPage=Math.max(1,Math.min(resultAdjustmentPage,pages));const visible=stages.slice((resultAdjustmentPage-1)*20,resultAdjustmentPage*20);
-  container.innerHTML=`<section class="panel admin-inner-section"><div class="admin-section-head"><h3>抽籤結果調整（依場次）</h3></div><p class="small">展開一個場次，即可在同一張表更正全部正備取；整場預覽、一次儲存。姓名或用途篩選只用來找場次，展開後仍顯示本場完整名單。</p>${feedback?`<p role="status" class="msg ok">${escapeHtml(feedback)}</p>`:''}<div class="ux-review-toolbar"><select id="resultAdjustmentFilter">${[['issues','待確認衝突／正取不足'],['changed','已調整場次'],['all','全部抽籤場次']].map(([v,label])=>`<option value="${v}" ${resultAdjustmentFilter===v?'selected':''}>${label}</option>`).join('')}</select><button type="button" class="btn btn-gray" id="resultAdjustmentReload">重新載入</button>${resultAdjustmentFocusId?'<button type="button" class="btn btn-gray" id="resultAdjustmentBack">返回場次清單</button>':''}<span class="small">共 ${stages.length} 場｜第 ${resultAdjustmentPage}/${pages} 頁</span></div><div class="table-wrap"><table><thead><tr><th>場次</th><th>正取／名額</th><th>備取</th><th>待確認事項</th><th>操作</th></tr></thead><tbody>${visible.map((s,i)=>`<tr><td>${escapeHtml(locationLabel(s.location))}｜${escapeHtml(courtVenueLabel({venue_type:s.venue}))}<br>${escapeHtml(s.day)} ${escapeHtml(s.time)}</td><td>${s.winners.length}／${s.capacity}</td><td>${s.waitlist.length} 筆</td><td>${[s.issue?'正取用途或時段衝突':'',s.vacant?'正取不足':'',s.changed?'已有調整紀錄':''].filter(Boolean).join('、')||'—'}</td><td><button type="button" class="btn btn-primary" data-adjust-expand="${i}">展開整場處理</button></td></tr><tr hidden id="resultAdjustDetail${i}"><td colspan="5"></td></tr>`).join('')||'<tr><td colspan="5">目前沒有符合條件的場次，可改選「全部抽籤場次」。</td></tr>'}</tbody></table></div><div class="pager"><button type="button" class="btn btn-gray" id="resultAdjustmentPrev" ${resultAdjustmentPage===1?'disabled':''}>上一頁</button><button type="button" class="btn btn-gray" id="resultAdjustmentNext" ${resultAdjustmentPage===pages?'disabled':''}>下一頁</button></div></section>`;
+  container.innerHTML=`<section class="panel admin-inner-section"><div class="admin-section-head"><h3>抽籤結果調整（依場次）</h3></div><p class="small">展開一個場次，即可在同一張表更正全部正備取；整場預覽、一次儲存。姓名或用途篩選只用來找場次，展開後仍顯示本場完整名單。</p>${feedback?`<p role="status" class="msg ok">${escapeHtml(feedback)}</p>`:''}<div class="ux-review-toolbar"><select id="resultAdjustmentFilter">${[['issues','待確認衝突／正取不足'],['usage','羽球正取用途衝突'],['cross','同一人同時段跨場地中籤'],['suspected','疑似同一人同時段跨場地中籤'],['changed','已調整場次'],['all','全部抽籤場次']].map(([v,label])=>`<option value="${v}" ${resultAdjustmentFilter===v?'selected':''}>${label}</option>`).join('')}</select><button type="button" class="btn btn-gray" id="resultAdjustmentReload">重新載入</button>${resultAdjustmentFocusId?'<button type="button" class="btn btn-gray" id="resultAdjustmentBack">返回場次清單</button>':''}<span class="small">共 ${stages.length} 場｜第 ${resultAdjustmentPage}/${pages} 頁</span></div><div class="table-wrap"><table><thead><tr><th>場次</th><th>正取／名額</th><th>備取</th><th>待確認事項</th><th>操作</th></tr></thead><tbody>${visible.map((s,i)=>`<tr><td>${escapeHtml(locationLabel(s.location))}｜${escapeHtml(courtVenueLabel({venue_type:s.venue}))}<br>${escapeHtml(s.day)} ${escapeHtml(s.time)}</td><td>${s.winners.length}／${s.capacity}</td><td>${s.waitlist.length} 筆</td><td>${[s.issue?'正取用途或時段衝突':'',s.vacant?'正取不足':'',s.changed?'已有調整紀錄':''].filter(Boolean).join('、')||'—'}</td><td><button type="button" class="btn btn-primary" data-adjust-expand="${i}">展開整場處理</button></td></tr><tr hidden id="resultAdjustDetail${i}"><td colspan="5"></td></tr>`).join('')||'<tr><td colspan="5">目前沒有符合條件的場次，可改選「全部抽籤場次」。</td></tr>'}</tbody></table></div><div class="pager"><button type="button" class="btn btn-gray" id="resultAdjustmentPrev" ${resultAdjustmentPage===1?'disabled':''}>上一頁</button><button type="button" class="btn btn-gray" id="resultAdjustmentNext" ${resultAdjustmentPage===pages?'disabled':''}>下一頁</button></div></section>`;
   const canLeave=()=>![...container.querySelectorAll('[data-stage-dirty="true"]')].length||confirm('本場尚有未儲存的調整，確定放棄草稿並切換嗎？');
   container.querySelector('#resultAdjustmentFilter').onchange=e=>{if(!canLeave()){e.target.value=resultAdjustmentFilter;return;}resultAdjustmentFocusId='';resultAdjustmentFilter=e.target.value;resultAdjustmentPage=1;void renderResultAdjustmentList(container);};
   container.querySelector('#resultAdjustmentReload').onclick=async()=>{if(canLeave()&&await loadAllData()!==false)void renderResultAdjustmentList(container);};
@@ -6378,6 +6379,10 @@ async function renderResultAdjustmentList(container,feedback=''){
     if(!row.hidden)renderStageResultAdjustmentEditor(host,visible[i].records,container);else host.innerHTML='';
   });
   if(resultAdjustmentFocusId&&visible.length)container.querySelector('[data-adjust-expand]')?.click();
+  if(resultAdjustmentScrollPending){
+    resultAdjustmentScrollPending=false;container.style.scrollMarginTop='110px';
+    container.scrollIntoView({behavior:'smooth',block:'start'});
+  }
 }
 function renderResultAdjustmentEditor(host,record,listContainer){
   renderStageResultAdjustmentEditor(host,allRecords.filter(r=>sp88RecordStageKey(r)===sp88RecordStageKey(record)),listContainer);
@@ -6865,9 +6870,19 @@ function renderLotteryResultCheckSummary(){
   const c=buildLotteryResultChecks();
   return `<div style="border-top:1px solid #e2e8f0;margin-top:16px;padding-top:16px"><h4 style="margin:0 0 8px">抽籤後結果檢核</h4><div class="small">已公布及未公布的正取均納入檢查；只提示衝突，由承辦確認保留結果及遞補原因。</div>${[['cross','同一人同時段跨場地中籤',c.cross.length,'組衝突'],['suspected','疑似同一人同時段跨場地中籤',c.suspected.length,'組待確認'],['usage','羽球正取用途衝突',c.usage.length,'個場次']].map(([key,label,count,unit])=>`<div class="anomaly-flat-row"><div class="anomaly-flat-type">${label}</div><div class="anomaly-flat-count">${count} ${unit}</div><div class="anomaly-flat-detail">${key==='suspected'?'姓名及手機均相同，會員識別不同，須由承辦確認。':key==='usage'?'檢查同時段用途一致性及1、2面場次限制。':'依會員識別及重疊使用時間檢查，不以共用手機直接認定同一人。'}</div><button type="button" class="btn btn-gray btn-compact" data-lottery-check="${key}" ${count?'':'disabled'}>查看</button></div>`).join('')}</div>`;
 }
-function bindLotteryResultCheckActions(root=document){
-  root.querySelectorAll('[data-lottery-check]').forEach(btn=>btn.onclick=()=>showLotteryResultChecks(btn.dataset.lotteryCheck));
+function openLotteryResultAdjustmentFilter(kind){
+  clearRecordFilters();
+  recordState.location='';
+  reviewWorkMode='results';recordsActionTab='review';
+  resultAdjustmentFocusId='';resultAdjustmentPage=1;
+  resultAdjustmentFilter=['cross','suspected','usage'].includes(kind)?kind:'issues';
+  resultAdjustmentScrollPending=true;
+  renderPage('records');
 }
+function bindLotteryResultCheckActions(root=document){
+  root.querySelectorAll('[data-lottery-check]').forEach(btn=>btn.onclick=()=>openLotteryResultAdjustmentFilter(btn.dataset.lotteryCheck));
+}
+
 function openLotteryResultStage(record){
   window.currentLotteryLocation=recordLocation(record);
   window.stageListLocationFilter='';window.stageListVenueFilter='';window.stageListDayFilter='';window.stageListProgressFilter='';
