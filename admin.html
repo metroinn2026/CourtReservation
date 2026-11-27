@@ -5480,12 +5480,21 @@ body .ux-review-edit{align-items:end}
 </style>
 
 <style id="stage-result-single-page-scroll">
-  /* 場次名單隨整頁展開；只在寬度不足時提供左右捲動。 */
-  #content [data-stage-editor] .stage-results-table-wrap {
-    height:auto!important;
-    max-height:none!important;
-    overflow-x:auto!important;
-    overflow-y:hidden!important;
+  /* Keep the outer stage list inside the page; only the inner wide table scrolls horizontally. */
+  #content .stage-adjustment-list-wrap {width:100%!important;max-width:100%!important;min-width:0!important;overflow:visible!important;}
+  #content .stage-adjustment-list-wrap > table {width:100%!important;min-width:0!important;table-layout:fixed!important;}
+  #content .stage-adjustment-list-wrap > table > thead > tr > th,
+  #content .stage-adjustment-list-wrap > table > tbody > tr > td {white-space:normal!important;overflow-wrap:anywhere;min-width:0;}
+  #content .stage-adjustment-list-wrap > table > tbody > tr > td > button {max-width:100%;min-width:0;white-space:normal!important;}
+  #content [data-stage-editor] {width:100%;max-width:100%;min-width:0;box-sizing:border-box;}
+  #content [data-stage-editor] form {min-width:0;max-width:100%;}
+  #content [data-stage-editor] form > label {display:block!important;min-width:0;}
+  #content [data-stage-editor] textarea {max-width:100%;box-sizing:border-box;}
+  #content [data-stage-editor] .table-wrap {
+    width:100%!important;max-width:100%!important;min-width:0!important;
+    height:auto!important;max-height:none!important;
+    overflow-x:auto!important;overflow-y:hidden!important;
+    -webkit-overflow-scrolling:touch;
   }
 </style>
 
@@ -5651,6 +5660,7 @@ async function endAdminSession(reason='signed-out',notify=false){
   try{localStorage.setItem(ADMIN_SESSION_LOGOUT_EVENT,String(Date.now()));}catch(_){}
   if(adminIdleTimer){clearInterval(adminIdleTimer);adminIdleTimer=null;}
   // Hide sensitive records synchronously before making any async network requests.
+  removeRecordsBottomScrollbar();
   allRecords=[];allLogs=[];
   Object.assign(operationLogView,{q:'',page:0,loading:false,error:false});
   resultAdjustmentHistory.clear();resultAdjustmentHistoryLoaded=false;resultAdjustmentFocusId='';
@@ -6353,6 +6363,7 @@ function buildResultAdjustmentStages(scope,filter='all',focusId=''){
 
 let resultAdjustmentRequest=0,resultAdjustmentScrollPending=false;
 async function renderResultAdjustmentList(container,feedback=''){
+  removeRecordsBottomScrollbar();
   const request=++resultAdjustmentRequest,epoch=adminSessionEpoch;
   container.innerHTML='<p class="small">正在讀取場次與結果調整紀錄…</p>';
   await loadResultAdjustmentHistory(reviewDbClient(),()=>courtAuthLoginActive&&!adminSigningOut&&epoch===adminSessionEpoch);
@@ -6360,7 +6371,7 @@ async function renderResultAdjustmentList(container,feedback=''){
   if(!resultAdjustmentHistoryLoaded){container.innerHTML='<p>無法讀取結果調整紀錄，請重新載入。</p>';return;}
   const stages=buildResultAdjustmentStages(getFilteredRecords(),resultAdjustmentFilter,resultAdjustmentFocusId),pages=Math.max(1,Math.ceil(stages.length/20));
   resultAdjustmentPage=Math.max(1,Math.min(resultAdjustmentPage,pages));const visible=stages.slice((resultAdjustmentPage-1)*20,resultAdjustmentPage*20);
-  container.innerHTML=`<section class="panel admin-inner-section"><div class="admin-section-head"><h3>抽籤結果調整（依場次）</h3></div><p class="small">展開一個場次，即可在同一張表更正全部正備取；整場預覽、一次儲存。姓名或用途篩選只用來找場次，展開後仍顯示本場完整名單。</p>${feedback?`<p role="status" class="msg ok">${escapeHtml(feedback)}</p>`:''}<div class="ux-review-toolbar"><select id="resultAdjustmentFilter">${[['issues','待確認衝突／正取不足'],['usage','羽球正取用途衝突'],['cross','同一人同時段跨場地中籤'],['suspected','疑似同一人同時段跨場地中籤'],['changed','已調整場次'],['all','全部抽籤場次']].map(([v,label])=>`<option value="${v}" ${resultAdjustmentFilter===v?'selected':''}>${label}</option>`).join('')}</select><button type="button" class="btn btn-gray" id="resultAdjustmentReload">重新載入</button>${resultAdjustmentFocusId?'<button type="button" class="btn btn-gray" id="resultAdjustmentBack">返回場次清單</button>':''}<span class="small">共 ${stages.length} 場｜第 ${resultAdjustmentPage}/${pages} 頁</span></div><div class="table-wrap"><table><thead><tr><th>場次</th><th>正取／名額</th><th>備取</th><th>待確認事項</th><th>操作</th></tr></thead><tbody>${visible.map((s,i)=>`<tr><td>${escapeHtml(locationLabel(s.location))}｜${escapeHtml(courtVenueLabel({venue_type:s.venue}))}<br>${escapeHtml(s.day)} ${escapeHtml(s.time)}</td><td>${s.winners.length}／${s.capacity}</td><td>${s.waitlist.length} 筆</td><td>${[s.issue?'正取用途或時段衝突':'',s.vacant?'正取不足':'',s.changed?'已有調整紀錄':''].filter(Boolean).join('、')||'—'}</td><td><button type="button" class="btn btn-primary" data-adjust-expand="${i}">展開整場處理</button></td></tr><tr hidden id="resultAdjustDetail${i}"><td colspan="5"></td></tr>`).join('')||'<tr><td colspan="5">目前沒有符合條件的場次，可改選「全部抽籤場次」。</td></tr>'}</tbody></table></div><div class="pager"><button type="button" class="btn btn-gray" id="resultAdjustmentPrev" ${resultAdjustmentPage===1?'disabled':''}>上一頁</button><button type="button" class="btn btn-gray" id="resultAdjustmentNext" ${resultAdjustmentPage===pages?'disabled':''}>下一頁</button></div></section>`;
+  container.innerHTML=`<section class="panel admin-inner-section"><div class="admin-section-head"><h3>抽籤結果調整（依場次）</h3></div><p class="small">展開一個場次，即可在同一張表更正全部正備取；整場預覽、一次儲存。姓名或用途篩選只用來找場次，展開後仍顯示本場完整名單。</p>${feedback?`<p role="status" class="msg ok">${escapeHtml(feedback)}</p>`:''}<div class="ux-review-toolbar"><select id="resultAdjustmentFilter">${[['issues','待確認衝突／正取不足'],['usage','羽球正取用途衝突'],['cross','同一人同時段跨場地中籤'],['suspected','疑似同一人同時段跨場地中籤'],['changed','已調整場次'],['all','全部抽籤場次']].map(([v,label])=>`<option value="${v}" ${resultAdjustmentFilter===v?'selected':''}>${label}</option>`).join('')}</select><button type="button" class="btn btn-gray" id="resultAdjustmentReload">重新載入</button>${resultAdjustmentFocusId?'<button type="button" class="btn btn-gray" id="resultAdjustmentBack">返回場次清單</button>':''}<span class="small">共 ${stages.length} 場｜第 ${resultAdjustmentPage}/${pages} 頁</span></div><div class="table-wrap stage-adjustment-list-wrap"><table><thead><tr><th>場次</th><th>正取／名額</th><th>備取</th><th>待確認事項</th><th>操作</th></tr></thead><tbody>${visible.map((s,i)=>`<tr><td>${escapeHtml(locationLabel(s.location))}｜${escapeHtml(courtVenueLabel({venue_type:s.venue}))}<br>${escapeHtml(s.day)} ${escapeHtml(s.time)}</td><td>${s.winners.length}／${s.capacity}</td><td>${s.waitlist.length} 筆</td><td>${[s.issue?'正取用途或時段衝突':'',s.vacant?'正取不足':'',s.changed?'已有調整紀錄':''].filter(Boolean).join('、')||'—'}</td><td><button type="button" class="btn btn-primary" data-adjust-expand="${i}">展開整場處理</button></td></tr><tr hidden id="resultAdjustDetail${i}"><td colspan="5"></td></tr>`).join('')||'<tr><td colspan="5">目前沒有符合條件的場次，可改選「全部抽籤場次」。</td></tr>'}</tbody></table></div><div class="pager"><button type="button" class="btn btn-gray" id="resultAdjustmentPrev" ${resultAdjustmentPage===1?'disabled':''}>上一頁</button><button type="button" class="btn btn-gray" id="resultAdjustmentNext" ${resultAdjustmentPage===pages?'disabled':''}>下一頁</button></div></section>`;
   const canLeave=()=>![...container.querySelectorAll('[data-stage-dirty="true"]')].length||confirm('本場尚有未儲存的調整，確定放棄草稿並切換嗎？');
   container.querySelector('#resultAdjustmentFilter').onchange=e=>{if(!canLeave()){e.target.value=resultAdjustmentFilter;return;}resultAdjustmentFocusId='';resultAdjustmentFilter=e.target.value;resultAdjustmentPage=1;void renderResultAdjustmentList(container);};
   container.querySelector('#resultAdjustmentReload').onclick=async()=>{if(canLeave()&&await loadAllData()!==false)void renderResultAdjustmentList(container);};
@@ -6376,7 +6387,7 @@ async function renderResultAdjustmentList(container,feedback=''){
     }
     if(!row.hidden&&host.querySelector('[data-stage-dirty="true"]')&&!confirm('本場尚有未儲存的調整，確定放棄草稿並收合嗎？'))return;
     row.hidden=!row.hidden;button.textContent=row.hidden?'展開整場處理':'收合場次';
-    if(!row.hidden)renderStageResultAdjustmentEditor(host,visible[i].records,container);else host.innerHTML='';
+    if(!row.hidden)renderStageResultAdjustmentEditor(host,visible[i].records,container);else{removeRecordsBottomScrollbar();host.innerHTML='';}
   });
   if(resultAdjustmentFocusId&&visible.length)container.querySelector('[data-adjust-expand]')?.click();
   if(resultAdjustmentScrollPending){
@@ -6441,6 +6452,7 @@ function renderStageResultAdjustmentEditor(host,records,listContainer){
     }catch(error){message.textContent='未能完成整場儲存：'+(error?.message||'請重新載入後再試。')+' 草稿仍保留在本頁。';}
     finally{busy=false;enabled.forEach(e=>e.disabled=false);}
   };
+  bindRecordsBottomScrollbar(host.querySelector('.stage-results-table-wrap'));
 }
 
 const phoneCorrectionHistory=new Map();
@@ -9711,8 +9723,9 @@ function removeRecordsBottomScrollbar(){
   if(recordsBottomScrollbarCleanup)recordsBottomScrollbarCleanup();
   recordsBottomScrollbarCleanup=null;
 }
-function bindRecordsBottomScrollbar(){
-  const wrap=document.querySelector('#recordsTable .records-table-wrap');
+function bindRecordsBottomScrollbar(target=null){
+  removeRecordsBottomScrollbar();
+  const wrap=target||document.querySelector('#recordsTable .records-table-wrap');
   if(!wrap)return;
   const bar=document.createElement('div');
   bar.className='records-bottom-scrollbar';
@@ -9723,8 +9736,9 @@ function bindRecordsBottomScrollbar(){
   const spacer=track.firstElementChild;
   const [left,right]=bar.querySelectorAll('button');
   let frame=0;
+  if(target)track.setAttribute('aria-label','本場正備取名單左右捲動');
   const syncFromTable=()=>{
-    recordsHorizontalOffset=wrap.scrollLeft;
+    if(!target)recordsHorizontalOffset=wrap.scrollLeft;
     if(Math.abs(track.scrollLeft-wrap.scrollLeft)>1)track.scrollLeft=wrap.scrollLeft;
     left.disabled=wrap.scrollLeft<=1;
     right.disabled=wrap.scrollLeft>=wrap.scrollWidth-wrap.clientWidth-1;
@@ -9746,22 +9760,24 @@ function bindRecordsBottomScrollbar(){
   const syncFromTrack=()=>{if(Math.abs(wrap.scrollLeft-track.scrollLeft)>1)wrap.scrollLeft=track.scrollLeft;syncFromTable();};
   left.onclick=()=>{wrap.scrollLeft-=Math.max(160,wrap.clientWidth*.65);syncFromTable();};
   right.onclick=()=>{wrap.scrollLeft+=Math.max(160,wrap.clientWidth*.65);syncFromTable();};
-  wrap.scrollLeft=recordsHorizontalOffset;
+  if(!target)wrap.scrollLeft=recordsHorizontalOffset;
   wrap.addEventListener('scroll',syncFromTable,{passive:true});
   track.addEventListener('scroll',syncFromTrack,{passive:true});
   window.addEventListener('scroll',schedule,{capture:true,passive:true});
   window.addEventListener('resize',schedule);
+  window.visualViewport?.addEventListener('resize',schedule);
   const observer=new ResizeObserver(schedule);
   observer.observe(wrap);
   if(wrap.firstElementChild)observer.observe(wrap.firstElementChild);
   recordsBottomScrollbarCleanup=()=>{
-    recordsHorizontalOffset=wrap.scrollLeft;
+    if(!target)recordsHorizontalOffset=wrap.scrollLeft;
     if(frame)cancelAnimationFrame(frame);
     observer.disconnect();
     wrap.removeEventListener('scroll',syncFromTable);
     track.removeEventListener('scroll',syncFromTrack);
     window.removeEventListener('scroll',schedule,true);
     window.removeEventListener('resize',schedule);
+    window.visualViewport?.removeEventListener('resize',schedule);
     bar.remove();
   };
   update();

@@ -9,7 +9,7 @@ function context(records){
  compactRecordCode:r=>r.id,recordLocation:r=>r.location_name||'北投會館',lotteryTimesOverlap:(a,b)=>a.day_of_week===b.day_of_week&&a.time_slot===b.time_slot,lotteryWinnerRelation:(a,b)=>a.identity===b.identity?'same':'',escapeHtml:s=>String(s),
  statusSortValue:s=>s==='中籤'?0:/^候補\d+$/.test(s)?Number(s.slice(2))+1:999,memberIdentityType:()=> 'Go會員',locationLabel:s=>s,courtVenueLabel:r=>r.venue_type,correctionNoticeDate:s=>s,
  buildLotteryResultChecks:()=>({cross:[],suspected:[],usage:[{records:records.slice(0,3)}]}),lotteryResultStageGroups:rs=>{const map=new Map();for(const row of rs){const key=[row.location_name||'北投會館',row.venue_type,row.day_of_week,row.time_slot].join('|');if(!map.has(key))map.set(key,{key,location:row.location_name||'北投會館',venue:row.venue_type,day:row.day_of_week,time:row.time_slot,records:[]});map.get(key).records.push(row);}return[...map.values()];},
- confirm:()=>true,courtAuthLoginActive:true,adminSigningOut:false,adminSessionEpoch:1});
+ bindRecordsBottomScrollbar:()=>{},confirm:()=>true,courtAuthLoginActive:true,adminSigningOut:false,adminSessionEpoch:1});
  vm.runInContext(implementation+'\nresultAdjustmentHistoryLoaded=true;globalThis.hist=resultAdjustmentHistory;',c);return c;
 }
 test('2 excluded winners and 2 promoted standbys are validated only as final stage state',()=>{
